@@ -130,6 +130,7 @@ const steamToDiscord = (s: number): string =>
 
 const StatusSelector = () => {
   const [current, setCurrent] = useState<string>("online");
+  const [focused, setFocused] = useState<string | null>(null);
 
   const setStatus = async (id: string) => {
     setCurrent(id);
@@ -169,22 +170,43 @@ const StatusSelector = () => {
   }, []);
 
   return (
-    <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-      {STATUSES.map((s) => (
-        <BtnTab
-          key={s.id}
-          onClick={() => setStatus(s.id)}
-          style={{
-            flex: "1 1 0", minWidth: 0, margin: 0, padding: "4px 0", fontSize: 14, minHeight: 0,
-            boxSizing: "border-box",
-            background: current === s.id ? s.color : "rgba(255,255,255,0.06)",
-            opacity: current === s.id ? 1 : 0.6,
-          }}
-        >
-          {s.emoji}
-        </BtnTab>
-      ))}
-    </div>
+    // Focusable + flow-children="horizontal" : la rangée devient UN seul arrêt
+    // de navigation verticale (D-pad bas sort vers le reste du panneau) tandis
+    // que gauche/droite circule entre les boutons. Un <div> flex de boutons
+    // bruts piège le focus en horizontal (impossible de descendre).
+    <Focusable
+      style={{ display: "flex", gap: 6, justifyContent: "center" }}
+      flow-children="horizontal"
+    >
+      {STATUSES.map((s) => {
+        const selected = current === s.id;
+        const isFocused = focused === s.id;
+        return (
+          <BtnTab
+            key={s.id}
+            onClick={() => setStatus(s.id)}
+            onFocus={() => setFocused(s.id)}
+            onBlur={() => setFocused((f) => (f === s.id ? null : f))}
+            style={{
+              flex: "1 1 0", minWidth: 0, margin: 0, padding: "4px 0", fontSize: 16, minHeight: 0,
+              boxSizing: "border-box",
+              // Fond couleur plein = statut ACTIF ; sinon estompé.
+              background: selected ? s.color : "rgba(255,255,255,0.06)",
+              opacity: selected ? 1 : 0.5,
+              // Bordure blanche permanente sur l'actif (lisible sans focus).
+              border: selected ? "2px solid #fff" : "2px solid transparent",
+              // Anneau blanc + agrandissement = CURSEUR manette (focus).
+              boxShadow: isFocused ? "0 0 0 3px #fff, 0 0 10px 2px " + s.color : "none",
+              transform: isFocused ? "scale(1.12)" : "scale(1)",
+              transition: "transform .08s ease, box-shadow .08s ease, opacity .08s ease",
+              zIndex: isFocused ? 1 : 0,
+            }}
+          >
+            {s.emoji}
+          </BtnTab>
+        );
+      })}
+    </Focusable>
   );
 };
 
