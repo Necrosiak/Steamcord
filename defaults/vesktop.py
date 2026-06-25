@@ -37,8 +37,16 @@ async def installed():
 
 
 async def install():
+    # Silent USER-level install — no polkit/root prompt, so it can run unattended when
+    # the plugin first loads. Ensure a user flathub remote exists first.
+    r = await create_subprocess_exec(
+        "flatpak", "remote-add", "--user", "--if-not-exists", "flathub",
+        "https://flathub.org/repo/flathub.flatpakrepo",
+        stdout=DEVNULL, stderr=DEVNULL,
+    )
+    await r.wait()
     proc = await create_subprocess_exec(
-        "flatpak", "install", "-y", "--noninteractive", "flathub", VESKTOP_APP,
+        "flatpak", "install", "--user", "-y", "--noninteractive", "flathub", VESKTOP_APP,
         stdout=DEVNULL, stderr=DEVNULL,
     )
     await proc.wait()
