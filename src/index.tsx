@@ -47,7 +47,6 @@ import {
   VoiceChatMembers,
 } from "./components/VoiceChatViews";
 import { UploadScreenshot } from "./components/UploadScreenshot";
-import { OpenDiscordButton } from "./components/buttons/OpenCloseDiscordButton";
 import { GoLiveButton } from "./components/buttons/GoLiveButton";
 import { ChannelBrowser } from "./components/ChannelBrowser";
 import { DMBrowser } from "./components/DMBrowser";
@@ -224,11 +223,6 @@ const Content = () => {
   } else {
     return (
       <SP>
-        <div style={{ marginBottom: "12px" }}>
-          <SR>
-            <OpenDiscordButton />
-          </SR>
-        </div>
         <div style={{ marginBottom: "12px" }}>
           <SR>
             <SF style={{ display: "flex", justifyContent: "center" }}>
