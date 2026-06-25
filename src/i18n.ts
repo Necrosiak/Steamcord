@@ -62,6 +62,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Recent channels",
     not_loaded: "Streamcord has not loaded yet!",
     incoming_call: "Incoming call",
+    follow_steam_status: "Follow Steam status",
   },
   fr: {
     not_connected: "Non connecté",
@@ -92,6 +93,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Salons récents",
     not_loaded: "Streamcord n'est pas encore chargé !",
     incoming_call: "Appel entrant",
+    follow_steam_status: "Suivre le statut Steam",
   },
   de: {
     not_connected: "Nicht verbunden",
@@ -122,6 +124,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Letzte Kanäle",
     not_loaded: "Streamcord wurde noch nicht geladen!",
     incoming_call: "Eingehender Anruf",
+    follow_steam_status: "Steam-Status folgen",
   },
   es: {
     not_connected: "No conectado",
@@ -152,6 +155,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Canales recientes",
     not_loaded: "¡Streamcord aún no se ha cargado!",
     incoming_call: "Llamada entrante",
+    follow_steam_status: "Seguir el estado de Steam",
   },
   it: {
     not_connected: "Non connesso",
@@ -182,6 +186,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Canali recenti",
     not_loaded: "Streamcord non è ancora caricato!",
     incoming_call: "Chiamata in arrivo",
+    follow_steam_status: "Segui lo stato di Steam",
   },
   pt: {
     not_connected: "Não conectado",
@@ -212,6 +217,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Canais recentes",
     not_loaded: "O Streamcord ainda não carregou!",
     incoming_call: "Chamada recebida",
+    follow_steam_status: "Seguir o estado do Steam",
   },
   nl: {
     not_connected: "Niet verbonden",
@@ -242,6 +248,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Recente kanalen",
     not_loaded: "Streamcord is nog niet geladen!",
     incoming_call: "Inkomende oproep",
+    follow_steam_status: "Steam-status volgen",
   },
   pl: {
     not_connected: "Niepołączony",
@@ -272,6 +279,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Ostatnie kanały",
     not_loaded: "Streamcord jeszcze się nie załadował!",
     incoming_call: "Połączenie przychodzące",
+    follow_steam_status: "Śledź status Steam",
   },
   ru: {
     not_connected: "Не подключено",
@@ -302,6 +310,7 @@ const T: Record<Locale, Dict> = {
     last_channels: "Недавние каналы",
     not_loaded: "Streamcord ещё не загружен!",
     incoming_call: "Входящий звонок",
+    follow_steam_status: "Следовать статусу Steam",
   },
 };
 

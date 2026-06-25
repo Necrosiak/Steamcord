@@ -8,6 +8,7 @@ import {
   Focusable,
   DialogButton,
   Toggle,
+  ToggleField,
   SliderField,
   Dropdown,
   findModuleExport,
@@ -127,66 +128,127 @@ const STATUSES: { id: string; emoji: string; color: string }[] = [
 const steamToDiscord = (s: number): string =>
   ({ 1: "online", 2: "dnd", 3: "idle", 4: "idle", 7: "invisible", 0: "invisible" } as any)[s] || "online";
 
+// ── Sync de statut Steam→Discord ───────────────────────────────────────────
+// Tourne en TÂCHE DE FOND au niveau plugin (démarrée dans definePlugin), donc
+// indépendante de l'ouverture du QAM. Le flag "auto" est persisté ; un pub-sub
+// minimal reflète dans l'UI le statut posé par le poll.
+
+const STATUS_AUTO_KEY = "streamcord_status_auto";
+const getAutoSync = (): boolean => {
+  try { return localStorage.getItem(STATUS_AUTO_KEY) !== "0"; } catch { return true; } // défaut ON
+};
+const setAutoSync = (v: boolean) => {
+  try { localStorage.setItem(STATUS_AUTO_KEY, v ? "1" : "0"); } catch { }
+};
+
+// Lit le persona Steam local effectif (EPersonaState). Voir readSteam d'origine :
+// le vrai store est m_FriendsUIFriendStore (les anciens chemins renvoyaient undefined).
+const readSteamPersona = (): number | null => {
+  try {
+    const uifs: any = (window as any).friendStore?.m_FriendsUIFriendStore;
+    const st = uifs?.m_eUserPersonaState ?? uifs?.GetPersonaStatePreference?.();
+    return typeof st === "number" ? st : null;
+  } catch { return null; }
+};
+
+let currentDiscordStatus = "online";
+const statusListeners = new Set<(s: string) => void>();
+const applyDiscordStatus = async (id: string) => {
+  currentDiscordStatus = id;
+  statusListeners.forEach((fn) => { try { fn(id); } catch { } });
+  try { await call("set_discord_status", id); } catch (e) { console.error("[Streamcord] set_discord_status", e); }
+};
+
+let _statusLastSteam: number | null = null;
+let _statusTimer: any = null;
+const startStatusSync = () => {
+  if (_statusTimer) return;
+  // Seed le statut Discord courant pour l'UI + comparaison.
+  call<[], any>("get_discord_status")
+    .then((r) => { if (r?.status) { currentDiscordStatus = r.status; statusListeners.forEach((fn) => fn(r.status)); } })
+    .catch(() => { });
+  const tick = () => {
+    if (!getAutoSync()) return; // manuel → le poll n'écrase rien
+    const s = readSteamPersona();
+    if (s !== null && s !== _statusLastSteam) {
+      _statusLastSteam = s;
+      const disc = steamToDiscord(s);
+      if (disc !== currentDiscordStatus) {
+        console.log("[Streamcord] auto: Steam persona " + s + " → Discord " + disc);
+        applyDiscordStatus(disc);
+      }
+    }
+  };
+  tick();
+  _statusTimer = setInterval(tick, 5000);
+};
+const stopStatusSync = () => { if (_statusTimer) { clearInterval(_statusTimer); _statusTimer = null; } };
+
 const StatusSelector = () => {
-  const [current, setCurrent] = useState<string>("online");
+  const [current, setCurrent] = useState<string>(currentDiscordStatus);
+  const [auto, setAutoState] = useState<boolean>(getAutoSync());
   const [focused, setFocused] = useState<string | null>(null);
 
-  const setStatus = async (id: string) => {
-    setCurrent(id);
-    await call("set_discord_status", id);
-  };
-
   useEffect(() => {
-    // Initial Discord status
-    call<[], any>("get_discord_status").then((r) => { if (r?.status) setCurrent(r.status); }).catch(() => {});
-
-    // Auto-sync: follow the local Steam persona state → Discord status.
-    let lastSteam: number | null = null;
-    const readSteam = (): number | null => {
-      try {
-        // Le persona local vit dans m_FriendsUIFriendStore.m_eUserPersonaState
-        // (état Steam effectif, EPersonaState: 0 offline,1 online,2 busy,3 away,
-        // 4 snooze,7 invisible). GetPersonaStatePreference() = préférence explicite,
-        // utilisée en repli si l'état effectif manque. Les anciens chemins
-        // (friendStore.m_self.persona_state, App.m_*) renvoyaient toujours undefined.
-        const uifs: any = (window as any).friendStore?.m_FriendsUIFriendStore;
-        const st = uifs?.m_eUserPersonaState ?? uifs?.GetPersonaStatePreference?.();
-        return typeof st === "number" ? st : null;
-      } catch { return null; }
-    };
-    const sync = () => {
-      const s = readSteam();
-      if (s !== null && s !== lastSteam) {
-        lastSteam = s;
-        const disc = steamToDiscord(s);
-        console.log("[Streamcord] Steam persona " + s + " → Discord " + disc);
-        setStatus(disc);
-      }
-    };
-    sync();
-    const timer = setInterval(sync, 5000);
-    return () => clearInterval(timer);
+    // Reflète le statut posé par le poll de fond.
+    const fn = (s: string) => setCurrent(s);
+    statusListeners.add(fn);
+    setCurrent(currentDiscordStatus);
+    return () => { statusListeners.delete(fn); };
   }, []);
 
+  const pickStatus = async (id: string) => {
+    // Sélection manuelle = prise de contrôle → coupe l'auto pour ne pas être réécrasé.
+    if (auto) { setAutoSync(false); setAutoState(false); }
+    setCurrent(id);
+    await applyDiscordStatus(id);
+  };
+
+  const toggleAuto = (v: boolean) => {
+    setAutoSync(v);
+    setAutoState(v);
+    if (v) {
+      // Réactivation → resync immédiat sur l'état Steam courant.
+      _statusLastSteam = null;
+      const s = readSteamPersona();
+      if (s !== null) {
+        _statusLastSteam = s;
+        const disc = steamToDiscord(s);
+        setCurrent(disc);
+        applyDiscordStatus(disc);
+      }
+    }
+  };
+
   return (
-    // Focusable + flow-children="horizontal" : la rangée devient UN seul arrêt
-    // de navigation verticale (D-pad bas sort vers le reste du panneau) tandis
-    // que gauche/droite circule entre les boutons. Un <div> flex de boutons
-    // bruts piège le focus en horizontal (impossible de descendre).
-    <Focusable
-      style={{ display: "flex", gap: 6, justifyContent: "center" }}
-      flow-children="horizontal"
-    >
-      {STATUSES.map((s) => {
-        const selected = current === s.id;
-        const isFocused = focused === s.id;
-        return (
-          <BtnTab
-            key={s.id}
-            onClick={() => setStatus(s.id)}
-            onFocus={() => setFocused(s.id)}
-            onBlur={() => setFocused((f) => (f === s.id ? null : f))}
-            style={{
+    <>
+      <SR>
+        <ToggleField
+          label={t("follow_steam_status")}
+          checked={auto}
+          onChange={toggleAuto}
+          bottomSeparator="none"
+        />
+      </SR>
+      <SR>
+        {/* Focusable + flow-children="horizontal" : la rangée devient UN seul arrêt
+            de navigation verticale (D-pad bas sort vers le reste du panneau) tandis
+            que gauche/droite circule entre les boutons. Un <div> flex de boutons
+            bruts piège le focus en horizontal (impossible de descendre). */}
+        <Focusable
+          style={{ display: "flex", gap: 6, justifyContent: "center" }}
+          flow-children="horizontal"
+        >
+          {STATUSES.map((s) => {
+            const selected = current === s.id;
+            const isFocused = focused === s.id;
+            return (
+              <BtnTab
+                key={s.id}
+                onClick={() => pickStatus(s.id)}
+                onFocus={() => setFocused(s.id)}
+                onBlur={() => setFocused((f) => (f === s.id ? null : f))}
+                style={{
               flex: "1 1 0", minWidth: 0, margin: 0, padding: "4px 0", fontSize: 16, minHeight: 0,
               boxSizing: "border-box",
               // Fond couleur plein = statut ACTIF ; sinon estompé.
@@ -205,7 +267,9 @@ const StatusSelector = () => {
           </BtnTab>
         );
       })}
-    </Focusable>
+        </Focusable>
+      </SR>
+    </>
   );
 };
 
@@ -260,9 +324,7 @@ const Content = () => {
           </SR>
         </div>
         <div style={{ marginBottom: "12px" }}>
-          <SR>
-            <StatusSelector />
-          </SR>
+          <StatusSelector />
         </div>
         <div style={{ marginBottom: "12px" }}>
           <SR>
@@ -498,6 +560,9 @@ export default definePlugin(() => {
     return <DiscordTab />;
   });
 
+  // Sync de statut Steam→Discord en tâche de fond (indépendante du QAM).
+  startStatusSync();
+
   return {
     title: <div className={staticClasses.Title}>Streamcord</div>,
     content: <Suspense fallback={<div style={{ padding: 8 }}>{t("loading")}</div>}><ContentErrorBoundary><Content /></ContentErrorBoundary></Suspense>,
@@ -505,6 +570,7 @@ export default definePlugin(() => {
     onDismount() {
       routerHook.removeRoute("/discord");
       unpatchMenu();
+      stopStatusSync();
       removeEventListener("webrtc", webrtcEventListener);
       try {
         appLifetimeUnregister();
