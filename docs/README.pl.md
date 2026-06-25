@@ -4,40 +4,38 @@
 
 🌍 **Języki:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · [Nederlands](README.nl.md) · **Polski** · [Русский](README.ru.md)
 
-> **Streamcord to niezależny fork [marios8543/Deckcord](https://github.com/marios8543/Deckcord).**
-> Nie jest powiązany z oryginalnym projektem Deckcord, ani przez niego wspierany czy zatwierdzony.
-> Kod znacznie się różni — większość funkcji została przepisana lub dodana od zera.
+> **Streamcord to niezależny projekt.** Pierwotnie zainspirowany przez
+> [Deckcord](https://github.com/marios8543/Deckcord) (zobacz Podziękowania), ale kod został
+> w dużej części przepisany i podąża teraz własną drogą — nie jest powiązany z tym projektem
+> ani przez niego zatwierdzony.
 >
 > Interfejs jest w pełni przetłumaczony na 9 języków i automatycznie podąża za językiem SteamOS.
 
 ---
 
-## Funkcje (i jak działają)
+## Jak to działa
 
-- **Logowanie kodem QR** — Zeskanuj kod QR aplikacją Discord na telefonie, aby zalogować się natychmiast. Na telefonie: *Discord → Ustawienia → Skanuj kod QR*, a następnie wyceluj w kod pokazany w panelu. Bez wpisywania hasła na Decku.
-- **Logowanie na pełnym ekranie (zapasowe)** — Otwiera Discord na pełnym ekranie, aby zalogować się e-mailem/hasłem lub rozwiązać CAPTCHA, gdy QR nie jest możliwy.
-- **Czat głosowy** — Dołączaj do kanałów głosowych i słysz wszystkich, każdy członek pokazany na żywo (pierścień mówienia, plakietki wyciszenia/ogłuszenia) oraz suwak głośności na osobę (0–200 %).
-- **Wiadomości prywatne (DM i grupy)** — Przeglądaj rozmowy oraz rozpoczynaj/dołączaj do połączeń głosowych ze znajomymi bezpośrednio z menu szybkiego dostępu. Aktywne połączenia są wyróżnione.
-- **Przeglądarka głosowa serwerów** — Zobacz, w których kanałach głosowych są ludzie (z awatarami), zanim dołączysz.
-- **Wycisz / Ogłusz / Rozłącz** — Sterowanie głosem jednym dotknięciem z QAM.
-- **Go Live (udostępnianie ekranu)** — Udostępnij cały ekran na kanale głosowym.
-- **Przekazywanie mikrofonu** — Twój mikrofon jest przechwytywany w interfejsie Steam i przekazywany do Discorda, więc inni cię słyszą, mimo że Discord działa w ukrytej karcie w tle. Wejście i wyjście automatycznie podążają za domyślnym urządzeniem audio (podłącz słuchawki, a przełączy się samo).
-- **Status gry** — Pokazuje grę, w którą grasz, jako twój status na Discordzie.
-- **Powiadomienia w grze** — DM-y i wzmianki pojawiają się jako powiadomienia Steam.
-- **Push-to-talk** — Z fizycznym przyciskiem (domyślnie R5).
-- **Wysyłanie zrzutów ekranu** — Wyślij zrzut ekranu Steam na dowolny kanał Discord.
-- **[Vencord](https://vencord.dev/)** jest wstrzykiwany automatycznie, dając dostęp do swojego ekosystemu wtyczek.
+Streamcord uruchamia **[Vesktop](https://github.com/Vencord/Vesktop)** — prawdziwego, natywnego klienta Discord — niewidocznie w tle i steruje nim przez Chrome DevTools Protocol. Wtyczka wstrzykuje do niego mały klient i udostępnia wszystko w **menu szybkiego dostępu** Steam.
+
+Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukrytą przeglądarką: **twój mikrofon i dźwięk głosowy działają natywnie**, dokładnie jak w desktopowej aplikacji Discord — bez sztuczek przechwytywania, bez obejść autoodtwarzania. Vesktop jest uruchamiany (i instalowany, jeśli go brak) automatycznie, pozostaje zalogowany po restarcie i nigdy nie potrzebuje okna pulpitu w trybie gry.
 
 ---
 
-## Jak działa dźwięk (najtrudniejsza część)
+## Funkcje
 
-Discord działa w **ukrytym** widoku przeglądarki wewnątrz Steam. Dwie rzeczy sprawiają, że głos działa:
-
-1. **Słyszenie innych** — Chromium zawiesza dźwięk w ukrytych kartach (polityka autoodtwarzania). Streamcord wznawia dźwięk Discorda symulowanym przez CDP gestem użytkownika, aby przychodzący głos faktycznie grał na twoim domyślnym wyjściu.
-2. **Bycie słyszanym** — Ukryta karta nie może przechwycić mikrofonu, więc prawdziwy mikrofon jest przechwytywany w kontekście interfejsu Steam i przekazywany do Discorda przez lokalne połączenie WebRTC.
-
-Wejście i wyjście automatycznie podążają za twoim domyślnym urządzeniem.
+- **Logowanie kodem QR** — Zeskanuj kod QR aplikacją Discord na telefonie, aby zalogować się natychmiast. Na telefonie: *Discord → Ustawienia → Skanuj kod QR*, a następnie wyceluj w kod pokazany w panelu. Bez wpisywania hasła na Decku.
+- **Logowanie na pełnym ekranie (zapasowe)** — Otwiera Discord na pełnym ekranie, aby zalogować się e-mailem/hasłem lub rozwiązać CAPTCHA, gdy QR nie jest możliwy.
+- **Czat głosowy** — Dołączaj do kanałów głosowych i słysz wszystkich, każdy członek pokazany na żywo (pierścień mówienia, plakietki wyciszenia/ogłuszenia) oraz suwak głośności na osobę (0–200 %). Mikrofon i dźwięk są natywne (Vesktop).
+- **Wiadomości prywatne (DM i grupy)** — Przeglądaj rozmowy oraz rozpoczynaj/dołączaj do połączeń głosowych ze znajomymi bezpośrednio z menu szybkiego dostępu. Aktywne połączenia są wyróżnione.
+- **Przeglądarka głosowa serwerów** — Zobacz, w których kanałach głosowych są ludzie (z awatarami), zanim dołączysz.
+- **Kanały tekstowe** — Czytaj ostatnie wiadomości kanału serwera z poziomu QAM i odpowiadaj klawiaturą ekranową Steam (otwiera się sama po zaznaczeniu pola).
+- **Status Discord** — Ustaw swój status (online / zaraz wracam / nie przeszkadzać / niewidoczny) z poziomu QAM. Opcjonalna automatyczna synchronizacja sprawia, że Discord **podąża za twoim statusem Steam** w tle; ręczny wybór statusu przełącza z powrotem na tryb ręczny.
+- **Wycisz / Ogłusz / Rozłącz** — Sterowanie głosem jednym dotknięciem z QAM.
+- **Go Live (udostępnianie ekranu)** — Udostępnij cały ekran na kanale głosowym.
+- **Powiadomienia w grze** — DM-y i wzmianki pojawiają się jako powiadomienia Steam (i respektują twój status Discord — wyciszone przy niewidoczny / nie przeszkadzać).
+- **Push-to-talk** — Z fizycznym przyciskiem (domyślnie R5).
+- **Wysyłanie zrzutów ekranu** — Wyślij zrzut ekranu Steam na dowolny kanał Discord.
+- **[Vencord](https://vencord.dev/)** jest wbudowany w Vesktop, dając dostęp do swojego ekosystemu wtyczek.
 
 ---
 
@@ -49,6 +47,8 @@ Wejście i wyjście automatycznie podążają za twoim domyślnym urządzeniem.
 2. Przejdź do **Deweloper** w ustawieniach Decky
 3. Zainstaluj z adresu URL:
    `https://github.com/Necrosiak/Streamcord/releases/latest/download/Streamcord.zip`
+
+Vesktop jest instalowany i uruchamiany automatycznie przez wtyczkę przy pierwszym uruchomieniu. Wystarczy zalogować się raz (QR lub pełny ekran) i pozostajesz zalogowany.
 
 ### Wymaganie (udostępnianie ekranu)
 Serwer udostępniania używa systemowego Pythona + GStreamer. Zainstaluj zależności Pythona raz:
@@ -77,3 +77,4 @@ sudo systemctl restart plugin_loader
 - [@aagaming](https://github.com/AAGaming00) — obsługa mikrofonu przez kartę SteamClient (przekazywanie WebRTC)
 - [@Epictek](https://github.com/Epictek) — podstawa logowania kodem QR
 - [@jessebofill](https://github.com/jessebofill) — kod łatania menu Steam
+- [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — natywny klient Discord, którym steruje Streamcord
