@@ -276,6 +276,7 @@ const StatusSelector = () => {
 const Content = () => {
   const state = useStreamcordState();
   const [voiceTab, setVoiceTab] = useState<"servers" | "dms">("servers");
+  const [tabFocus, setTabFocus] = useState<string | null>(null);
   if (!state?.loaded) {
     return (
       <div style={{ display: "flex", justifyContent: "center" }}>
@@ -341,10 +342,19 @@ const Content = () => {
                 <div style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
                   <BtnTab
                     onClick={() => setVoiceTab("servers")}
+                    onFocus={() => setTabFocus("servers")}
+                    onBlur={() => setTabFocus((f) => (f === "servers" ? null : f))}
                     style={{
                       flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
                       fontSize: 11, minHeight: 0, boxSizing: "border-box",
-                      background: voiceTab === "servers" ? "rgba(88,101,242,0.35)" : undefined,
+                      // Texte blanc forcé : sinon le focus natif du DialogButton
+                      // met un fond clair + texte sombre = illisible. On pilote
+                      // nous-mêmes le fond de focus (bleu Discord vif + anneau).
+                      color: "#fff",
+                      background: tabFocus === "servers"
+                        ? "rgba(88,101,242,0.85)"
+                        : voiceTab === "servers" ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
+                      boxShadow: tabFocus === "servers" ? "0 0 0 2px #fff" : "none",
                       fontWeight: voiceTab === "servers" ? 700 : 400,
                     }}
                   >
@@ -352,10 +362,16 @@ const Content = () => {
                   </BtnTab>
                   <BtnTab
                     onClick={() => setVoiceTab("dms")}
+                    onFocus={() => setTabFocus("dms")}
+                    onBlur={() => setTabFocus((f) => (f === "dms" ? null : f))}
                     style={{
                       flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
                       fontSize: 11, minHeight: 0, boxSizing: "border-box",
-                      background: voiceTab === "dms" ? "rgba(88,101,242,0.35)" : undefined,
+                      color: "#fff",
+                      background: tabFocus === "dms"
+                        ? "rgba(88,101,242,0.85)"
+                        : voiceTab === "dms" ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
+                      boxShadow: tabFocus === "dms" ? "0 0 0 2px #fff" : "none",
                       fontWeight: voiceTab === "dms" ? 700 : 400,
                     }}
                   >
