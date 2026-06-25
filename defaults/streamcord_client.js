@@ -137,6 +137,38 @@ window.Vencord.Plugins.plugins.Streamcord = {
             return "0";
         }
 
+        // Le statut Discord (online/idle/dnd/invisible) vit dans le settings proto
+        // "PreloadedUserSettings" (type 1), pas dans un action-creator updateStatus
+        // (qui n'existe plus). On localise le proto store dont getCurrentValue()
+        // expose .status, puis on mute via updateAsync("status", ...).
+        let _statusProtoStore;
+        function getStatusProtoStore() {
+            if (_statusProtoStore) return _statusProtoStore;
+            try {
+                const cache = Vencord.Webpack.wreq && Vencord.Webpack.wreq.c;
+                if (!cache) return null;
+                const test = (m) => {
+                    try {
+                        if (m && typeof m.updateAsync === "function" && m.type === 1 &&
+                            typeof m.getCurrentValue === "function" && m.getCurrentValue().status) return m;
+                    } catch (e) { }
+                    return null;
+                };
+                for (const id in cache) {
+                    try {
+                        const exp = cache[id] && cache[id].exports;
+                        if (!exp) continue;
+                        let s = test(exp);
+                        if (!s && typeof exp === "object") {
+                            for (const k in exp) { s = test(exp[k]); if (s) break; }
+                        }
+                        if (s) { _statusProtoStore = s; return s; }
+                    } catch (e) { }
+                }
+            } catch (e) { }
+            return null;
+        }
+
         let CloudUpload;
         CloudUpload = Vencord.Webpack.findLazy(m => m.prototype?.trackUploadFinished);;
         function sendAttachmentToChannel(channelId, attachment_b64, filename) {
@@ -274,14 +306,21 @@ window.Vencord.Plugins.plugins.Streamcord = {
                                 case "$set_status": {
                                     // data.status: "online" | "idle" | "dnd" | "invisible"
                                     try {
-                                        const mod = Vencord.Webpack.find(m => m && typeof m.updateStatus === "function");
-                                        if (mod) { mod.updateStatus(data.status); console.log("[Streamcord] status → " + data.status); }
-                                        else console.warn("[Streamcord] no updateStatus module");
+                                        const store = getStatusProtoStore();
+                                        if (store) {
+                                            await store.updateAsync("status", (s) => { s.status.value = data.status; }, 0);
+                                            console.log("[Streamcord] status → " + data.status);
+                                        } else console.warn("[Streamcord] proto store status introuvable");
                                     } catch (e) { console.error("[Streamcord] set_status err", e); }
                                     return;
                                 }
                                 case "$get_status": {
                                     try {
+                                        // Le proto store donne la vraie valeur réglée (y compris
+                                        // "invisible", que PresenceStore rapporte comme "offline").
+                                        const store = getStatusProtoStore();
+                                        const protoStatus = store?.getCurrentValue?.()?.status?.status?.value;
+                                        if (protoStatus) { result = { status: protoStatus }; break; }
                                         const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
                                         const PS = Vencord.Webpack.findStore("PresenceStore");
                                         result = { status: PS?.getStatus?.(me.id) || "online" };
