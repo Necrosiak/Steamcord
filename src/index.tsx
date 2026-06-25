@@ -144,8 +144,13 @@ const StatusSelector = () => {
     let lastSteam: number | null = null;
     const readSteam = (): number | null => {
       try {
-        const fs: any = (window as any).friendStore || (window as any).App?.m_FriendStore;
-        const st = fs?.m_self?.persona_state ?? fs?.GetMyPersonaState?.() ?? (window as any).App?.m_CurrentUser?.persona_state;
+        // Le persona local vit dans m_FriendsUIFriendStore.m_eUserPersonaState
+        // (état Steam effectif, EPersonaState: 0 offline,1 online,2 busy,3 away,
+        // 4 snooze,7 invisible). GetPersonaStatePreference() = préférence explicite,
+        // utilisée en repli si l'état effectif manque. Les anciens chemins
+        // (friendStore.m_self.persona_state, App.m_*) renvoyaient toujours undefined.
+        const uifs: any = (window as any).friendStore?.m_FriendsUIFriendStore;
+        const st = uifs?.m_eUserPersonaState ?? uifs?.GetPersonaStatePreference?.();
         return typeof st === "number" ? st : null;
       } catch { return null; }
     };
