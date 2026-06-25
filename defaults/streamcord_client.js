@@ -702,13 +702,20 @@ window.Vencord.Plugins.plugins.Streamcord = {
             }
         };
 
-        Vencord.Webpack.onceReady.then(() => {
-            if (!Vencord.Webpack.Common.UserStore.getCurrentUser()) window.streamcordStartRemoteAuth();
-        });
-        setInterval(() => {
-            if (!Vencord.Webpack.Common.UserStore?.getCurrentUser?.() && !window.STREAMCORD_REMOTE_AUTH_ACTIVE)
-                window.streamcordStartRemoteAuth();
-        }, 15000);
+        // Our custom remote-auth (Python ticket exchange) triggers Discord's hCaptcha,
+        // especially on a flagged IP. In Vesktop we DON'T need it: the native Discord
+        // login page shows its own QR, which startCanvasQRMirror() mirrors to the QAM —
+        // scanning it logs Vesktop in natively, no ticket exchange, no CAPTCHA. So only
+        // run the custom remote-auth in the CEF flow.
+        if (!window.STREAMCORD_IS_VESKTOP) {
+            Vencord.Webpack.onceReady.then(() => {
+                if (!Vencord.Webpack.Common.UserStore.getCurrentUser()) window.streamcordStartRemoteAuth();
+            });
+            setInterval(() => {
+                if (!Vencord.Webpack.Common.UserStore?.getCurrentUser?.() && !window.STREAMCORD_REMOTE_AUTH_ACTIVE)
+                    window.streamcordStartRemoteAuth();
+            }, 15000);
+        }
     }
 };
 
