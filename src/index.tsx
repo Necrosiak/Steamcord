@@ -1,0 +1,424 @@
+import {
+  definePlugin,
+  PanelSection,
+  PanelSectionRow,
+  staticClasses,
+  Router,
+  sleep,
+  Focusable,
+  DialogButton,
+  Toggle,
+  SliderField,
+  Dropdown,
+  findModuleExport,
+} from "@decky/ui";
+import { Component, Suspense, useState } from "react";
+import { FaDiscord } from "react-icons/fa";
+
+class ContentErrorBoundary extends Component<{ children: any }, { hasError: boolean; msg: string }> {
+  state = { hasError: false, msg: "" };
+  static getDerivedStateFromError(e: any) {
+    return { hasError: true, msg: e?.message ?? String(e) };
+  }
+  componentDidCatch(e: any, info: any) {
+    console.error("[Streamcord] QAM render error:", e, info);
+  }
+  render() {
+    if (this.state.hasError)
+      return <div style={{ padding: 8, color: "#ff6b6b", fontSize: 13 }}>⚠ Streamcord render error — check webhelper_js.txt<br />{this.state.msg}</div>;
+    return this.props.children;
+  }
+}
+
+import { patchMenu } from "./patches/menuPatch";
+import { DiscordTab } from "./components/DiscordTab";
+import {
+  useStreamcordState,
+  isLoaded,
+  isLoggedIn,
+} from "./hooks/useStreamcordState";
+
+import { MuteButton } from "./components/buttons/MuteButton";
+import { DeafenButton } from "./components/buttons/DeafenButton";
+import { DisconnectButton } from "./components/buttons/DisconnectButton";
+import { PushToTalkButton } from "./components/buttons/PushToTalk";
+import {
+  VoiceChatChannel,
+  VoiceChatMembers,
+} from "./components/VoiceChatViews";
+import { UploadScreenshot } from "./components/UploadScreenshot";
+import { OpenDiscordButton } from "./components/buttons/OpenCloseDiscordButton";
+import { GoLiveButton } from "./components/buttons/GoLiveButton";
+import { ChannelBrowser } from "./components/ChannelBrowser";
+import { DMBrowser } from "./components/DMBrowser";
+import { t } from "./i18n";
+import {
+  call,
+  toaster,
+  addEventListener,
+  removeEventListener,
+  routerHook,
+} from "@decky/api";
+
+declare global {
+  interface Window {
+    DISCORD_TAB: any;
+    STREAMCORD: {
+      dispatchNotification: any;
+      MIC_PEER_CONNECTION: any;
+    };
+  }
+}
+
+// Safe wrappers for @decky/ui components that may be undefined after a Steam update
+const SP = PanelSection || ((p: any) => <div>{p.children}</div>);
+const SR = PanelSectionRow || ((p: any) => <div>{p.children}</div>);
+const SF = (p: any) => <div style={p.style}>{p.children}</div>;
+
+const NotLoggedIn = ({ qr_login, captcha_needed }: { qr_login?: string; captcha_needed?: boolean }) => {
+  if (captcha_needed) { call("show_discord_login").catch(() => {}); }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", padding: "8px 15px" }}>
+      <h2 style={{ marginBottom: 4 }}>{t("not_connected")}</h2>
+      {qr_login ? (
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontSize: 12, opacity: 0.8, margin: "4px 0 8px" }}>
+            {t("qr_scan")}
+          </p>
+          <img src={qr_login} style={{ width: 160, height: 160, borderRadius: 8, background: "#fff", padding: 4 }} />
+          <p style={{ fontSize: 11, opacity: 0.55, margin: "8px 0 0", lineHeight: 1.4 }}>
+            {t("qr_explain")}
+          </p>
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, opacity: 0.6 }}>{t("qr_loading")}</p>
+      )}
+      {captcha_needed && (
+        <p style={{ fontSize: 12, color: "#ffcc44", margin: "4px 0" }}>
+          {t("captcha_needed")}
+        </p>
+      )}
+      <div style={{ marginTop: 12 }}>
+        <DialogButton onClick={async () => { await call("show_discord_login"); }} style={{ fontSize: 13 }}>
+          {t("login_fullscreen")}
+        </DialogButton>
+        <p style={{ fontSize: 10, opacity: 0.5, margin: "4px 2px 0", lineHeight: 1.35 }}>
+          {t("login_fullscreen_explain")}
+        </p>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <DialogButton onClick={async () => { await call("hide_discord_login"); }} style={{ fontSize: 12 }}>
+          {t("close_discord")}
+        </DialogButton>
+      </div>
+    </div>
+  );
+};
+
+const BtnTab = DialogButton as any;
+
+const Content = () => {
+  const state = useStreamcordState();
+  const [voiceTab, setVoiceTab] = useState<"servers" | "dms">("servers");
+  if (!state?.loaded) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <h2>{t("initializing")}</h2>
+      </div>
+    );
+  } else if (!state?.logged_in) {
+    return <NotLoggedIn qr_login={state?.qr_login} captcha_needed={state?.captcha_needed} />;
+  } else {
+    return (
+      <SP>
+        <div style={{ marginBottom: "12px" }}>
+          <SR>
+            <OpenDiscordButton />
+          </SR>
+        </div>
+        <div style={{ marginBottom: "12px" }}>
+          <SR>
+            <SF style={{ display: "flex", justifyContent: "center" }}>
+              <MuteButton />
+              <DeafenButton />
+              <DisconnectButton />
+            </SF>
+          </SR>
+        </div>
+        <div style={{ marginBottom: "12px" }}>
+          <SR>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <PushToTalkButton />
+            </div>
+          </SR>
+        </div>
+        <hr></hr>
+        <div style={{ marginBottom: "12px" }}>
+          <SR>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+              <img
+                src={
+                  "https://cdn.discordapp.com/avatars/" +
+                  state?.me?.id +
+                  "/" +
+                  state?.me?.avatar +
+                  ".webp"
+                }
+                width={32}
+                height={32}
+                style={{ display: "block", borderRadius: "50%" }}
+              />
+              {state?.me?.username}
+            </span>
+          </SR>
+        </div>
+        <div style={{ marginBottom: "12px" }}>
+          <SR>
+            {state?.vc?.channel_id ? (
+              <>
+                <VoiceChatChannel />
+                <VoiceChatMembers />
+                <div style={{ marginTop: 8 }}>
+                  <GoLiveButton />
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
+                  <BtnTab
+                    onClick={() => setVoiceTab("servers")}
+                    style={{
+                      flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
+                      fontSize: 11, minHeight: 0, boxSizing: "border-box",
+                      background: voiceTab === "servers" ? "rgba(88,101,242,0.35)" : undefined,
+                      fontWeight: voiceTab === "servers" ? 700 : 400,
+                    }}
+                  >
+                    🔊 {t("tab_servers")}
+                  </BtnTab>
+                  <BtnTab
+                    onClick={() => setVoiceTab("dms")}
+                    style={{
+                      flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
+                      fontSize: 11, minHeight: 0, boxSizing: "border-box",
+                      background: voiceTab === "dms" ? "rgba(88,101,242,0.35)" : undefined,
+                      fontWeight: voiceTab === "dms" ? 700 : 400,
+                    }}
+                  >
+                    💬 {t("tab_dms")}
+                  </BtnTab>
+                </div>
+                {voiceTab === "servers" ? <ChannelBrowser /> : <DMBrowser />}
+              </>
+            )}
+          </SR>
+        </div>
+        <SR>
+          <UploadScreenshot />
+        </SR>
+      </SP>
+    );
+  }
+};
+
+export default definePlugin(() => {
+  // Workaround for DeckyLoader v3.2.4 + Steam update (24/06/2026) incompatibility:
+  // After Steam update, some components (e.g. ValveToastRenderer) changed from class to
+  // function components. FCTrampoline incorrectly sets isReactComponent=true on them,
+  // causing React to call `new fn()` → fn returns JSX → `instance.render` crashes.
+  //
+  // Fix 1: scan webpack modules and remove FCTrampoline wrapping from any function
+  // component it incorrectly wrapped (function components have Object.prototype as their
+  // prototype's parent, not React.Component.prototype).
+  try {
+    const broken: any[] = [];
+    findModuleExport((e: any) => {
+      if (typeof e === 'function' &&
+          e.prototype?.isReactComponent === true &&
+          Object.getPrototypeOf(e.prototype) === Object.prototype) {
+        broken.push(e);
+      }
+      return false; // scan all modules
+    });
+    broken.forEach((fn: any) => {
+      delete fn.prototype.render;
+      delete fn.prototype.isReactComponent;
+      try { delete fn.prototype.updater; } catch (_) {}
+      try { delete fn.prototype.getDerivedStateFromProps; } catch (_) {}
+      try { delete (fn as any).contextType; } catch (_) {}
+      console.log('[Streamcord] FCTrampoline unwrapped from function component:', fn.name || '(anon)');
+    });
+    if (broken.length > 0)
+      console.log('[Streamcord] Fixed ' + broken.length + ' bad FCTrampoline wrapping(s)');
+  } catch (e) {
+    console.warn('[Streamcord] FCTrampoline unwrap scan failed:', e);
+  }
+
+  // Fix 2: prevent createElement from being stubbed (belt-and-suspenders)
+  // If any wrapped function component was missed by the scan, the stub would
+  // still crash React. This ensures createElement always returns the real implementation.
+  try {
+    const _origCE = (window as any).SP_REACT?.createElement;
+    if (_origCE) {
+      Object.defineProperty((window as any).SP_REACT, 'createElement', {
+        get: () => _origCE, set: () => {}, configurable: true,
+      });
+    }
+    const _jsx = (window as any).SP_JSX;
+    if (_jsx) {
+      const _origJsx = _jsx.jsx;
+      const _origJsxs = _jsx.jsxs;
+      if (_origJsx) Object.defineProperty(_jsx, 'jsx', { get: () => _origJsx, set: () => {}, configurable: true });
+      if (_origJsxs) Object.defineProperty(_jsx, 'jsxs', { get: () => _origJsxs, set: () => {}, configurable: true });
+    }
+  } catch (e) {
+    console.warn('[Streamcord] createElement guard failed:', e);
+  }
+
+  // Diagnostic: which @decky/ui components are defined after Steam update?
+  console.log('[Streamcord] PanelSection=' + !!PanelSection + ' PanelSectionRow=' + !!PanelSectionRow +
+    ' Focusable=' + !!Focusable + ' DialogButton=' + !!DialogButton +
+    ' Toggle=' + !!Toggle + ' SliderField=' + !!SliderField + ' Dropdown=' + !!Dropdown);
+
+  window.STREAMCORD = {
+    dispatchNotification: (payload: { title: string; body: string; kind?: string }) => {
+      console.log("Dispatching Streamcord notification: ", payload);
+      // Incoming DM call: localize the title to the SteamOS language.
+      const title = payload.kind === "call" ? `📞 ${t("incoming_call")}` : payload.title;
+      toaster.toast({ title, body: payload.body });
+    },
+    MIC_PEER_CONNECTION: undefined,
+  };
+
+  // Mic relay: the hidden Discord tab can't capture the mic, so it sends us an
+  // offer; we capture the REAL mic here in SharedJSContext and answer. Without
+  // this, others can't hear the user.
+  let peerConnection: RTCPeerConnection;
+  const webrtcEventListener = async (data: any) => {
+    if (!data) return;
+    if (data.offer) {
+      console.log("[Streamcord] mic: offer received, capturing mic");
+      if (peerConnection) peerConnection.close();
+      peerConnection = new RTCPeerConnection();
+      window.STREAMCORD.MIC_PEER_CONNECTION = peerConnection;
+      const localStream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        },
+      });
+      localStream.getTracks().forEach((track) => {
+        peerConnection.addTrack(track, localStream);
+      });
+      await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(data.offer)
+      );
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      // Non-trickle ICE: wait for gathering so candidates are in the answer SDP.
+      await new Promise<void>((res) => {
+        if (peerConnection.iceGatheringState === "complete") return res();
+        const cb = () => {
+          if (peerConnection.iceGatheringState === "complete") {
+            peerConnection.removeEventListener("icegatheringstatechange", cb);
+            res();
+          }
+        };
+        peerConnection.addEventListener("icegatheringstatechange", cb);
+        setTimeout(res, 2000);
+      });
+      console.log("[Streamcord] mic: sending answer");
+      await call("mic_webrtc_answer", peerConnection.localDescription);
+    } else if (data.ice) {
+      try {
+        while (peerConnection.remoteDescription == null) await sleep(10);
+        await peerConnection.addIceCandidate(data.ice);
+      } catch (e) {
+        console.error("[Streamcord] mic: error adding ice candidate", e);
+      }
+    }
+  };
+  addEventListener("webrtc", webrtcEventListener);
+
+  // Always follow the default audio INPUT automatically: when a mic is plugged
+  // in/out (headset, RØDECaster…), swap the relayed track for the new default
+  // without renegotiating. (Output already follows: Discord is set to "default",
+  // so PipeWire routes playback to the current default sink.)
+  navigator.mediaDevices.addEventListener("devicechange", async () => {
+    try {
+      if (!peerConnection) return;
+      const sender = peerConnection.getSenders().find((s) => s.track && s.track.kind === "audio");
+      if (!sender) return;
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      const newTrack = newStream.getAudioTracks()[0];
+      if (newTrack) {
+        await sender.replaceTrack(newTrack);
+        console.log("[Streamcord] mic: followed new default input device");
+      }
+    } catch (e) {
+      console.error("[Streamcord] mic: devicechange follow failed", e);
+    }
+  });
+
+  let settingsChangeUnregister: any;
+  const appLifetimeUnregister =
+    SteamClient.GameSessions.RegisterForAppLifetimeNotifications(async () => {
+      await sleep(500);
+      setPlaying();
+    }).unregister;
+  const unpatchMenu = patchMenu();
+
+  const setPlaying = () => {
+    const app = Router.MainRunningApp;
+    call("set_rpc", app !== undefined ? app?.display_name : null);
+  };
+
+  let lastDisplayIsExternal = false;
+  (async () => {
+    await isLoaded();
+
+    settingsChangeUnregister = SteamClient.Settings.RegisterForSettingsChanges(
+      async (settings: any) => {
+        if (settings.bDisplayIsExternal != lastDisplayIsExternal) {
+          lastDisplayIsExternal = settings.bDisplayIsExternal;
+          const bounds: any = await call("get_screen_bounds");
+          window.DISCORD_TAB.HEIGHT = bounds.height;
+          window.DISCORD_TAB.WIDTH = bounds.width;
+          window.DISCORD_TAB.m_browserView.SetBounds(
+            0,
+            0,
+            bounds.width,
+            bounds.height
+          );
+        }
+      }
+    );
+    await isLoggedIn();
+    setPlaying();
+  })();
+
+  routerHook.addRoute("/discord", () => {
+    return <DiscordTab />;
+  });
+
+  return {
+    title: <div className={staticClasses.Title}>Streamcord</div>,
+    content: <Suspense fallback={<div style={{ padding: 8 }}>{t("loading")}</div>}><ContentErrorBoundary><Content /></ContentErrorBoundary></Suspense>,
+    icon: <FaDiscord />,
+    onDismount() {
+      routerHook.removeRoute("/discord");
+      unpatchMenu();
+      removeEventListener("webrtc", webrtcEventListener);
+      try {
+        appLifetimeUnregister();
+        settingsChangeUnregister();
+      } catch (error) { }
+    },
+    alwaysRender: true,
+  };
+});
