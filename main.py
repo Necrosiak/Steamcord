@@ -27,7 +27,21 @@ from tab_utils.tab import (
 )
 from tab_utils.cdp import Tab, get_tab
 from discord_client.event_handler import EventHandler
-import updater
+
+# Decky enregistre son PROPRE module `updater` dans sys.modules, donc un simple
+# `import updater` renvoie CELUI-LÀ (qui n'a pas is_autoupdate_enabled) au lieu du
+# updater.py du plugin → l'auto-update a silencieusement cassé après une MAJ Decky
+# ("module 'decky_loader.updater' has no attribute 'is_autoupdate_enabled'"). On
+# charge notre fichier explicitement par chemin (nom unique) pour éviter la collision.
+import importlib.util as _ilu
+# Charger depuis defaults/ (toujours synchronisé par le deploy + présent dans le zip)
+# plutôt que la copie racine ; nom de module unique pour éviter la collision Decky.
+_upath = Path(DECKY_PLUGIN_DIR) / "defaults" / "updater.py"
+if not _upath.exists():
+    _upath = Path(DECKY_PLUGIN_DIR) / "updater.py"
+_uspec = _ilu.spec_from_file_location("sc_updater", str(_upath))
+updater = _ilu.module_from_spec(_uspec)
+_uspec.loader.exec_module(updater)
 
 logger.setLevel(INFO)
 

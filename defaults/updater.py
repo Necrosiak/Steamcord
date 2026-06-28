@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import shutil
+import ssl
 import subprocess
 import tempfile
 import urllib.request
@@ -20,6 +21,22 @@ import zipfile
 from pathlib import Path
 
 from decky import logger, DECKY_PLUGIN_DIR  # type: ignore
+
+
+def _ssl_context():
+    """Le Python embarqué de plugin_loader (PyInstaller) n'embarque pas de bundle CA
+    → urllib échoue en 'CERTIFICATE_VERIFY_FAILED'. On pointe explicitement le bundle
+    CA du système (présent sur Bazzite/Fedora) pour une vérif TLS correcte."""
+    for ca in ("/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/cert.pem"):
+        if os.path.exists(ca):
+            try:
+                return ssl.create_default_context(cafile=ca)
+            except Exception:
+                pass
+    try:
+        return ssl.create_default_context()
+    except Exception:
+        return None
 
 # --- per-plugin configuration -------------------------------------------------
 GITHUB_REPO = "Necrosiak/Steamcord"
@@ -71,7 +88,7 @@ def _fetch_latest_blocking() -> dict:
         RELEASES_API,
         headers={"User-Agent": _USER_AGENT, "Accept": "application/vnd.github+json"},
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as resp:
         rel = json.loads(resp.read().decode("utf-8"))
 
     tag = rel.get("tag_name") or rel.get("name") or ""
@@ -127,7 +144,7 @@ def _apply_blocking(url: str) -> None:
         tmp = Path(tmp)
         zip_path = tmp / "update.zip"
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-        with urllib.request.urlopen(req, timeout=120) as resp, open(zip_path, "wb") as f:
+        with urllib.request.urlopen(req, timeout=120, context=_ssl_context()) as resp, open(zip_path, "wb") as f:
             shutil.copyfileobj(resp, f)
 
         extract_dir = tmp / "x"
