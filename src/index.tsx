@@ -55,7 +55,6 @@ import { TextChat } from "./components/TextChat";
 import { t } from "./i18n";
 import {
   call,
-  toaster,
   addEventListener,
   removeEventListener,
   routerHook,
@@ -698,19 +697,24 @@ export default definePlugin(() => {
       console.log("Dispatching Steamcord notification: ", payload);
       // Incoming DM call: localize the title to the SteamOS language.
       const title = payload.kind === "call" ? `📞 ${t("incoming_call")}` : payload.title;
-      const isCall = payload.kind === "call";
-      // Options explicites : sans elles le toast était seulement journalisé (visible
-      // dans le panneau de notifs Steam) mais peu/pas affiché en jeu. duration longue,
-      // son + popup forcé ; les appels entrants sont marqués critical (priorité haute).
-      toaster.toast({
-        title,
-        body: payload.body,
-        duration: isCall ? 15000 : 6000,
-        critical: isCall,
-        playSound: true,
-        sound: 6,
-        showToast: true,
-      } as any);
+      // NE PAS utiliser Decky `toaster.toast` : sur ce build de Steam ça crée des
+      // entrées de notif SANS `notification_type` → aucun popup ET ça FAIT PLANTER
+      // le panneau de notifs Steam ("Cannot read properties of undefined (reading
+      // 'notification_type')"). On passe par l'API NATIVE Steam avec un type qui a
+      // popup+son d'activés : EClientUINotificationType 1 (GroupChatMessage) — le
+      // type 2 (FriendChatMessage) est en panneau-seul ici. Le type porte un vrai
+      // notification_type → plus de crash, ET popup + son OK (validé en live).
+      try {
+        const App = (window as any).App;
+        const steamid = App?.GetCurrentUser?.()?.strSteamID || App?.m_CurrentUser?.strSteamID || "";
+        (window as any).SteamClient?.ClientNotifications?.DisplayClientNotification?.(
+          1,
+          JSON.stringify({ title, body: payload.body, state: "active", steamid }),
+          () => {},
+        );
+      } catch (e) {
+        console.error("[Steamcord] notification failed", e);
+      }
     },
     MIC_PEER_CONNECTION: undefined,
   };

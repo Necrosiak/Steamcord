@@ -247,10 +247,16 @@ class Plugin:
     @classmethod
     async def _toast(cls, title, body):
         try:
-            payload = dumps({"title": title, "body": body})
+            # API NATIVE Steam (DisplayClientNotification, type 1) au lieu du toaster
+            # Decky : ce dernier crée des notifs sans `notification_type` qui ne font
+            # pas de popup ET font planter le panneau de notifs Steam sur ce build.
+            payload = dumps({"title": title, "body": body, "state": "active"}).replace("\\", "\\\\").replace("'", "\\'")
             await cls.shared_js_tab.ensure_open()
             await cls.shared_js_tab.evaluate(
-                f"DeckyPluginLoader.toaster.toast(JSON.parse('{payload}'));"
+                "(()=>{const o=JSON.parse('" + payload + "');"
+                "const A=window.App;o.steamid=A&&A.GetCurrentUser&&A.GetCurrentUser()?A.GetCurrentUser().strSteamID:'';"
+                "window.SteamClient&&window.SteamClient.ClientNotifications&&"
+                "window.SteamClient.ClientNotifications.DisplayClientNotification(1,JSON.stringify(o),function(){});})()"
             )
         except Exception as e:
             logger.debug(f"toast failed: {e}")

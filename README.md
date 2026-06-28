@@ -25,16 +25,18 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 
 - **QR code login** — Scan a QR code with the Discord mobile app to log in instantly. On your phone: *Discord → Settings → Scan QR Code*, then aim at the code shown in the panel. No password typing on the Deck.
 - **Fullscreen login (fallback)** — Opens Discord full-screen to log in with email/password or solve a CAPTCHA when QR isn't possible.
-- **Voice chat** — Join voice channels and hear everyone, with each member shown live (speaking ring, mute/deafen badges) and a per-user volume slider (0–200%). Mic and audio are native (Vesktop).
+- **Unified navigation** — Top tabs **Voice / Text / ⚙️ Settings**, with a shared **Servers / DMs** switch underneath, so the same source toggle works for both voice and text.
+- **Voice chat** — Join voice channels and hear everyone, with each member shown live (speaking ring, mute/deafen badges), a per-user volume slider (0–200%) **and a per-user local mute** (silence someone just for you, without them knowing). Mic and audio are native (Vesktop).
 - **Private messages (DMs & Group DMs)** — Browse your conversations and start/join voice calls with friends directly from the Quick Access Menu. Active calls are highlighted.
 - **Server voice browser** — See which voice channels have people in them (with member avatars) before joining.
-- **Text channels** — Read a server channel's recent messages from the QAM and reply with the Steam on-screen keyboard (it opens automatically when you focus the input).
-- **Discord status** — Set your status (online / idle / do-not-disturb / invisible) from the QAM. Optional auto-sync makes Discord **follow your Steam status** in the background; picking a status by hand switches back to manual.
+- **Text chat — servers *and* DMs** — Read and reply to a server channel **or a private conversation** from the QAM (full-width input, Steam keyboard opens automatically). **Image attachments show as thumbnails** (loaded only while the channel is open) and **links open in the Steam Gaming Mode browser**. Auto-scrolls to the latest message.
+- **Discord status on your name** — Your **clickable username** at the top shows your current status; tap it to change it. Optional auto-sync makes Discord **follow your Steam status** in the background; picking one by hand switches back to manual.
+- **Audio device selection** — From Settings, choose the **output (Discord sound)** and **input (microphone)** device — *Auto (system default)* or a specific device, e.g. send Discord audio to your **headset only** while games stay on HDMI.
 - **Mute / Deafen / Disconnect** — One-tap voice controls from the QAM.
-- **Go Live (screen share)** — Share your whole screen to a voice channel.
-- **In-game notifications** — DM and ping notifications appear as Steam toasts (and respect your Discord status — silenced when invisible / do-not-disturb).
+- **Screen share** — Share your whole screen to a voice channel (Go Live).
+- **In-game notifications** — Incoming DM calls and pings appear as **native Steam notifications (popup + sound)**, respecting your Discord status (silenced when invisible / do-not-disturb).
 - **Push-to-talk** — With a physical keybind (R5 by default).
-- **Post screenshots** — Send a Steam screenshot to any Discord channel.
+- **Share screenshots** — Send a Steam screenshot straight into the conversation you have open.
 - **[Vencord](https://vencord.dev/)** is built into Vesktop, giving access to its plugin ecosystem.
 
 ---
