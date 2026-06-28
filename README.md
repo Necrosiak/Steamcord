@@ -1,10 +1,10 @@
-# Streamcord
+# Steamcord
 
 **Discord in Steam Gaming Mode** — a [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin for Steam Deck / Bazzite / SteamOS.
 
 🌍 **Languages:** **English** · [Français](docs/README.fr.md) · [Deutsch](docs/README.de.md) · [Español](docs/README.es.md) · [Italiano](docs/README.it.md) · [Português](docs/README.pt.md) · [Nederlands](docs/README.nl.md) · [Polski](docs/README.pl.md) · [Русский](docs/README.ru.md)
 
-> **Streamcord is an independent project.** It was originally inspired by
+> **Steamcord is an independent project.** It was originally inspired by
 > [Deckcord](https://github.com/marios8543/Deckcord) (see Credits), but the codebase has been
 > largely rewritten and now follows its own direction — it is not affiliated with or endorsed
 > by that project.
@@ -15,7 +15,7 @@
 
 ## How it works
 
-Streamcord runs **[Vesktop](https://github.com/Vencord/Vesktop)** — a real, native Discord client — invisibly in the background, and drives it over the Chrome DevTools Protocol. The plugin injects a small client into it and exposes everything in the Steam **Quick Access Menu**.
+Steamcord runs **[Vesktop](https://github.com/Vencord/Vesktop)** — a real, native Discord client — invisibly in the background, and drives it over the Chrome DevTools Protocol. The plugin injects a small client into it and exposes everything in the Steam **Quick Access Menu**.
 
 Going native fixes the hard problems of the old hidden-browser approach: **your microphone and the voice audio work natively**, exactly as in the desktop Discord app — no capture hacks, no autoplay workarounds. Vesktop is launched (and installed if missing) automatically, stays logged in across reboots, and never needs a desktop window in Gaming Mode.
 
@@ -46,7 +46,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 1. Enable **Developer Mode** in Decky → General settings
 2. Go to **Developer** in Decky settings
 3. Install from URL:
-   `https://github.com/Necrosiak/Streamcord/releases/latest/download/Streamcord.zip`
+   `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
 
 Vesktop is installed and launched automatically by the plugin the first time it runs. Just log in once (QR or fullscreen) and you stay logged in.
 
@@ -61,11 +61,11 @@ python -m pip install --user aiohttp aiohttp_cors
 ## Build from source
 
 ```bash
-git clone https://github.com/Necrosiak/Streamcord
-cd Streamcord
+git clone https://github.com/Necrosiak/Steamcord
+cd Steamcord
 pnpm install
 pnpm run build
-# copy dist/, main.py, defaults/, plugin.json, package.json to ~/homebrew/plugins/Streamcord/
+# copy dist/, main.py, defaults/, plugin.json, package.json to ~/homebrew/plugins/Steamcord/
 sudo systemctl restart plugin_loader
 ```
 
@@ -77,4 +77,4 @@ sudo systemctl restart plugin_loader
 - [@aagaming](https://github.com/AAGaming00) — mic support via the SteamClient tab (WebRTC relay)
 - [@Epictek](https://github.com/Epictek) — QR Code login foundation
 - [@jessebofill](https://github.com/jessebofill) — Steam menu patching code
-- [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — the native Discord client Streamcord drives
+- [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — the native Discord client Steamcord drives

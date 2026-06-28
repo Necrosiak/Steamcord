@@ -90,7 +90,7 @@ async def setup_discord_tab(tab: Tab):
             "source": 
                 "Object.hasOwn = (obj, prop) => Object.prototype.hasOwnProperty.call(obj, prop)" +
                 await fetch_vencord() +
-                open(Path(__file__).parent.parent.joinpath("streamcord_client.js"), "r").read() +
+                open(Path(__file__).parent.parent.joinpath("steamcord_client.js"), "r").read() +
                 open(Path(__file__).parent.parent.joinpath("webrtc_client.js"), "r").read(),
             "runImmediately": True
         }

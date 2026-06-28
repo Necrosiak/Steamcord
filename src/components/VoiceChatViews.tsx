@@ -1,13 +1,13 @@
 import { call } from "@decky/api";
 import { useState } from "react";
-import { useStreamcordState } from "../hooks/useStreamcordState";
+import { useSteamcordState } from "../hooks/useSteamcordState";
 import { t } from "../i18n";
 import { SliderField } from "@decky/ui";
 
 const SliderFieldAny = SliderField as any;
 
 export function VoiceChatChannel() {
-  const state = useStreamcordState();
+  const state = useSteamcordState();
   if (!state?.vc) return <div />;
   // DM calls have no guild — the backend sends null and we localize the label.
   return (
@@ -89,7 +89,7 @@ function UserRow({ user }: { user: any }) {
 }
 
 export function VoiceChatMembers() {
-  const state = useStreamcordState();
+  const state = useSteamcordState();
   if (!state?.vc?.users) return <div />;
   return (
     <ul style={{ margin: 0, padding: 0 }}>

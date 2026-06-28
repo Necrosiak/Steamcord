@@ -22,11 +22,11 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
     return { hasError: true, msg: e?.message ?? String(e) };
   }
   componentDidCatch(e: any, info: any) {
-    console.error("[Streamcord] QAM render error:", e, info);
+    console.error("[Steamcord] QAM render error:", e, info);
   }
   render() {
     if (this.state.hasError)
-      return <div style={{ padding: 8, color: "#ff6b6b", fontSize: 13 }}>⚠ Streamcord render error — check webhelper_js.txt<br />{this.state.msg}</div>;
+      return <div style={{ padding: 8, color: "#ff6b6b", fontSize: 13 }}>⚠ Steamcord render error — check webhelper_js.txt<br />{this.state.msg}</div>;
     return this.props.children;
   }
 }
@@ -34,10 +34,10 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 import { patchMenu } from "./patches/menuPatch";
 import { DiscordTab } from "./components/DiscordTab";
 import {
-  useStreamcordState,
+  useSteamcordState,
   isLoaded,
   isLoggedIn,
-} from "./hooks/useStreamcordState";
+} from "./hooks/useSteamcordState";
 
 import { MuteButton } from "./components/buttons/MuteButton";
 import { DeafenButton } from "./components/buttons/DeafenButton";
@@ -64,7 +64,7 @@ import {
 declare global {
   interface Window {
     DISCORD_TAB: any;
-    STREAMCORD: {
+    STEAMCORD: {
       dispatchNotification: any;
       MIC_PEER_CONNECTION: any;
     };
@@ -118,6 +118,46 @@ const NotLoggedIn = ({ qr_login, captcha_needed }: { qr_login?: string; captcha_
 
 const BtnTab = DialogButton as any;
 
+// Onglet de navigation (Vocal/Conversations, Serveurs/MP). Texte blanc forcé :
+// sinon le focus natif du DialogButton met un fond clair + texte sombre =
+// illisible. On pilote nous-mêmes le fond actif/focus (bleu Discord + anneau).
+const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children }: any) => (
+  <BtnTab
+    onClick={onClick}
+    onFocus={onFocus}
+    onBlur={onBlur}
+    style={{
+      flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
+      fontSize: fontSize ?? 11, minHeight: 0, boxSizing: "border-box",
+      color: "#fff",
+      background: focused
+        ? "rgba(88,101,242,0.85)"
+        : active ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
+      boxShadow: focused ? "0 0 0 2px #fff" : "none",
+      fontWeight: active ? 700 : 400,
+    }}
+  >
+    {children}
+  </BtnTab>
+);
+
+// Bouton pleine largeur (Parcourir Discord / Retour à l'appel).
+const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => (
+  <BtnTab
+    onClick={onClick}
+    onFocus={onFocus}
+    onBlur={onBlur}
+    style={{
+      width: "100%", margin: 0, padding: "4px 0", fontSize: 11, minHeight: 0,
+      boxSizing: "border-box", color: "#fff",
+      background: focused ? "rgba(88,101,242,0.85)" : "rgba(255,255,255,0.06)",
+      boxShadow: focused ? "0 0 0 2px #fff" : "none",
+    }}
+  >
+    {children}
+  </BtnTab>
+);
+
 const STATUSES: { id: string; emoji: string; color: string }[] = [
   { id: "online", emoji: "🟢", color: "#23a55a" },
   { id: "idle", emoji: "🌙", color: "#f0b232" },
@@ -134,7 +174,7 @@ const steamToDiscord = (s: number): string =>
 // indépendante de l'ouverture du QAM. Le flag "auto" est persisté ; un pub-sub
 // minimal reflète dans l'UI le statut posé par le poll.
 
-const STATUS_AUTO_KEY = "streamcord_status_auto";
+const STATUS_AUTO_KEY = "steamcord_status_auto";
 const getAutoSync = (): boolean => {
   try { return localStorage.getItem(STATUS_AUTO_KEY) !== "0"; } catch { return true; } // défaut ON
 };
@@ -157,7 +197,7 @@ const statusListeners = new Set<(s: string) => void>();
 const applyDiscordStatus = async (id: string) => {
   currentDiscordStatus = id;
   statusListeners.forEach((fn) => { try { fn(id); } catch { } });
-  try { await call("set_discord_status", id); } catch (e) { console.error("[Streamcord] set_discord_status", e); }
+  try { await call("set_discord_status", id); } catch (e) { console.error("[Steamcord] set_discord_status", e); }
 };
 
 let _statusLastSteam: number | null = null;
@@ -175,7 +215,7 @@ const startStatusSync = () => {
       _statusLastSteam = s;
       const disc = steamToDiscord(s);
       if (disc !== currentDiscordStatus) {
-        console.log("[Streamcord] auto: Steam persona " + s + " → Discord " + disc);
+        console.log("[Steamcord] auto: Steam persona " + s + " → Discord " + disc);
         applyDiscordStatus(disc);
       }
     }
@@ -274,10 +314,92 @@ const StatusSelector = () => {
   );
 };
 
+const UpdaterSection = () => {
+  const [auto, setAuto] = useState(true);
+  const [status, setStatus] = useState<
+    "idle" | "checking" | "available" | "uptodate" | "installing"
+  >("idle");
+  const [latest, setLatest] = useState("");
+  const [current, setCurrent] = useState("");
+  const [url, setUrl] = useState("");
+  const [focused, setFocused] = useState<string | null>(null);
+
+  useEffect(() => {
+    call<[], boolean>("get_autoupdate").then((v) => setAuto(!!v)).catch(() => {});
+  }, []);
+
+  const doCheck = async () => {
+    setStatus("checking");
+    try {
+      const info: any = await call<[], any>("check_update");
+      setCurrent(info?.current || "");
+      if (info?.update_available) {
+        setLatest(info.latest);
+        setUrl(info.url);
+        setStatus("available");
+      } else {
+        setStatus("uptodate");
+      }
+    } catch {
+      setStatus("idle");
+    }
+  };
+
+  const doInstall = async () => {
+    setStatus("installing");
+    // The backend unpacks the release and restarts plugin_loader on success.
+    try { await call<[string], boolean>("apply_update", url); } catch {}
+  };
+
+  const onToggle = (v: boolean) => {
+    setAuto(v);
+    call<[boolean], boolean>("set_autoupdate", v).catch(() => {});
+  };
+
+  const label =
+    status === "checking" ? t("update_checking")
+    : status === "installing" ? t("update_installing")
+    : status === "available" ? t("update_install", { v: latest })
+    : status === "uptodate" ? t("update_up_to_date", { v: current })
+    : t("update_check");
+
+  return (
+    <>
+      <SR>
+        <ToggleField
+          label={t("update_auto")}
+          checked={auto}
+          onChange={onToggle}
+          bottomSeparator="none"
+        />
+      </SR>
+      <SR>
+        <WideBtn
+          onClick={status === "available" ? doInstall : doCheck}
+          focused={focused === "upd"}
+          onFocus={() => setFocused("upd")}
+          onBlur={() => setFocused((f) => (f === "upd" ? null : f))}
+        >
+          🔄 {label}
+        </WideBtn>
+      </SR>
+    </>
+  );
+};
+
 const Content = () => {
-  const state = useStreamcordState();
+  const state = useSteamcordState();
+  const [topTab, setTopTab] = useState<"voice" | "convs">("voice");
   const [voiceTab, setVoiceTab] = useState<"servers" | "dms">("servers");
   const [tabFocus, setTabFocus] = useState<string | null>(null);
+  // En appel : la vue par défaut est l'appel en cours. « Parcourir Discord »
+  // bascule browsing=true pour révéler la navigation SANS quitter l'appel.
+  const [browsing, setBrowsing] = useState(false);
+
+  const inCall = !!state?.vc?.channel_id;
+  // Chaque début/fin d'appel ramène à la vue naturelle (appel si en appel).
+  useEffect(() => { setBrowsing(false); }, [inCall]);
+
   if (!state?.loaded) {
     return (
       <div style={{ display: "flex", justifyContent: "center" }}>
@@ -328,56 +450,87 @@ const Content = () => {
         <div style={{ marginBottom: "12px" }}>
           <StatusSelector />
         </div>
+        {/* Navigation Discord : onglets Vocal / Messages TOUJOURS visibles,
+            même en appel. Permet de consulter la messagerie ou de rejoindre un
+            autre serveur sans quitter l'appel vocal en cours. */}
         <div style={{ marginBottom: "12px" }}>
           <SR>
-            {state?.vc?.channel_id ? (
+            {/* Onglets de haut niveau (persistants) : Vocal / Messages */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
+              <TabBtn
+                active={topTab === "voice"} focused={tabFocus === "top-voice"}
+                onClick={() => setTopTab("voice")}
+                onFocus={() => setTabFocus("top-voice")}
+                onBlur={() => setTabFocus((f) => (f === "top-voice" ? null : f))}
+              >
+                {inCall ? "📞" : "🎧"} {t("tab_voice")}
+              </TabBtn>
+              <TabBtn
+                active={topTab === "convs"} focused={tabFocus === "top-convs"}
+                onClick={() => setTopTab("convs")}
+                onFocus={() => setTabFocus("top-convs")}
+                onBlur={() => setTabFocus((f) => (f === "top-convs" ? null : f))}
+              >
+                💬 {t("tab_conversations")}
+              </TabBtn>
+            </div>
+
+            {topTab === "convs" ? (
+              // ── Messagerie texte : accessible à tout moment, même en appel ──
+              <TextChat embedded />
+            ) : inCall && !browsing ? (
+              // ── Onglet Vocal, en appel : vue de l'appel en cours ──
               <>
                 <VoiceChatChannel />
                 <VoiceChatMembers />
                 <div style={{ marginTop: 8 }}>
                   <GoLiveButton />
                 </div>
+                {/* Rejoindre un AUTRE vocal sans quitter l'appel courant. */}
+                <div style={{ marginTop: 8 }}>
+                  <WideBtn
+                    onClick={() => setBrowsing(true)}
+                    focused={tabFocus === "browse"}
+                    onFocus={() => setTabFocus("browse")}
+                    onBlur={() => setTabFocus((f) => (f === "browse" ? null : f))}
+                  >
+                    📂 {t("browse_discord")}
+                  </WideBtn>
+                </div>
               </>
             ) : (
+              // ── Onglet Vocal, navigation : browser Serveurs / MP ──
               <>
+                {inCall && (
+                  <div style={{ marginBottom: 6 }}>
+                    <WideBtn
+                      onClick={() => setBrowsing(false)}
+                      focused={tabFocus === "back"}
+                      onFocus={() => setTabFocus("back")}
+                      onBlur={() => setTabFocus((f) => (f === "back" ? null : f))}
+                    >
+                      ← {t("back_to_call")}
+                    </WideBtn>
+                  </div>
+                )}
+                {/* Sous-bascule Serveurs / MP */}
                 <div style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
-                  <BtnTab
+                  <TabBtn
+                    active={voiceTab === "servers"} focused={tabFocus === "servers"}
                     onClick={() => setVoiceTab("servers")}
                     onFocus={() => setTabFocus("servers")}
                     onBlur={() => setTabFocus((f) => (f === "servers" ? null : f))}
-                    style={{
-                      flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
-                      fontSize: 11, minHeight: 0, boxSizing: "border-box",
-                      // Texte blanc forcé : sinon le focus natif du DialogButton
-                      // met un fond clair + texte sombre = illisible. On pilote
-                      // nous-mêmes le fond de focus (bleu Discord vif + anneau).
-                      color: "#fff",
-                      background: tabFocus === "servers"
-                        ? "rgba(88,101,242,0.85)"
-                        : voiceTab === "servers" ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
-                      boxShadow: tabFocus === "servers" ? "0 0 0 2px #fff" : "none",
-                      fontWeight: voiceTab === "servers" ? 700 : 400,
-                    }}
                   >
                     🔊 {t("tab_servers")}
-                  </BtnTab>
-                  <BtnTab
+                  </TabBtn>
+                  <TabBtn
+                    active={voiceTab === "dms"} focused={tabFocus === "dms"}
                     onClick={() => setVoiceTab("dms")}
                     onFocus={() => setTabFocus("dms")}
                     onBlur={() => setTabFocus((f) => (f === "dms" ? null : f))}
-                    style={{
-                      flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
-                      fontSize: 11, minHeight: 0, boxSizing: "border-box",
-                      color: "#fff",
-                      background: tabFocus === "dms"
-                        ? "rgba(88,101,242,0.85)"
-                        : voiceTab === "dms" ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
-                      boxShadow: tabFocus === "dms" ? "0 0 0 2px #fff" : "none",
-                      fontWeight: voiceTab === "dms" ? 700 : 400,
-                    }}
                   >
                     💬 {t("tab_dms")}
-                  </BtnTab>
+                  </TabBtn>
                 </div>
                 {voiceTab === "servers" ? <ChannelBrowser /> : <DMBrowser />}
               </>
@@ -385,14 +538,11 @@ const Content = () => {
           </SR>
         </div>
         <hr />
-        <div style={{ marginBottom: "12px" }}>
-          <SR>
-            <TextChat />
-          </SR>
-        </div>
         <SR>
           <UploadScreenshot />
         </SR>
+        <hr />
+        <UpdaterSection />
       </SP>
     );
   }
@@ -423,12 +573,12 @@ export default definePlugin(() => {
       try { delete fn.prototype.updater; } catch (_) {}
       try { delete fn.prototype.getDerivedStateFromProps; } catch (_) {}
       try { delete (fn as any).contextType; } catch (_) {}
-      console.log('[Streamcord] FCTrampoline unwrapped from function component:', fn.name || '(anon)');
+      console.log('[Steamcord] FCTrampoline unwrapped from function component:', fn.name || '(anon)');
     });
     if (broken.length > 0)
-      console.log('[Streamcord] Fixed ' + broken.length + ' bad FCTrampoline wrapping(s)');
+      console.log('[Steamcord] Fixed ' + broken.length + ' bad FCTrampoline wrapping(s)');
   } catch (e) {
-    console.warn('[Streamcord] FCTrampoline unwrap scan failed:', e);
+    console.warn('[Steamcord] FCTrampoline unwrap scan failed:', e);
   }
 
   // Fix 2: prevent createElement from being stubbed (belt-and-suspenders)
@@ -449,17 +599,17 @@ export default definePlugin(() => {
       if (_origJsxs) Object.defineProperty(_jsx, 'jsxs', { get: () => _origJsxs, set: () => {}, configurable: true });
     }
   } catch (e) {
-    console.warn('[Streamcord] createElement guard failed:', e);
+    console.warn('[Steamcord] createElement guard failed:', e);
   }
 
   // Diagnostic: which @decky/ui components are defined after Steam update?
-  console.log('[Streamcord] PanelSection=' + !!PanelSection + ' PanelSectionRow=' + !!PanelSectionRow +
+  console.log('[Steamcord] PanelSection=' + !!PanelSection + ' PanelSectionRow=' + !!PanelSectionRow +
     ' Focusable=' + !!Focusable + ' DialogButton=' + !!DialogButton +
     ' Toggle=' + !!Toggle + ' SliderField=' + !!SliderField + ' Dropdown=' + !!Dropdown);
 
-  window.STREAMCORD = {
+  window.STEAMCORD = {
     dispatchNotification: (payload: { title: string; body: string; kind?: string }) => {
-      console.log("Dispatching Streamcord notification: ", payload);
+      console.log("Dispatching Steamcord notification: ", payload);
       // Incoming DM call: localize the title to the SteamOS language.
       const title = payload.kind === "call" ? `📞 ${t("incoming_call")}` : payload.title;
       toaster.toast({ title, body: payload.body });
@@ -474,10 +624,10 @@ export default definePlugin(() => {
   const webrtcEventListener = async (data: any) => {
     if (!data) return;
     if (data.offer) {
-      console.log("[Streamcord] mic: offer received, capturing mic");
+      console.log("[Steamcord] mic: offer received, capturing mic");
       if (peerConnection) peerConnection.close();
       peerConnection = new RTCPeerConnection();
-      window.STREAMCORD.MIC_PEER_CONNECTION = peerConnection;
+      window.STEAMCORD.MIC_PEER_CONNECTION = peerConnection;
       const localStream = await navigator.mediaDevices.getUserMedia({
         video: false,
         audio: {
@@ -506,14 +656,14 @@ export default definePlugin(() => {
         peerConnection.addEventListener("icegatheringstatechange", cb);
         setTimeout(res, 2000);
       });
-      console.log("[Streamcord] mic: sending answer");
+      console.log("[Steamcord] mic: sending answer");
       await call("mic_webrtc_answer", peerConnection.localDescription);
     } else if (data.ice) {
       try {
         while (peerConnection.remoteDescription == null) await sleep(10);
         await peerConnection.addIceCandidate(data.ice);
       } catch (e) {
-        console.error("[Streamcord] mic: error adding ice candidate", e);
+        console.error("[Steamcord] mic: error adding ice candidate", e);
       }
     }
   };
@@ -535,10 +685,10 @@ export default definePlugin(() => {
       const newTrack = newStream.getAudioTracks()[0];
       if (newTrack) {
         await sender.replaceTrack(newTrack);
-        console.log("[Streamcord] mic: followed new default input device");
+        console.log("[Steamcord] mic: followed new default input device");
       }
     } catch (e) {
-      console.error("[Streamcord] mic: devicechange follow failed", e);
+      console.error("[Steamcord] mic: devicechange follow failed", e);
     }
   });
 
@@ -587,7 +737,7 @@ export default definePlugin(() => {
   startStatusSync();
 
   return {
-    title: <div className={staticClasses.Title}>Streamcord</div>,
+    title: <div className={staticClasses.Title}>Steamcord</div>,
     content: <Suspense fallback={<div style={{ padding: 8 }}>{t("loading")}</div>}><ContentErrorBoundary><Content /></ContentErrorBoundary></Suspense>,
     icon: <FaDiscord />,
     onDismount() {

@@ -1,11 +1,11 @@
 {
-  "name": "Streamcord",
+  "name": "Steamcord",
   "author": "Necrosiak",
   "api_version": 1,
   "flags": [],
   "publish": {
     "tags": ["discord", "chat", "voice"],
     "description": "Discord in Steam Gaming Mode — voice chat, DMs, QR login",
-    "image": "https://raw.githubusercontent.com/Necrosiak/Streamcord/main/assets/store-banner.png"
+    "image": "https://raw.githubusercontent.com/Necrosiak/Steamcord/main/assets/store-banner.png"
   }
 }

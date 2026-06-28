@@ -27,6 +27,7 @@ from tab_utils.tab import (
 )
 from tab_utils.cdp import Tab, get_tab
 from discord_client.event_handler import EventHandler
+import updater
 
 logger.setLevel(INFO)
 
@@ -48,7 +49,7 @@ async def initialize():
     # NATIVE approach: drive Vesktop (a real Electron Discord, mic works) over CDP
     # instead of a hidden Steam CEF BrowserView (where the mic is impossible).
     import vesktop
-    client_js = open(Path(DECKY_PLUGIN_DIR) / "streamcord_client.js", "r").read()
+    client_js = open(Path(DECKY_PLUGIN_DIR) / "steamcord_client.js", "r").read()
     tab = await vesktop.get_discord_tab(client_js)
 
     Plugin.discord_tab = tab
@@ -98,7 +99,7 @@ class Plugin:
 
     @classmethod
     async def _main(cls):
-        logger.info("Starting Streamcord backend")
+        logger.info("Starting Steamcord backend")
         # CEF (SharedJSContext) can disconnect/reload during startup, which throws
         # mid-evaluate and would otherwise kill _main permanently (watchdog never
         # starts). Retry until the Discord tab is successfully created.
@@ -156,6 +157,7 @@ class Plugin:
         create_task(stream_watcher(cls.webrtc_server.stderr, True))
         create_task(cls._remote_auth_watcher())
         create_task(cls._audio_keepalive())
+        create_task(cls._autoupdate_check())
 
         async for state in cls.evt_handler.yield_new_state():
             await emit("state", state)
@@ -198,10 +200,63 @@ class Plugin:
 
     @classmethod
     async def _remote_auth_watcher(cls):
-        # Remote auth is now handled entirely in streamcord_client.js
+        # Remote auth is now handled entirely in steamcord_client.js
         # This task is kept as a no-op for compatibility
         while True:
             await sleep(3600)
+
+    @classmethod
+    async def _toast(cls, title, body):
+        try:
+            payload = dumps({"title": title, "body": body})
+            await cls.shared_js_tab.ensure_open()
+            await cls.shared_js_tab.evaluate(
+                f"DeckyPluginLoader.toaster.toast(JSON.parse('{payload}'));"
+            )
+        except Exception as e:
+            logger.debug(f"toast failed: {e}")
+
+    @classmethod
+    async def _autoupdate_check(cls):
+        # Non-blocking release check at boot. If enabled and a newer release
+        # exists, download + unpack over the plugin dir and restart the loader.
+        try:
+            if not updater.is_autoupdate_enabled():
+                return
+            info = await updater.check()
+            if not info.get("update_available"):
+                return
+            logger.info(
+                f"[updater] {info['latest']} available (have {info['current']}); auto-applying"
+            )
+            await cls._toast("Steamcord", f"Mise à jour {info['latest']} — installation…")
+            if await updater.apply(info["url"]):
+                await cls._toast("Steamcord", "Mise à jour installée — rechargement…")
+                await sleep(2)
+                updater.restart_loader()
+        except Exception as e:
+            logger.warning(f"[updater] auto-check error: {e}")
+
+    @classmethod
+    async def check_update(cls):
+        return await updater.check()
+
+    @classmethod
+    async def apply_update(cls, url):
+        ok = await updater.apply(url)
+        if ok:
+            await cls._toast("Steamcord", "Mise à jour installée — rechargement…")
+            await sleep(1)
+            updater.restart_loader()
+        return ok
+
+    @classmethod
+    async def get_autoupdate(cls):
+        return updater.is_autoupdate_enabled()
+
+    @classmethod
+    async def set_autoupdate(cls, enabled):
+        return updater.set_autoupdate_enabled(enabled)
 
     @classmethod
     async def _openkb(cls, request):
@@ -263,13 +318,13 @@ class Plugin:
             )
             await cls.shared_js_tab.ensure_open()
             await cls.shared_js_tab.evaluate(
-                f"window.STREAMCORD.dispatchNotification(JSON.parse('{payload}'));"
+                f"window.STEAMCORD.dispatchNotification(JSON.parse('{payload}'));"
             )
 
     @classmethod
     async def connect_ws(cls):
         await cls.shared_js_tab.ensure_open()
-        await cls.shared_js_tab.evaluate(f"window.STREAMCORD.connectWs()")
+        await cls.shared_js_tab.evaluate(f"window.STEAMCORD.connectWs()")
 
     @classmethod
     async def get_state(cls):
@@ -300,7 +355,7 @@ class Plugin:
         if tab is None:
             return False
         await tab.open_websocket()
-        result = await tab.evaluate(f"window.streamcordLoginWithToken({repr(token)})")
+        result = await tab.evaluate(f"window.steamcordLoginWithToken({repr(token)})")
         await tab.close_websocket()
         return result in ("ok", "reload")
 
@@ -357,7 +412,7 @@ class Plugin:
         if r:
             return True
 
-        payload = dumps({"title": "Streamcord", "body": "Error while posting screenshot"})
+        payload = dumps({"title": "Steamcord", "body": "Error while posting screenshot"})
         await cls.shared_js_tab.ensure_open()
         await cls.shared_js_tab.evaluate(
             f"DeckyPluginLoader.toaster.toast(JSON.parse('{payload}'));"

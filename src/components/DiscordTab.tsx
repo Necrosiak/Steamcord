@@ -13,7 +13,7 @@ export const DiscordTab = () => {
             }
             else {
                 toaster.toast({
-                    title: "Streamcord",
+                    title: "Steamcord",
                     body: t("not_loaded")
                 });
                 Router.Navigate("/library/home");

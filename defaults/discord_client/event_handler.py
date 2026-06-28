@@ -114,7 +114,7 @@ class EventHandler:
     def _process_event(self, data):
         if data["type"] == "$ping":
             return
-        if data["type"] == "$streamcord_request" and "increment" in data:
+        if data["type"] == "$steamcord_request" and "increment" in data:
             self.api._set_result(data["increment"], data["result"])
             return
         if data["type"] in self.event_handlers:

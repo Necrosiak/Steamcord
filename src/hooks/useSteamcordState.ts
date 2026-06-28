@@ -1,7 +1,7 @@
 import { call, addEventListener, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 
-export function useStreamcordState() {
+export function useSteamcordState() {
   const [state, setState] = useState<any | undefined>();
 
   useEffect(() => {

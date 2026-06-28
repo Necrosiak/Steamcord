@@ -1,15 +1,15 @@
 // Detect host: Vesktop (native Electron Discord — mic works) vs Steam's hidden CEF
 // BrowserView (mic broken). In Vesktop we must NOT hijack getUserMedia / visibility,
 // or we'd break the native mic. The CEF-only workarounds are guarded by !IS_VESKTOP.
-// The backend sets window.STREAMCORD_IS_VESKTOP = true before this script when it
+// The backend sets window.STEAMCORD_IS_VESKTOP = true before this script when it
 // injects into Vesktop (most reliable). Fall back to runtime detection otherwise.
-window.STREAMCORD_IS_VESKTOP = window.STREAMCORD_IS_VESKTOP
+window.STEAMCORD_IS_VESKTOP = window.STEAMCORD_IS_VESKTOP
     || !!window.VesktopNative
     || (navigator.userAgent || "").toLowerCase().includes("vesktop");
 
 // CEF only: override Page Visibility API so Discord audio/WebRTC stays active in a
 // hidden BrowserView (Chrome throttles background tabs). Not needed in Vesktop.
-if (!window.STREAMCORD_IS_VESKTOP) try {
+if (!window.STEAMCORD_IS_VESKTOP) try {
     Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
     Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
     const _origAEL = document.addEventListener.bind(document);
@@ -19,9 +19,9 @@ if (!window.STREAMCORD_IS_VESKTOP) try {
     };
 } catch(_) {}
 
-window.Vencord.Plugins.plugins.Streamcord = {
-    name: "Streamcord",
-    description: "Plugin required for Streamcord to work",
+window.Vencord.Plugins.plugins.Steamcord = {
+    name: "Steamcord",
+    description: "Plugin required for Steamcord to work",
     authors: [],
     required: true,
     startAt: "DOMContentLoaded",
@@ -33,16 +33,16 @@ window.Vencord.Plugins.plugins.Streamcord = {
         }
 
         // Camera support (later): when a real webcam is plugged in, set
-        // window.STREAMCORD_CAMERA_ENABLED = true and Discord's camera requests
+        // window.STEAMCORD_CAMERA_ENABLED = true and Discord's camera requests
         // (getUserMedia with video) will use the real device instead of the mic relay.
         // Screenshare uses getDisplayMedia (see webrtc_client.js), not this path.
         window.old_get_user_media = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-        window.STREAMCORD_CAMERA_ENABLED = window.STREAMCORD_CAMERA_ENABLED ?? false;
-        const streamcordGUM = (constraints) => new Promise(async (resolve, reject) => {
-            console.log("[Streamcord] getUserMedia CALLED constraints=" + JSON.stringify(constraints) +
+        window.STEAMCORD_CAMERA_ENABLED = window.STEAMCORD_CAMERA_ENABLED ?? false;
+        const steamcordGUM = (constraints) => new Promise(async (resolve, reject) => {
+            console.log("[Steamcord] getUserMedia CALLED constraints=" + JSON.stringify(constraints) +
                 " by: " + (new Error().stack || "").split("\n").slice(1, 4).join(" || "));
-            if (window.STREAMCORD_CAMERA_ENABLED && constraints && constraints.video) {
-                console.log("[Streamcord] Camera requested — using real device");
+            if (window.STEAMCORD_CAMERA_ENABLED && constraints && constraints.video) {
+                console.log("[Steamcord] Camera requested — using real device");
                 return resolve(await window.old_get_user_media.call(navigator.mediaDevices, constraints));
             }
             if (window.MIC_STREAM != undefined && window.MIC_PEER_CONNECTION != undefined && window.MIC_PEER_CONNECTION.connectionState == "connected") {
@@ -54,19 +54,19 @@ window.Vencord.Plugins.plugins.Streamcord = {
             const peerConnection = new RTCPeerConnection(null);
             window.MIC_PEER_CONNECTION = peerConnection;
 
-            window.STREAMCORD_WS.addEventListener("message", async (e) => {
+            window.STEAMCORD_WS.addEventListener("message", async (e) => {
                 const data = JSON.parse(e.data);
                 if (data.type != "$webrtc") return;
 
                 const remoteDescription = new RTCSessionDescription(data.payload);
                 await peerConnection.setRemoteDescription(remoteDescription);
-                console.log("[Streamcord] mic: answer set, connection negotiating");
+                console.log("[Steamcord] mic: answer set, connection negotiating");
             });
 
             peerConnection.ontrack = (ev) => {
                 ev.track.stop = () => { console.log("CALLED STOP ON TRACK") }
                 window.MIC_STREAM = new MediaStream([ev.track]);
-                console.log("[Streamcord] mic: WEBRTC STREAM (ontrack)", window.MIC_STREAM);
+                console.log("[Steamcord] mic: WEBRTC STREAM (ontrack)", window.MIC_STREAM);
                 resolve(window.MIC_STREAM);
             }
 
@@ -86,8 +86,8 @@ window.Vencord.Plugins.plugins.Streamcord = {
                 peerConnection.addEventListener("icegatheringstatechange", cb);
                 setTimeout(res, 2000);
             });
-            console.log("[Streamcord] mic: sending offer to backend");
-            window.STREAMCORD_WS.send(JSON.stringify({ type: "$MIC_WEBRTC", offer: peerConnection.localDescription }));
+            console.log("[Steamcord] mic: sending offer to backend");
+            window.STEAMCORD_WS.send(JSON.stringify({ type: "$MIC_WEBRTC", offer: peerConnection.localDescription }));
         });
 
         // Discord's MediaEngine reinitializes and OVERWRITES our getUserMedia override,
@@ -95,14 +95,14 @@ window.Vencord.Plugins.plugins.Streamcord = {
         // nobody hears the user. Install our override resiliently (defineProperty with a
         // no-op setter) on both the instance and the prototype, and re-assert it.
         function installMicOverride() {
-            const desc = { configurable: true, get: () => streamcordGUM, set: () => {} };
+            const desc = { configurable: true, get: () => steamcordGUM, set: () => {} };
             try { Object.defineProperty(navigator.mediaDevices, "getUserMedia", desc); }
-            catch (e) { try { navigator.mediaDevices.getUserMedia = streamcordGUM; } catch (_) {} }
+            catch (e) { try { navigator.mediaDevices.getUserMedia = steamcordGUM; } catch (_) {} }
             try { Object.defineProperty(MediaDevices.prototype, "getUserMedia", desc); } catch (_) {}
         }
         // CEF only: in Vesktop the native mic works, so installing this override would
         // hijack/break it. Never install it under Vesktop.
-        if (!window.STREAMCORD_IS_VESKTOP) {
+        if (!window.STEAMCORD_IS_VESKTOP) {
             installMicOverride();
             setInterval(installMicOverride, 2000);
         }
@@ -204,7 +204,7 @@ window.Vencord.Plugins.plugins.Streamcord = {
         }
 
         let MediaEngineStore, FluxDispatcher;
-        console.log("Streamcord: Waiting for FluxDispatcher...");
+        console.log("Steamcord: Waiting for FluxDispatcher...");
         Vencord.Webpack.waitFor(["subscribe", "dispatch", "register"], fdm => {
             FluxDispatcher = fdm;
             Vencord.Webpack.waitFor(Vencord.Webpack.filters.byStoreName("MediaEngineStore"), m => {
@@ -234,8 +234,8 @@ window.Vencord.Plugins.plugins.Streamcord = {
             });
 
             function connect() {
-                window.STREAMCORD_WS = new WebSocket('ws://127.0.0.1:65123/socket');
-                window.STREAMCORD_WS.addEventListener("message", async function (e) {
+                window.STEAMCORD_WS = new WebSocket('ws://127.0.0.1:65123/socket');
+                window.STEAMCORD_WS.addEventListener("message", async function (e) {
                     const data = JSON.parse(e.data);
                     if (data.type.startsWith("$")) {
                         let result;
@@ -309,9 +309,9 @@ window.Vencord.Plugins.plugins.Streamcord = {
                                         const store = getStatusProtoStore();
                                         if (store) {
                                             await store.updateAsync("status", (s) => { s.status.value = data.status; }, 0);
-                                            console.log("[Streamcord] status → " + data.status);
-                                        } else console.warn("[Streamcord] proto store status introuvable");
-                                    } catch (e) { console.error("[Streamcord] set_status err", e); }
+                                            console.log("[Steamcord] status → " + data.status);
+                                        } else console.warn("[Steamcord] proto store status introuvable");
+                                    } catch (e) { console.error("[Steamcord] set_status err", e); }
                                     return;
                                 }
                                 case "$get_status": {
@@ -331,7 +331,7 @@ window.Vencord.Plugins.plugins.Streamcord = {
                                     const selChStore = Vencord.Webpack.findStore("SelectedChannelStore");
                                     const golive_channel_id = selChStore?.getVoiceChannelId?.();
                                     if (!golive_channel_id) {
-                                        console.warn("[Streamcord] Go Live: pas dans un salon vocal");
+                                        console.warn("[Steamcord] Go Live: pas dans un salon vocal");
                                         return;
                                     }
                                     const golive_channel = Vencord.Webpack.Common.ChannelStore.getChannel(golive_channel_id);
@@ -345,7 +345,7 @@ window.Vencord.Plugins.plugins.Streamcord = {
                                         if (data.stop) {
                                             if (StreamActions?.stopStream) StreamActions.stopStream();
                                             else Vencord.Webpack.wreq(799808).default(null, null, null);
-                                            console.log("[Streamcord] Go Live STOP envoyé");
+                                            console.log("[Steamcord] Go Live STOP envoyé");
                                         } else {
                                             // Whole-screen only — getDisplayMedia is overridden in
                                             // webrtc_client.js to return the GStreamer full-screen capture,
@@ -362,10 +362,10 @@ window.Vencord.Plugins.plugins.Streamcord = {
                                             } else {
                                                 Vencord.Webpack.wreq(799808).default(golive_guild_id, golive_channel_id, "Activity Panel");
                                             }
-                                            console.log("[Streamcord] Go Live START envoyé (écran entier), found StreamActions=" + !!StreamActions);
+                                            console.log("[Steamcord] Go Live START envoyé (écran entier), found StreamActions=" + !!StreamActions);
                                         }
                                     } catch (e) {
-                                        console.error("[Streamcord] Go Live échec:", e);
+                                        console.error("[Steamcord] Go Live échec:", e);
                                     }
                                     return;
                                 }
@@ -525,50 +525,50 @@ window.Vencord.Plugins.plugins.Streamcord = {
                             if (data.increment == undefined) return;
                         }
                         const payload = {
-                            type: "$streamcord_request",
+                            type: "$steamcord_request",
                             increment: data.increment,
                             result: result || {}
                         };
                         console.debug(data, payload);
-                        window.STREAMCORD_WS.send(JSON.stringify(payload));
+                        window.STEAMCORD_WS.send(JSON.stringify(payload));
                         return;
                     }
                     FluxDispatcher.dispatch(data);
                 });
 
-                window.STREAMCORD_WS.onopen = function (e) {
+                window.STEAMCORD_WS.onopen = function (e) {
                     // CEF only: kick off the mic relay handshake. In Vesktop the mic is
                     // native — don't touch getUserMedia.
-                    if (!window.STREAMCORD_IS_VESKTOP) navigator.mediaDevices.getUserMedia();
+                    if (!window.STEAMCORD_IS_VESKTOP) navigator.mediaDevices.getUserMedia();
                     Vencord.Webpack.waitFor("useState", t => {
-                        window.STREAMCORD_WS.send(JSON.stringify({ type: "LOADED", result: true }));
+                        window.STEAMCORD_WS.send(JSON.stringify({ type: "LOADED", result: true }));
                         Vencord.Webpack.onceReady.then(() => {
                             const user = Vencord.Webpack.Common.UserStore.getCurrentUser();
                             if (user) {
-                                window.STREAMCORD_WS.send(JSON.stringify({ type: "CONNECTION_OPEN", user }));
-                            } else if (window.STREAMCORD_LAST_QR) {
-                                window.STREAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_QR_SVG", svg_b64: window.STREAMCORD_LAST_QR }));
+                                window.STEAMCORD_WS.send(JSON.stringify({ type: "CONNECTION_OPEN", user }));
+                            } else if (window.STEAMCORD_LAST_QR) {
+                                window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_QR_SVG", svg_b64: window.STEAMCORD_LAST_QR }));
                             }
                         });
                     });
                 }
 
-                window.STREAMCORD_WS.onclose = function (e) {
+                window.STEAMCORD_WS.onclose = function (e) {
                     FluxDispatcher._interceptors.pop()
                     setTimeout(function () {
                         connect();
                     }, 100);
                 };
 
-                window.STREAMCORD_WS.onerror = function (err) {
+                window.STEAMCORD_WS.onerror = function (err) {
                     console.error('Socket encountered error: ', err.message, 'Closing socket');
-                    window.STREAMCORD_WS.close();
+                    window.STEAMCORD_WS.close();
                 };
 
                 Vencord.Webpack.onceReady.then(t => {
                     const user = Vencord.Webpack.Common.UserStore.getCurrentUser();
                     if (user) {
-                        window.STREAMCORD_WS.send(JSON.stringify({ type: "CONNECTION_OPEN", user }));
+                        window.STEAMCORD_WS.send(JSON.stringify({ type: "CONNECTION_OPEN", user }));
                     }
                 });
 
@@ -579,7 +579,7 @@ window.Vencord.Plugins.plugins.Streamcord = {
                     // Respect the user's Discord status: skip if invisible or DnD (busy).
                     try {
                         if (e.type && e.type.indexOf("CALL") === 0)
-                            console.log("[Streamcord] CALL event: " + e.type + " ringing=" + JSON.stringify(e.ringing) + " ch=" + e.channelId);
+                            console.log("[Steamcord] CALL event: " + e.type + " ringing=" + JSON.stringify(e.ringing) + " ch=" + e.channelId);
                         if (e.type === "CALL_DELETE" && window.__sc_ringing) {
                             delete window.__sc_ringing[e.channelId];
                         } else if ((e.type === "CALL_CREATE" || e.type === "CALL_UPDATE") && Array.isArray(e.ringing)) {
@@ -589,7 +589,7 @@ window.Vencord.Plugins.plugins.Streamcord = {
                                 delete window.__sc_ringing[e.channelId]; // ring stopped / answered
                             } else {
                                 const ch = Vencord.Webpack.Common.ChannelStore.getChannel(e.channelId);
-                                console.log("[Streamcord] incoming ring for me, ch.type=" + ch?.type + " status=" + Vencord.Webpack.findStore("PresenceStore")?.getStatus?.(me.id));
+                                console.log("[Steamcord] incoming ring for me, ch.type=" + ch?.type + " status=" + Vencord.Webpack.findStore("PresenceStore")?.getStatus?.(me.id));
                                 const isDM = ch && (ch.type === 1 || ch.type === 3);
                                 const PresenceStore = Vencord.Webpack.findStore("PresenceStore");
                                 const status = PresenceStore?.getStatus?.(me.id);
@@ -604,7 +604,7 @@ window.Vencord.Plugins.plugins.Streamcord = {
                                                 : Vencord.Webpack.Common.UserStore.getUser(r);
                                         caller = u?.global_name || u?.username || "Discord";
                                     }
-                                    window.STREAMCORD_WS.send(JSON.stringify({ type: "CALL_RING", caller, channel_id: String(e.channelId) }));
+                                    window.STEAMCORD_WS.send(JSON.stringify({ type: "CALL_RING", caller, channel_id: String(e.channelId) }));
                                 }
                             }
                         }
@@ -625,31 +625,31 @@ window.Vencord.Plugins.plugins.Streamcord = {
                         "SPEAKING"
                     ].includes(e.type);
                     if (shouldPass) {
-                        console.log("Dispatching Streamcord event: ", e);
-                        window.STREAMCORD_WS.send(JSON.stringify(e));
+                        console.log("Dispatching Steamcord event: ", e);
+                        window.STEAMCORD_WS.send(JSON.stringify(e));
                     }
                 });
-                console.log("Streamcord: Added event interceptor");
+                console.log("Steamcord: Added event interceptor");
 
                 // Robust voice-channel tracking: Discord does NOT reliably emit
                 // VOICE_CHANNEL_SELECT when you're force-disconnected by joining voice on
                 // another device. Poll the store and notify the backend on any change so
                 // the QAM state always matches reality (join / leave / move / kicked).
-                let streamcordLastVCId = undefined;
+                let steamcordLastVCId = undefined;
                 setInterval(() => {
                     try {
-                        if (!window.STREAMCORD_WS || window.STREAMCORD_WS.readyState !== 1) return;
+                        if (!window.STEAMCORD_WS || window.STEAMCORD_WS.readyState !== 1) return;
                         const selStore = Vencord.Webpack.findStore("SelectedChannelStore");
                         const vcid = selStore?.getVoiceChannelId?.() ?? null;
-                        if (vcid !== streamcordLastVCId) {
-                            streamcordLastVCId = vcid;
+                        if (vcid !== steamcordLastVCId) {
+                            steamcordLastVCId = vcid;
                             let guildId = null;
                             if (vcid) {
                                 const ch = Vencord.Webpack.Common.ChannelStore.getChannel(vcid);
                                 guildId = ch?.guild_id ?? null;
                             }
-                            console.log("[Streamcord] voice channel changed → " + vcid);
-                            window.STREAMCORD_WS.send(JSON.stringify({ type: "VOICE_CHANNEL_SELECT", channelId: vcid, guildId }));
+                            console.log("[Steamcord] voice channel changed → " + vcid);
+                            window.STEAMCORD_WS.send(JSON.stringify({ type: "VOICE_CHANNEL_SELECT", channelId: vcid, guildId }));
                         }
                     } catch (_) {}
                 }, 2000);
@@ -659,15 +659,15 @@ window.Vencord.Plugins.plugins.Streamcord = {
                 // anyone. Keep the view rendered (1×1, barely visible) for the WHOLE time
                 // we're in a voice channel so both the connection and the mic capture stay
                 // alive; hide it again when we leave the call.
-                let streamcordVoiceShown = false;
+                let steamcordVoiceShown = false;
                 setInterval(() => {
                     try {
                         const inVoice = !!Vencord.Webpack.findStore("SelectedChannelStore").getVoiceChannelId();
-                        if (inVoice && !streamcordVoiceShown) {
-                            streamcordVoiceShown = true;
+                        if (inVoice && !steamcordVoiceShown) {
+                            steamcordVoiceShown = true;
                             fetch("http://127.0.0.1:65123/voice_render", { mode: "no-cors" }).catch(() => {});
-                        } else if (!inVoice && streamcordVoiceShown) {
-                            streamcordVoiceShown = false;
+                        } else if (!inVoice && steamcordVoiceShown) {
+                            steamcordVoiceShown = false;
                             fetch("http://127.0.0.1:65123/voice_hide", { mode: "no-cors" }).catch(() => {});
                         }
                     } catch (_) {}
@@ -697,14 +697,14 @@ window.Vencord.Plugins.plugins.Streamcord = {
                     const me = Vencord.Webpack.findStore?.("MediaEngineStore")?.getMediaEngine?.();
                     if (me?.audioContext?.state === "suspended") {
                         me.audioContext.resume();
-                        console.log("[Streamcord] Resumed MediaEngine AudioContext");
+                        console.log("[Steamcord] Resumed MediaEngine AudioContext");
                     }
                 } catch(_) {}
             }, 5000);
         })();
 
         // Token login: callable from QAM via CDP
-        window.streamcordLoginWithToken = function(token) {
+        window.steamcordLoginWithToken = function(token) {
             const loginMod = Vencord.Webpack.find(m => m && typeof m.loginToken === "function");
             if (loginMod) {
                 loginMod.loginToken(token, true);
@@ -716,12 +716,12 @@ window.Vencord.Plugins.plugins.Streamcord = {
         };
 
         // Canvas QR mirror: extract Discord's own QR when the tab is visible (no spinner)
-        window.STREAMCORD_LAST_QR = null;
+        window.STEAMCORD_LAST_QR = null;
         (function startCanvasQRMirror() {
             const sendQR = (url) => {
-                window.STREAMCORD_LAST_QR = url;
-                if (window.STREAMCORD_WS?.readyState === 1)
-                    window.STREAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_QR_SVG", svg_b64: url }));
+                window.STEAMCORD_LAST_QR = url;
+                if (window.STEAMCORD_WS?.readyState === 1)
+                    window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_QR_SVG", svg_b64: url }));
             };
             // A real QR is black & white; Discord's "loading" placeholder in the same
             // 240×240 canvas is a colorful shapes animation. Only mirror an actual QR so
@@ -758,10 +758,10 @@ window.Vencord.Plugins.plugins.Streamcord = {
         })();
 
         // Remote auth: our own WS, QR from segno (Python), ticket sent to backend for POST with desktop UA
-        window.STREAMCORD_REMOTE_AUTH_ACTIVE = false;
-        window.streamcordStartRemoteAuth = async function() {
-            if (window.STREAMCORD_REMOTE_AUTH_ACTIVE) return;
-            window.STREAMCORD_REMOTE_AUTH_ACTIVE = true;
+        window.STEAMCORD_REMOTE_AUTH_ACTIVE = false;
+        window.steamcordStartRemoteAuth = async function() {
+            if (window.STEAMCORD_REMOTE_AUTH_ACTIVE) return;
+            window.STEAMCORD_REMOTE_AUTH_ACTIVE = true;
             try {
                 const keyPair = await crypto.subtle.generateKey(
                     { name: "RSA-OAEP", modulusLength: 2048,
@@ -789,15 +789,15 @@ window.Vencord.Plugins.plugins.Streamcord = {
                             .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
                         ws.send(JSON.stringify({ op: "nonce_proof", proof }));
                     } else if (op === "pending_remote_init") {
-                        if (window.STREAMCORD_WS?.readyState === 1)
-                            window.STREAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_FINGERPRINT", fingerprint: data.fingerprint }));
+                        if (window.STEAMCORD_WS?.readyState === 1)
+                            window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_FINGERPRINT", fingerprint: data.fingerprint }));
                     } else if (op === "pending_login") {
                         if (hbTimer) clearInterval(hbTimer);
                         ws.close(1000);
-                        window.STREAMCORD_REMOTE_AUTH_ACTIVE = false;
+                        window.STEAMCORD_REMOTE_AUTH_ACTIVE = false;
                         // Send ticket + private key to backend — Python makes the POST with desktop UA
-                        if (window.STREAMCORD_WS?.readyState === 1)
-                            window.STREAMCORD_WS.send(JSON.stringify({
+                        if (window.STEAMCORD_WS?.readyState === 1)
+                            window.STEAMCORD_WS.send(JSON.stringify({
                                 type: "REMOTE_AUTH_TICKET",
                                 ticket: data.ticket,
                                 priv_jwk: JSON.stringify(privJwk)
@@ -806,23 +806,23 @@ window.Vencord.Plugins.plugins.Streamcord = {
                     } else if (op === "cancel") {
                         if (hbTimer) clearInterval(hbTimer);
                         ws.close(1000);
-                        window.STREAMCORD_REMOTE_AUTH_ACTIVE = false;
-                        if (window.STREAMCORD_WS?.readyState === 1)
-                            window.STREAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_FINGERPRINT", fingerprint: null }));
-                        setTimeout(window.streamcordStartRemoteAuth, 3000);
+                        window.STEAMCORD_REMOTE_AUTH_ACTIVE = false;
+                        if (window.STEAMCORD_WS?.readyState === 1)
+                            window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_FINGERPRINT", fingerprint: null }));
+                        setTimeout(window.steamcordStartRemoteAuth, 3000);
                     }
                 };
                 ws.onerror = () => {};
                 ws.onclose = (e) => {
                     if (hbTimer) clearInterval(hbTimer);
                     if (e.code !== 1000 && e.code !== 1001) {
-                        window.STREAMCORD_REMOTE_AUTH_ACTIVE = false;
-                        setTimeout(window.streamcordStartRemoteAuth, 3000);
+                        window.STEAMCORD_REMOTE_AUTH_ACTIVE = false;
+                        setTimeout(window.steamcordStartRemoteAuth, 3000);
                     }
                 };
             } catch(e) {
-                window.STREAMCORD_REMOTE_AUTH_ACTIVE = false;
-                setTimeout(window.streamcordStartRemoteAuth, 5000);
+                window.STEAMCORD_REMOTE_AUTH_ACTIVE = false;
+                setTimeout(window.steamcordStartRemoteAuth, 5000);
             }
         };
 
@@ -831,13 +831,13 @@ window.Vencord.Plugins.plugins.Streamcord = {
         // login page shows its own QR, which startCanvasQRMirror() mirrors to the QAM —
         // scanning it logs Vesktop in natively, no ticket exchange, no CAPTCHA. So only
         // run the custom remote-auth in the CEF flow.
-        if (!window.STREAMCORD_IS_VESKTOP) {
+        if (!window.STEAMCORD_IS_VESKTOP) {
             Vencord.Webpack.onceReady.then(() => {
-                if (!Vencord.Webpack.Common.UserStore.getCurrentUser()) window.streamcordStartRemoteAuth();
+                if (!Vencord.Webpack.Common.UserStore.getCurrentUser()) window.steamcordStartRemoteAuth();
             });
             setInterval(() => {
-                if (!Vencord.Webpack.Common.UserStore?.getCurrentUser?.() && !window.STREAMCORD_REMOTE_AUTH_ACTIVE)
-                    window.streamcordStartRemoteAuth();
+                if (!Vencord.Webpack.Common.UserStore?.getCurrentUser?.() && !window.STEAMCORD_REMOTE_AUTH_ACTIVE)
+                    window.steamcordStartRemoteAuth();
             }, 15000);
         }
     }
@@ -846,16 +846,16 @@ window.Vencord.Plugins.plugins.Streamcord = {
 // In Vesktop, Vencord is already initialized and won't auto-start our (late-injected)
 // plugin, so start it ourselves once Vencord/Webpack is ready. (In the CEF flow Vencord
 // is injected fresh and calls start() itself.)
-if (window.STREAMCORD_IS_VESKTOP && !window.__streamcord_started) {
-    window.__streamcord_started = true;
+if (window.STEAMCORD_IS_VESKTOP && !window.__steamcord_started) {
+    window.__steamcord_started = true;
     (function waitAndStart() {
         try {
             if (window.Vencord && window.Vencord.Webpack && window.Vencord.Webpack.Common) {
-                window.Vencord.Plugins.plugins.Streamcord.start();
-                console.log("[Streamcord] started in Vesktop");
+                window.Vencord.Plugins.plugins.Steamcord.start();
+                console.log("[Steamcord] started in Vesktop");
                 return;
             }
-        } catch (e) { console.log("[Streamcord] vesktop start err " + e.message); }
+        } catch (e) { console.log("[Steamcord] vesktop start err " + e.message); }
         setTimeout(waitAndStart, 500);
     })();
 }

@@ -1,7 +1,7 @@
 (() => {
     let waitingForMedia = false;
     const getRTCStream = (_) => new Promise((resolve, reject) => {
-        if (window.STREAMCORD_RTC_STREAM) return resolve(window.STREAMCORD_RTC_STREAM);
+        if (window.STEAMCORD_RTC_STREAM) return resolve(window.STEAMCORD_RTC_STREAM);
         
         if (waitingForMedia) return reject();
         waitingForMedia = true;
@@ -9,7 +9,7 @@
         const peerConnection = new RTCPeerConnection(null);
         const ws = new WebSocket("ws://127.0.0.1:65124/webrtc");
 
-        window.STREAMCORD_PEER_CONNECTION = peerConnection;
+        window.STEAMCORD_PEER_CONNECTION = peerConnection;
 
         ws.onopen = async (_) => {
             const offer = await peerConnection.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: true });
@@ -46,12 +46,12 @@
             const stream = ev.stream;
             if (stream.getVideoTracks().length == 0) return;
 
-            window.STREAMCORD_RTC_STREAM = stream;
+            window.STEAMCORD_RTC_STREAM = stream;
             for (const track of stream.getTracks()) {
                 track.stop = () => {
                     ws.send(JSON.stringify({"stop": ""}));
                     peerConnection.close();
-                    window.STREAMCORD_RTC_STREAM = undefined;
+                    window.STEAMCORD_RTC_STREAM = undefined;
                 }
             }
             waitingForMedia = false;

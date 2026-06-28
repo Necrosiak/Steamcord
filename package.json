@@ -1,6 +1,6 @@
 {
-  "name": "streamcord",
-  "version": "1.1.0",
+  "name": "steamcord",
+  "version": "1.2.0",
   "type": "module",
   "description": "Discord in Steam Gaming Mode — voice chat, DMs, QR login",
   "scripts": {
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Necrosiak/Streamcord.git"
+    "url": "git+https://github.com/Necrosiak/Steamcord.git"
   },
   "keywords": [
     "decky",
@@ -23,9 +23,9 @@
   "author": "Necrosiak",
   "license": "BSD-3-Clause",
   "bugs": {
-    "url": "https://github.com/Necrosiak/Streamcord/issues"
+    "url": "https://github.com/Necrosiak/Steamcord/issues"
   },
-  "homepage": "https://github.com/Necrosiak/Streamcord#readme",
+  "homepage": "https://github.com/Necrosiak/Steamcord#readme",
   "devDependencies": {
     "@decky/rollup": "^1.0.2",
     "@rollup/plugin-commonjs": "^21.1.0",

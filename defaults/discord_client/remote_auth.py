@@ -12,7 +12,7 @@ def _make_qr_b64(url: str) -> str:
 
 
 class RemoteAuth:
-    """State holder for QR code. The actual remote auth protocol runs in streamcord_client.js."""
+    """State holder for QR code. The actual remote auth protocol runs in steamcord_client.js."""
 
     def __init__(self):
         self.qr_b64 = None

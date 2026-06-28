@@ -32,7 +32,7 @@ const tryApplyPatch = (): (() => void) | null => {
     const menuWrapper = (props: any) => {
         const ret = orig(props)
         if (!ret?.props?.children?.props?.children?.[0]?.type) {
-            console.log('Streamcord: menu element not at expected location, Valve may have changed it.')
+            console.log('Steamcord: menu element not at expected location, Valve may have changed it.')
             return ret
         }
         const elt = ret.props.children.props.children[0];
@@ -52,7 +52,7 @@ const tryApplyPatch = (): (() => void) | null => {
                 const menuItems = findInReactTree(innerRet, (node: any[]) => Array.isArray(node) && node.some(isMenuItemElt)) as Array<any>;
 
                 if (!menuItems) {
-                    console.log('Streamcord: could not find menu items to patch.')
+                    console.log('Steamcord: could not find menu items to patch.')
                     return innerRet
                 }
 
@@ -61,7 +61,7 @@ const tryApplyPatch = (): (() => void) | null => {
 
                 const newItem =
                     <MenuItemWrapper
-                        key={'streamcord'}
+                        key={'steamcord'}
                         route={'/discord'}
                         label='Discord'
                         onFocus={menuItem.props.onFocus}
@@ -69,7 +69,7 @@ const tryApplyPatch = (): (() => void) | null => {
                         MenuItemComponent={menuItem.type}
                     />
 
-                const browserPosition = Number.parseInt(localStorage.getItem("STREAMCORD_MENU_POSITION") || "3" as string);
+                const browserPosition = Number.parseInt(localStorage.getItem("STEAMCORD_MENU_POSITION") || "3" as string);
 
                 if (browserPosition === 9) menuItems.splice(itemIndexes[itemIndexes.length - 1] + 1, 0, newItem)
                 else menuItems.splice(itemIndexes[browserPosition - 1], 0, newItem)
@@ -100,13 +100,13 @@ export const patchMenu = () => {
         unpatch = tryApplyPatch()
         if (!unpatch) {
             if (++attempts < MAX_ATTEMPTS) {
-                console.log(`Streamcord: menu patch attempt ${attempts} failed, retrying...`)
+                console.log(`Steamcord: menu patch attempt ${attempts} failed, retrying...`)
                 setTimeout(attempt, 2000)
             } else {
-                console.log('Streamcord: menu patch gave up after ' + MAX_ATTEMPTS + ' attempts.')
+                console.log('Steamcord: menu patch gave up after ' + MAX_ATTEMPTS + ' attempts.')
             }
         } else {
-            console.log(`Streamcord: menu patch applied on attempt ${attempts + 1}`)
+            console.log(`Steamcord: menu patch applied on attempt ${attempts + 1}`)
         }
     }
     attempt()
@@ -142,13 +142,13 @@ const MenuItemWrapper: FC<MenuItemWrapperProps> = ({ MenuItemComponent, label, u
                 ],
                 selectedOption: 1,
                 onChange: (data: any) => {
-                    localStorage.setItem("STREAMCORD_MENU_POSITION", data.data);
+                    localStorage.setItem("STEAMCORD_MENU_POSITION", data.data);
                     patchMenu();
                 }
             });
         }
     } catch (e) {
-        console.error("[Streamcord] Dropdown init failed:", e);
+        console.error("[Steamcord] Dropdown init failed:", e);
     }
 
     (props as any)[useIconAsProp ? 'icon' : 'children'] = <FaDiscord />;

@@ -86,7 +86,7 @@ async def install():
     await proc.wait()
 
 
-VESKTOP_UNIT = "streamcord-vesktop"
+VESKTOP_UNIT = "steamcord-vesktop"
 
 
 async def _show_env():
@@ -260,7 +260,7 @@ async def get_discord_tab(client_js) -> Tab:
             # Vesktop's native microphone.
             await tab._send_devtools_cmd({
                 "method": "Page.addScriptToEvaluateOnNewDocument",
-                "params": {"source": "window.STREAMCORD_IS_VESKTOP = true;\n" + client_js, "runImmediately": True},
+                "params": {"source": "window.STEAMCORD_IS_VESKTOP = true;\n" + client_js, "runImmediately": True},
             }, False)
             await tab._send_devtools_cmd({"method": "Page.reload", "params": {}}, False)
             return tab

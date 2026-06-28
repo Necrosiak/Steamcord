@@ -6,7 +6,7 @@ import { t } from "../i18n";
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois.
 let _textPoll: any = null;
-const MSG_LIST_ID = "streamcord-msglist";
+const MSG_LIST_ID = "steamcord-msglist";
 const scrollMsgsBottom = () => {
   setTimeout(() => {
     const el = document.getElementById(MSG_LIST_ID);
@@ -35,8 +35,10 @@ const shortTime = (ts: string | null) => {
   try { const d = new Date(ts); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
 };
 
-export function TextChat() {
-  const [open, setOpen] = useState(false);
+export function TextChat({ embedded = false }: { embedded?: boolean }) {
+  // embedded = intégré sous l'onglet « Conversations » : toujours ouvert, sans
+  // en-tête repliable (la navigation de haut niveau gère déjà le pli).
+  const [open, setOpen] = useState(embedded);
   const [guilds, setGuilds] = useState<Guild[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [channel, setChannel] = useState<{ id: string; name: string } | null>(null);
@@ -92,8 +94,9 @@ export function TextChat() {
     setSending(false);
   };
 
-  // ── En-tête de section (toujours visible) ─────────────────────────────────
-  const header = (
+  // ── En-tête de section repliable ──────────────────────────────────────────
+  // Masqué en mode embedded (l'onglet Conversations gère déjà l'affichage).
+  const header = embedded ? null : (
     <Btn
       onClick={() => setOpen((o) => !o)}
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "5px 8px" }}

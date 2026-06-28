@@ -1,12 +1,12 @@
 import { DialogButton } from "@decky/ui";
-import { useStreamcordState } from "../../hooks/useStreamcordState";
+import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaHeadphonesAlt, FaSlash } from "react-icons/fa";
 import { call } from "@decky/api";
 
 const btnStyle = { height: "40px", width: "40px", minWidth: 0, padding: "10px 12px", marginRight: "10px" };
 
 export function DeafenButton() {
-  const state = useStreamcordState();
+  const state = useSteamcordState();
   const icon = state?.me?.is_deafened
     ? <><FaHeadphonesAlt /><FaSlash style={{ position: "absolute", left: "13px" }} /></>
     : <FaHeadphonesAlt />;

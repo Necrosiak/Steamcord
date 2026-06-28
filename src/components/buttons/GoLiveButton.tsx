@@ -1,5 +1,5 @@
 import { DialogButton } from "@decky/ui";
-import { useStreamcordState } from "../../hooks/useStreamcordState";
+import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaVideo, FaVideoSlash } from "react-icons/fa";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
@@ -7,7 +7,7 @@ import { t } from "../../i18n";
 const Btn = DialogButton as any;
 
 export function GoLiveButton() {
-  const state = useStreamcordState();
+  const state = useSteamcordState();
 
   // Only available while connected to a voice channel
   if (!state?.vc?.channel_name) return null;

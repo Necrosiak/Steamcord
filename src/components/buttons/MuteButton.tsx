@@ -1,12 +1,12 @@
 import { DialogButton } from "@decky/ui";
-import { useStreamcordState } from "../../hooks/useStreamcordState";
+import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaMicrophoneAlt, FaMicrophoneAltSlash } from "react-icons/fa";
 import { call } from "@decky/api";
 
 const btnStyle = { height: "40px", width: "40px", minWidth: 0, padding: "10px 12px", marginRight: "10px" };
 
 export function MuteButton() {
-  const state = useStreamcordState();
+  const state = useSteamcordState();
   const icon = state?.me?.is_muted ? <FaMicrophoneAltSlash /> : <FaMicrophoneAlt />;
 
   if (!DialogButton) {
