@@ -175,10 +175,16 @@ class Plugin:
         # subprocess silently. Inherit the full environment so PATH/HOME/typelibs resolve,
         # and only override what's needed for hw encode + pipewire/pulse access.
         uid = os.getuid()
+        # Le plugin GStreamer `nice` (ICE, requis par webrtcbin) n'est PAS dans l'image
+        # Bazzite de base → webrtcbin échouait à construire le pipeline VP8 ("missing
+        # plug-in") et getDisplayMedia se bloquait. On embarque libgstnice.so et on
+        # l'ajoute au GST_PLUGIN_PATH (pas d'install système / pas de reboot).
+        gst_plugins_dir = str(Path(DECKY_PLUGIN_DIR) / "defaults" / "gst-plugins")
         gst_env = {
             **os.environ,
             "GST_VAAPI_ALL_DRIVERS": "1",
             "LIBVA_DRIVER_NAME": "radeonsi",
+            "GST_PLUGIN_PATH": gst_plugins_dir + os.pathsep + os.environ.get("GST_PLUGIN_PATH", ""),
             "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}"),
             "DBUS_SESSION_BUS_ADDRESS": os.environ.get(
                 "DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{uid}/bus"

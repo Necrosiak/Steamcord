@@ -463,32 +463,29 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const golive_channel = Vencord.Webpack.Common.ChannelStore.getChannel(golive_channel_id);
                                     const golive_guild_id = golive_channel?.guild_id ?? null;
 
-                                    // Discord's stream-start module ID changes every update — look it up
-                                    // by signature instead of hardcoding it. Fall back to the legacy wreq.
-                                    const StreamActions = Vencord.Webpack.find(m =>
-                                        m && typeof m.startStream === "function" && typeof m.stopStream === "function");
+                                    // L'ancienne API (modules m.startStream/m.stopStream) a DISPARU de
+                                    // Discord. On utilise les action creators actuels via findByCode
+                                    // (robuste aux changements d'ID de module) : STREAM_START / STREAM_STOP.
+                                    // getDisplayMedia est surchargé (webrtc_client.js → capture GStreamer
+                                    // plein écran) → pas de picker.
+                                    const WP = Vencord.Webpack;
                                     try {
                                         if (data.stop) {
-                                            if (StreamActions?.stopStream) StreamActions.stopStream();
-                                            else Vencord.Webpack.wreq(799808).default(null, null, null);
+                                            const ASS = WP.findStore("ApplicationStreamingStore");
+                                            const s = ASS?.getCurrentUserActiveStream?.();
+                                            const stopFn = WP.findByCode('"STREAM_STOP"');
+                                            if (s && stopFn) {
+                                                const key = s.guildId
+                                                    ? `guild:${s.guildId}:${s.channelId}:${s.ownerId}`
+                                                    : `call:${s.channelId}:${s.ownerId}`;
+                                                stopFn(key);
+                                            }
                                             console.log("[Steamcord] Go Live STOP envoyé");
                                         } else {
-                                            // Whole-screen only — getDisplayMedia is overridden in
-                                            // webrtc_client.js to return the GStreamer full-screen capture,
-                                            // so Discord never shows a window/source picker.
-                                            if (StreamActions?.startStream) {
-                                                StreamActions.startStream(golive_guild_id, golive_channel_id, {
-                                                    pid: null,
-                                                    sourceId: null,
-                                                    sourceName: "Entire Screen",
-                                                    guildId: golive_guild_id,
-                                                    channelId: golive_channel_id,
-                                                    previewDisabled: false,
-                                                });
-                                            } else {
-                                                Vencord.Webpack.wreq(799808).default(golive_guild_id, golive_channel_id, "Activity Panel");
-                                            }
-                                            console.log("[Steamcord] Go Live START envoyé (écran entier), found StreamActions=" + !!StreamActions);
+                                            const startFn = WP.findByCode('"STREAM_START",streamType');
+                                            if (startFn) startFn(golive_guild_id, golive_channel_id, {});
+                                            else console.warn("[Steamcord] Go Live: action STREAM_START introuvable");
+                                            console.log("[Steamcord] Go Live START envoyé (écran entier), found=" + !!startFn);
                                         }
                                     } catch (e) {
                                         console.error("[Steamcord] Go Live échec:", e);
