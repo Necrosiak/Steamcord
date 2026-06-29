@@ -1,8 +1,36 @@
 import { call } from "@decky/api";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { t } from "../i18n";
 import { SliderField, DialogButton } from "@decky/ui";
+import { watchVideo, stopVideo, isWatching, getStream, subscribe } from "../videoRelay";
+
+// Réagit à l'arrivée du flux vidéo relayé (Vesktop→QAM) pour cet utilisateur.
+function useRemoteVideo(userId: string) {
+  const [, force] = useState(0);
+  useEffect(() => subscribe(() => force((n) => n + 1)), []);
+  return { stream: getStream(userId), watching: isWatching(userId) };
+}
+
+// Tuile vidéo : on branche le MediaStream reçu sur l'élément <video>. Muet : le son
+// de l'appel est déjà audible via la sortie de Vesktop (on ne relaie que la vidéo).
+function VideoTile({ stream }: { stream: MediaStream }) {
+  const ref = useCallback((el: HTMLVideoElement | null) => {
+    if (el && el.srcObject !== stream) {
+      el.srcObject = stream;
+      (el as any).play?.().catch(() => {});
+    }
+  }, [stream]);
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      muted
+      playsInline
+      style={{ width: "100%", borderRadius: 6, marginTop: 6, background: "#000", display: "block" }}
+    />
+  );
+}
 
 const SliderFieldAny = SliderField as any;
 const Btn = DialogButton as any;
@@ -23,32 +51,48 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
   const [volume, setVolume] = useState<number>(100);
   // Mute LOCAL : on ne l'entend plus, de NOTRE côté seulement (lui ne le sait pas).
   const [localMuted, setLocalMuted] = useState<boolean>(false);
+  // Vidéo relayée (Go Live/cam) de ce participant, affichée dans son bloc.
+  const { stream: remoteVideo, watching } = useRemoteVideo(user.id);
 
   const speaking = user?.is_speaking;
   const muted = user?.is_muted;
   const deafened = user?.is_deafened;
 
-  // État initial du mute local (persiste côté Discord) au montage de la ligne.
-  // Inutile pour soi-même (on ne se mute pas localement).
+  // État du mute local : on POLL la vérité moteur (Discord) en continu plutôt que
+  // de lire une seule fois au montage. Sinon l'UI restait bloquée sur « Muet »
+  // (lu pendant qu'elle l'était) alors que le moteur était démuté → auto-correction.
   useEffect(() => {
     if (isSelf) return;
-    call<[string], boolean>("get_local_mute", user.id)
-      .then((r) => setLocalMuted(!!r))
-      .catch(() => {});
+    let alive = true;
+    const read = () =>
+      call<[string], boolean>("get_local_mute", user.id)
+        .then((r) => { if (alive) setLocalMuted(!!r); })
+        .catch(() => {});
+    read();
+    const iv = setInterval(read, 1500);
+    return () => { alive = false; clearInterval(iv); };
   }, [user.id, isSelf]);
+
+  // Volume du STREAM (audio du Go Live) — indépendant du volume de la voix (micro).
+  const [streamVol, setStreamVol] = useState<number>(100);
 
   const onVolumeChange = async (val: number) => {
     setVolume(val);
-    await call("set_user_volume", user.id, val);
+    await call("set_user_volume", user.id, val, "default");
+  };
+
+  const onStreamVolumeChange = async (val: number) => {
+    setStreamVol(val);
+    await call("set_user_volume", user.id, val, "stream");
   };
 
   const toggleLocalMute = async () => {
-    // Optimiste, puis on aligne sur l'état réel renvoyé par Discord.
-    setLocalMuted((m) => !m);
-    try {
-      const r = await call<[string], boolean>("toggle_local_mute", user.id);
-      setLocalMuted(!!r);
-    } catch { setLocalMuted((m) => !m); }
+    // SET idempotent (≠ toggle aveugle) : on fixe l'état VOULU. Optimiste pour la
+    // réactivité ; le poll ci-dessus réconcilie ensuite avec le moteur (jamais de
+    // revert aveugle en cas d'erreur réseau → plus de « ça reste muet »).
+    const target = !localMuted;
+    setLocalMuted(target);
+    try { await call<[string, boolean], boolean>("set_local_mute", user.id, target); } catch {}
   };
 
   return (
@@ -93,32 +137,68 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           }} />
         )}
       </div>
-      {/* Volume (à quel point TU l'entends) + bouton mute LOCAL à droite. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 4px", boxSizing: "border-box", maxWidth: "100%", overflow: "hidden" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <SliderFieldAny
-            label={`🔊 ${volume}%`}
-            value={volume}
-            min={0}
-            max={200}
-            step={5}
-            onChange={onVolumeChange}
-            bottomSeparator="none"
-          />
-        </div>
-        {/* Mute local : pas de sens pour soi-même → masqué sur sa propre ligne. */}
-        {!isSelf && (
+      {/* Volume VOIX (à quel point TU l'entends) — barre PLEINE LARGEUR. */}
+      <div style={{ padding: "0 10px", boxSizing: "border-box" }}>
+        <SliderFieldAny
+          label={`🔊 ${localMuted ? t("video_muted") : volume + "%"}`}
+          value={volume}
+          min={0} max={200} step={5}
+          onChange={onVolumeChange}
+          bottomSeparator="none"
+        />
+      </div>
+
+      {/* Mute LOCAL : bouton pleine largeur (sélectionnable manette) collé sous la
+          barre voix. C'est côté plugin-user seulement (l'autre ne le sait pas). */}
+      {!isSelf && (
+        <div style={{ padding: "2px 10px 0" }}>
           <Btn
             onClick={toggleLocalMute}
             style={{
-              flexShrink: 0, minWidth: 0, minHeight: 0, padding: "4px 8px", fontSize: 14, lineHeight: 1,
+              width: "100%", margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600,
+              borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               background: localMuted ? "#ed4245" : "rgba(255,255,255,0.08)",
             }}
           >
-            {localMuted ? "🔇" : "🎙️"}
+            {localMuted ? `🔇 ${t("unmute_voice")}` : `🎙️ ${t("mute_voice")}`}
           </Btn>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Volume STREAM (audio du Go Live) — barre SÉPARÉE pleine largeur, seulement
+          si l'utilisateur partage (le son micro et le son du stream sont distincts). */}
+      {user?.is_live && (
+        <div style={{ padding: "0 10px", boxSizing: "border-box" }}>
+          <SliderFieldAny
+            label={`🖥️ ${t("video_stream")} ${streamVol}%`}
+            value={streamVol}
+            min={0} max={200} step={5}
+            onChange={onStreamVolumeChange}
+            bottomSeparator="none"
+          />
+        </div>
+      )}
+
+      {/* Live (Go Live / caméra) : bouton Voir + vidéo relayée dans le bloc. */}
+      {user?.is_live && !isSelf && (
+        <div style={{ padding: "2px 8px 0" }}>
+          <Btn
+            onClick={() => (watching ? stopVideo(user.id) : watchVideo(user.id))}
+            style={{
+              width: "100%", margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600,
+              borderRadius: 6,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              background: watching ? "#ed4245" : "rgba(88,101,242,0.45)",
+            }}
+          >
+            {watching ? t("video_stop") : t("video_watch")}
+          </Btn>
+          {watching && remoteVideo && <VideoTile stream={remoteVideo} />}
+          {watching && !remoteVideo && (
+            <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("video_connecting")}</div>
+          )}
+        </div>
+      )}
     </li>
   );
 }

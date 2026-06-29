@@ -90,6 +90,103 @@ window.Vencord.Plugins.plugins.Steamcord = {
             window.STEAMCORD_WS.send(JSON.stringify({ type: "$MIC_WEBRTC", offer: peerConnection.localDescription }));
         });
 
+        // ── Relais vidéo INVERSE (Vesktop → QAM) ────────────────────────────────
+        // Pour VOIR le Go Live/cam d'un participant dans le panneau QAM : on regarde
+        // son stream (Discord décode + rend un <video>), on capture sa piste vidéo et
+        // on l'OFFRE au QAM par WebRTC local — miroir du relais micro, sens inverse.
+        // L'audio n'est PAS relayé : il est déjà audible via la sortie de Vesktop.
+        // Corrélation par userId. findByCode (≠ id de module) survit aux MAJ Discord.
+        window.STEAMCORD_VIDEO = window.STEAMCORD_VIDEO || {}; // userId -> { pc, streamKey }
+
+        window.STEAMCORD_startVideoRelay = async (userId) => {
+            try {
+                const WP = Vencord.Webpack;
+                const ASS = WP.findStore("ApplicationStreamingStore");
+                const SCS = WP.findStore("SelectedChannelStore");
+                const chId = SCS.getVoiceChannelId();
+                const s = (ASS.getAllActiveStreamsForChannel(chId) || []).find(x => (x.ownerId || x.userId) === userId);
+                if (!s) { console.warn("[Steamcord] video: aucun stream actif pour " + userId); return; }
+                const streamKey = s.guildId
+                    ? `guild:${s.guildId}:${s.channelId}:${s.ownerId}`
+                    : `call:${s.channelId}:${s.ownerId}`;
+
+                // Regarder le stream (s'abonner) — SEULEMENT si on n'est pas déjà viewer,
+                // car re-dispatcher STREAM_WATCH re-render le tile et tue la piste capturée.
+                const myId = WP.findStore("UserStore").getCurrentUser()?.id;
+                const alreadyViewing = (ASS.getViewerIds?.(streamKey) || []).includes(myId);
+                if (!alreadyViewing) {
+                    const watch = WP.findByCode('"STREAM_WATCH",streamKey');
+                    if (watch) watch(s); else console.warn("[Steamcord] video: action STREAM_WATCH introuvable");
+                }
+
+                // CAPTURER via captureStream() : la piste capturée suit le RENDU de
+                // l'élément. Quand Discord swappe/re-render le tile, la piste capturée
+                // passe "ended" → un keepalive la remplace (replaceTrack) sans renégocier.
+                const grab = () => {
+                    const cands = Array.from(document.querySelectorAll("video"))
+                        .filter(e => e.srcObject && e.srcObject.getVideoTracks().length
+                            && !e.srcObject.getVideoTracks()[0].muted && e.videoWidth > 0)
+                        .sort((a, b) => (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight));
+                    for (const el of cands) {
+                        try {
+                            const ct = el.captureStream().getVideoTracks()[0];
+                            if (ct && ct.readyState === "live") return ct;
+                        } catch (e) { /* élément cross-origin (avatar/banner) → suivant */ }
+                    }
+                    return null;
+                };
+                // Laisser le tile se (re)monter avant de capturer une piste stable.
+                await new Promise(r => setTimeout(r, 1200));
+                let track = null;
+                for (let i = 0; i < 60 && !track; i++) { track = grab(); if (!track) await new Promise(r => setTimeout(r, 100)); }
+                if (!track) { console.warn("[Steamcord] video: piste introuvable pour " + userId); return; }
+
+                // Fermer un éventuel relais précédent pour ce user avant d'en recréer un.
+                const prev = window.STEAMCORD_VIDEO[userId];
+                if (prev) { try { prev.pc && prev.pc.close(); } catch {} if (prev.keepalive) clearInterval(prev.keepalive); }
+
+                const pc = new RTCPeerConnection(null);
+                const sender = pc.addTrack(track);
+
+                // Keepalive : si la piste capturée meurt (re-render Discord), re-capturer
+                // l'élément live courant et remplacer la piste du sender — flux continu.
+                const keepalive = setInterval(() => {
+                    try {
+                        if (pc.connectionState === "closed") { clearInterval(keepalive); return; }
+                        if (!sender.track || sender.track.readyState === "ended") {
+                            const fresh = grab();
+                            if (fresh) { sender.replaceTrack(fresh); console.log("[Steamcord] video: piste remplacée (keepalive) pour " + userId); }
+                        }
+                    } catch (e) { /* ignore */ }
+                }, 1000);
+                window.STEAMCORD_VIDEO[userId] = { pc, streamKey, keepalive };
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                await new Promise((res) => {
+                    if (pc.iceGatheringState === "complete") return res();
+                    const cb = () => { if (pc.iceGatheringState === "complete") { pc.removeEventListener("icegatheringstatechange", cb); res(); } };
+                    pc.addEventListener("icegatheringstatechange", cb);
+                    setTimeout(res, 2000);
+                });
+                window.STEAMCORD_WS.send(JSON.stringify({ type: "$VIDEO_WEBRTC", userId, offer: pc.localDescription }));
+                console.log("[Steamcord] video: offer envoyée pour " + userId);
+            } catch (e) { console.error("[Steamcord] video relay start failed", e); }
+        };
+
+        window.STEAMCORD_stopVideoRelay = (userId) => {
+            try {
+                const entry = window.STEAMCORD_VIDEO[userId];
+                if (!entry) return;
+                if (entry.keepalive) clearInterval(entry.keepalive);
+                if (entry.pc) entry.pc.close();
+                const close = Vencord.Webpack.findByCode('"STREAM_CLOSE",streamKey');
+                if (close && entry.streamKey) close(entry.streamKey);
+                delete window.STEAMCORD_VIDEO[userId];
+                console.log("[Steamcord] video: relais arrêté pour " + userId);
+            } catch (e) { console.error("[Steamcord] video relay stop failed", e); }
+        };
+
         // Discord's MediaEngine reinitializes and OVERWRITES our getUserMedia override,
         // so it ends up calling the native one and capturing a silent CEF device →
         // nobody hears the user. Install our override resiliently (defineProperty with a
@@ -234,6 +331,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
             });
 
             function connect() {
+                // Garde anti-double-client : si un WS est déjà ouvert/en cours, ne pas
+                // en créer un second (sinon chaque message backend est traité 2×).
+                if (window.STEAMCORD_WS && window.STEAMCORD_WS.readyState <= 1) return;
                 window.STEAMCORD_WS = new WebSocket('ws://127.0.0.1:65123/socket');
                 window.STEAMCORD_WS.addEventListener("message", async function (e) {
                     const data = JSON.parse(e.data);
@@ -301,7 +401,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     result = await sendAttachmentToChannel(data.channel_id, data.attachment_b64, "screenshot.jpg");
                                     break;
                                 case "$set_user_volume":
-                                    FluxDispatcher.dispatch({ type: "AUDIO_SET_LOCAL_VOLUME", userId: data.id, volume: data.volume });
+                                    // context "default" = voix, "stream" = audio du Go Live (volumes indépendants).
+                                    FluxDispatcher.dispatch({ type: "AUDIO_SET_LOCAL_VOLUME", userId: data.id, volume: data.volume, context: data.context || "default" });
                                     return;
                                 case "$get_local_mute": {
                                     // Mute LOCAL (côté client seulement : on ne les entend plus, eux ne le savent pas).
@@ -314,6 +415,18 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     if (mod && mod.toggleLocalMute) mod.toggleLocalMute(data.id);
                                     const MES = Vencord.Webpack.findStore("MediaEngineStore");
                                     result = !!(MES && MES.isLocalMute && MES.isLocalMute(data.id)); // nouvel état
+                                    break;
+                                }
+                                case "$set_local_mute": {
+                                    // SET idempotent (≠ toggle aveugle) : on ne bascule que si l'état
+                                    // courant diffère du voulu → un double-clic gamescope ne re-flip plus.
+                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const cur = !!(MES && MES.isLocalMute && MES.isLocalMute(data.id));
+                                    if (cur !== !!data.muted) {
+                                        const mod = Vencord.Webpack.findByProps("toggleLocalMute");
+                                        if (mod && mod.toggleLocalMute) mod.toggleLocalMute(data.id);
+                                    }
+                                    result = !!(MES && MES.isLocalMute && MES.isLocalMute(data.id));
                                     break;
                                 }
                                 case "$set_status": {
@@ -540,6 +653,17 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 }
                                 case "$webrtc":
                                     return;
+                                case "$WATCH_VIDEO":
+                                    window.STEAMCORD_startVideoRelay(data.userId);
+                                    return;
+                                case "$UNWATCH_VIDEO":
+                                    window.STEAMCORD_stopVideoRelay(data.userId);
+                                    return;
+                                case "$VIDEO_ANSWER": {
+                                    const entry = window.STEAMCORD_VIDEO[data.userId];
+                                    if (entry && entry.pc) await entry.pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+                                    return;
+                                }
                                 case "$login_token": {
                                     const t = data.token;
                                     if (!t) return;
@@ -680,6 +804,34 @@ window.Vencord.Plugins.plugins.Steamcord = {
                             console.log("[Steamcord] voice channel changed → " + vcid);
                             window.STEAMCORD_WS.send(JSON.stringify({ type: "VOICE_CHANNEL_SELECT", channelId: vcid, guildId }));
                         }
+                    } catch (_) {}
+                }, 2000);
+
+                // Sync des Go Live actifs → is_live des participants dans le QAM. Discord
+                // n'émet STREAM_START qu'au DÉMARRAGE : un stream lancé avant notre
+                // connexion serait manqué. On diffe l'ensemble des streams actifs et on
+                // émet STREAM_START/STOP synthétiques sur changement (clé = call/guild:…:ownerId).
+                let steamcordStreamKeys = new Set();
+                setInterval(() => {
+                    try {
+                        if (!window.STEAMCORD_WS || window.STEAMCORD_WS.readyState !== 1) return;
+                        const SCS = Vencord.Webpack.findStore("SelectedChannelStore");
+                        const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
+                        const vcid = SCS?.getVoiceChannelId?.() ?? null;
+                        const now = new Set();
+                        if (vcid) {
+                            for (const s of (ASS?.getAllActiveStreamsForChannel?.(vcid) || [])) {
+                                const owner = s.ownerId || s.userId;
+                                const key = s.guildId ? `guild:${s.guildId}:${s.channelId}:${owner}` : `call:${s.channelId}:${owner}`;
+                                now.add(key);
+                                if (!steamcordStreamKeys.has(key))
+                                    window.STEAMCORD_WS.send(JSON.stringify({ type: "STREAM_START", streamKey: key }));
+                            }
+                        }
+                        for (const key of steamcordStreamKeys)
+                            if (!now.has(key))
+                                window.STEAMCORD_WS.send(JSON.stringify({ type: "STREAM_STOP", streamKey: key }));
+                        steamcordStreamKeys = now;
                     } catch (_) {}
                 }, 2000);
 

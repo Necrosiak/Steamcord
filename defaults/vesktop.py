@@ -258,9 +258,12 @@ async def get_discord_tab(client_js) -> Tab:
             # Tell the client it's running under Vesktop (native mic) BEFORE it runs, so it
             # never installs the CEF-only getUserMedia/visibility overrides that would break
             # Vesktop's native microphone.
+            # PAS runImmediately : sinon le script tourne 2× (immédiat + au reload) →
+            # 2 WS + 2 intercepteurs sur le même document → events traités en double
+            # (le toggle mute s'annulait, etc.). Le reload juste après suffit → 1 exécution.
             await tab._send_devtools_cmd({
                 "method": "Page.addScriptToEvaluateOnNewDocument",
-                "params": {"source": "window.STEAMCORD_IS_VESKTOP = true;\n" + client_js, "runImmediately": True},
+                "params": {"source": "window.STEAMCORD_IS_VESKTOP = true;\n" + client_js},
             }, False)
             await tab._send_devtools_cmd({"method": "Page.reload", "params": {}}, False)
             return tab

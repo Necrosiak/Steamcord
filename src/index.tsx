@@ -33,6 +33,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 
 import { patchMenu } from "./patches/menuPatch";
 import { notify } from "./notify";
+import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
 import {
   useSteamcordState,
@@ -779,6 +780,9 @@ export default definePlugin(() => {
     }
   };
   addEventListener("webrtc", webrtcEventListener);
+
+  // Réception vidéo (voir le Go Live/cam des autres dans leur bloc).
+  initVideoRelay();
 
   // Always follow the default audio INPUT automatically: when a mic is plugged
   // in/out (headset, RØDECaster…), swap the relayed track for the new default

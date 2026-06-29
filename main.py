@@ -451,8 +451,8 @@ class Plugin:
         await cls.evt_handler.ws.send_json({"type": "$rpc", "game": game})
 
     @classmethod
-    async def set_user_volume(cls, user_id, volume):
-        await cls.evt_handler.ws.send_json({"type": "$set_user_volume", "id": user_id, "volume": volume})
+    async def set_user_volume(cls, user_id, volume, context="default"):
+        await cls.evt_handler.ws.send_json({"type": "$set_user_volume", "id": user_id, "volume": volume, "context": context})
 
     @classmethod
     async def set_discord_status(cls, status):
@@ -520,6 +520,10 @@ class Plugin:
     @classmethod
     async def toggle_local_mute(cls, user_id):
         return await cls.evt_handler.api.toggle_local_mute(user_id)
+
+    @classmethod
+    async def set_local_mute(cls, user_id, muted):
+        return await cls.evt_handler.api.set_local_mute(user_id, muted)
 
     # ── Sélection des périphériques audio (sortie/entrée) pour Discord ──────────
     # Discord/Vesktop ne voit que "Default" en headless → on pilote au niveau
@@ -663,6 +667,21 @@ class Plugin:
     @classmethod
     async def mic_webrtc_answer(cls, answer):
         await cls.evt_handler.ws.send_json({"type": "$webrtc", "payload": answer})
+
+    # ── Relais vidéo inverse (voir le Go Live/cam des autres dans le QAM) ──
+    @classmethod
+    async def watch_video(cls, user_id):
+        # Ask the Discord tab to watch this user's stream, capture its video track
+        # and offer it back to us. Correlated by user_id.
+        await cls.evt_handler.ws.send_json({"type": "$WATCH_VIDEO", "userId": user_id})
+
+    @classmethod
+    async def unwatch_video(cls, user_id):
+        await cls.evt_handler.ws.send_json({"type": "$UNWATCH_VIDEO", "userId": user_id})
+
+    @classmethod
+    async def video_webrtc_answer(cls, user_id, answer):
+        await cls.evt_handler.ws.send_json({"type": "$VIDEO_ANSWER", "userId": user_id, "payload": answer})
 
     @classmethod
     async def _unload(cls):

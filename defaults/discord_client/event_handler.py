@@ -29,6 +29,7 @@ class EventHandler:
             "RPC_NOTIFICATION_CREATE": self._rpc_notification,
             "SPEAKING": self._speaking,
             "$MIC_WEBRTC": self._mic_webrtc,
+            "$VIDEO_WEBRTC": self._video_webrtc,
             "CALL_RING": self._call_ring,
         }
         self.loaded = False
@@ -40,6 +41,10 @@ class EventHandler:
         self.api._channel_name = None
         self.api._guild_name = None
         self.vc_members = {}
+        # IDs des participants qui partagent (Go Live). Découplé de vc_members pour
+        # éviter une race : STREAM_START peut arriver avant que la liste vocale soit
+        # peuplée (ou les membres sont reconstruits à chaque VOICE_STATE_UPDATES).
+        self.streaming_users = set()
         self.state_changed_event = Event()
         self.notification = None
         self.remote_auth = RemoteAuth()
@@ -59,6 +64,9 @@ class EventHandler:
             return None
 
         users = list(self.vc_members.values())
+        # Reflète l'état de partage courant indépendamment de l'ordre des events.
+        for user in users:
+            user.is_live = user.id in self.streaming_users
         me = None
         for user in users:
             if user.id == self.me.id:
@@ -258,6 +266,17 @@ class EventHandler:
         if payload:
             await emit("webrtc", payload)
 
+    async def _video_webrtc(self, data):
+        # Reverse video relay: the Discord tab offers a remote participant's video
+        # stream; forward the offer/ICE to the QAM frontend, which answers and renders
+        # it in that user's block. Correlated by userId.
+        payload = {"userId": data.get("userId")}
+        if "offer" in data:
+            payload["offer"] = data["offer"]
+        if "ice" in data:
+            payload["ice"] = data["ice"]
+        await emit("video_webrtc", payload)
+
     async def _speaking(self, data):
         user_id = data.get("userId") or data.get("user_id")
         speaking = data.get("speakingFlags", 0) > 0
@@ -293,15 +312,20 @@ class EventHandler:
                 self._captcha_needed = True
 
     async def _stream_start(self, data):
-        # Reflect our own Go Live state in the QAM. Discord emits STREAM_START for
-        # any participant; only flip our flag if the stream key is ours.
+        # Reflect Go Live state in the QAM. Discord emits STREAM_START for any
+        # participant; the streamer is the last segment of the stream key
+        # (call:channelId:ownerId / guild:guildId:channelId:ownerId).
         stream_key = data.get("streamKey", "") or ""
-        if self.me.id and self.me.id in stream_key:
-            self.me.is_live = True
-        elif not stream_key:
+        owner_id = stream_key.split(":")[-1] if stream_key else None
+        if owner_id:
+            self.streaming_users.add(owner_id)
+        if (self.me.id and self.me.id in stream_key) or not stream_key:
             self.me.is_live = True
 
     async def _stream_stop(self, data):
         stream_key = data.get("streamKey", "") or ""
+        owner_id = stream_key.split(":")[-1] if stream_key else None
+        if owner_id:
+            self.streaming_users.discard(owner_id)
         if (self.me.id and self.me.id in stream_key) or not stream_key:
             self.me.is_live = False
