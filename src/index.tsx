@@ -637,6 +637,47 @@ const AboutSection = () => {
   );
 };
 
+const LogoutSection = () => {
+  const [confirm, setConfirm] = useState(false);
+  const Btn = DialogButton as any;
+  return (
+    <>
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🚪 {t("config_account")}</div>
+      </SR>
+      <SR>
+        {!confirm ? (
+          <Btn
+            onClick={() => setConfirm(true)}
+            style={{ width: "100%", margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600, borderRadius: 6, background: "rgba(237,66,69,0.22)" }}
+          >
+            🚪 {t("logout_discord")}
+          </Btn>
+        ) : (
+          <div style={{ width: "100%" }}>
+            <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 6, textAlign: "center" }}>{t("logout_confirm")}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn
+                onClick={() => { call("logout_discord").catch(() => {}); setConfirm(false); }}
+                style={{ flex: 1, margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600, borderRadius: 6, background: "#ed4245" }}
+              >
+                {t("logout_yes")}
+              </Btn>
+              <Btn
+                onClick={() => setConfirm(false)}
+                style={{ flex: 1, margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, borderRadius: 6, background: "rgba(255,255,255,0.08)" }}
+              >
+                {t("logout_cancel")}
+              </Btn>
+            </div>
+          </div>
+        )}
+      </SR>
+    </>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div>
@@ -656,6 +697,7 @@ const ConfigPanel = () => {
       <UpdaterSection />
       <hr />
       <AboutSection />
+      <LogoutSection />
     </div>
   );
 };

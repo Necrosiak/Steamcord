@@ -22,6 +22,7 @@ class EventHandler:
             "STREAM_START": self._stream_start,
             "STREAM_STOP": self._stream_stop,
             "CONNECTION_CLOSED": self._logout,
+            "LOGOUT": self._logout,
             "VOICE_STATE_UPDATES": self._voice_state_updates,
             "VOICE_CHANNEL_SELECT": self._voice_channel_select,
             "AUDIO_TOGGLE_SELF_MUTE": self._toggle_mute,
@@ -160,6 +161,10 @@ class EventHandler:
     async def _logout(self, data):
         self.logged_in = False
         self.me = User({"id": "", "username": "", "discriminator": None, "avatar": ""})
+        # Purger l'état d'appel pour ne pas laisser un faux « en vocal » au QAM.
+        self.vc_channel_id = None
+        self.vc_members = {}
+        self.streaming_users = set()
         self.remote_auth.start(self.state_changed_event.set)
 
     async def _voice_channel_select(self, data):

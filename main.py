@@ -525,6 +525,11 @@ class Plugin:
     async def set_local_mute(cls, user_id, muted):
         return await cls.evt_handler.api.set_local_mute(user_id, muted)
 
+    @classmethod
+    async def logout_discord(cls):
+        # Déconnexion totale de Discord (invalide le token + retour login/QR).
+        await cls.evt_handler.ws.send_json({"type": "$logout"})
+
     # ── Sélection des périphériques audio (sortie/entrée) pour Discord ──────────
     # Discord/Vesktop ne voit que "Default" en headless → on pilote au niveau
     # SYSTÈME via PipeWire (pactl), en routant les flux de Vesktop par-application.

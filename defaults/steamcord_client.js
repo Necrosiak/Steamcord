@@ -672,6 +672,19 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     else { localStorage.setItem("token", JSON.stringify(t)); location.reload(); }
                                     return;
                                 }
+                                case "$logout": {
+                                    // Déconnexion TOTALE Discord : invalide le token côté serveur +
+                                    // purge la session locale → retour page login (QR). Fallback :
+                                    // purge localStorage + reload si l'action n'est pas trouvée.
+                                    try {
+                                        const auth = Vencord.Webpack.findByProps("logout", "loginToken");
+                                        if (auth && typeof auth.logout === "function") auth.logout();
+                                        else { localStorage.removeItem("token"); location.reload(); }
+                                    } catch (e) {
+                                        try { localStorage.removeItem("token"); location.reload(); } catch (_) {}
+                                    }
+                                    return;
+                                }
                             }
                         } catch (error) {
                             result = { error: error }
@@ -926,9 +939,11 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     if (lastUrl !== null) { lastUrl = null; sendQR(null); }
                     return;
                 }
-                const spinner = document.querySelector('[class*="spinner"]');
+                // NB : pas de check global `[class*="spinner"]` — il matchait n'importe
+                // quel spinner de la page login et bloquait la capture. `looksLikeQR`
+                // suffit à écarter le placeholder coloré.
                 const canvas = Array.from(document.querySelectorAll('canvas')).find(c => c.width === 240 && c.height === 240);
-                if (canvas && !spinner && looksLikeQR(canvas)) {
+                if (canvas && looksLikeQR(canvas)) {
                     const url = canvas.toDataURL('image/png');
                     if (url.length > 5000 && url !== lastUrl) { lastUrl = url; sendQR(url); }
                     return;

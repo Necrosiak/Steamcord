@@ -97,6 +97,11 @@ const T: Record<Locale, Dict> = {
     video_muted: "Muted",
     mute_voice: "Mute",
     unmute_voice: "Muted — tap to unmute",
+    config_account: "Account",
+    logout_discord: "Log out of Discord",
+    logout_confirm: "Log out completely? You'll need to scan the QR again.",
+    logout_yes: "Log out",
+    logout_cancel: "Cancel",
   },
   fr: {
     not_connected: "Non connecté",
@@ -162,6 +167,11 @@ const T: Record<Locale, Dict> = {
     video_muted: "Muet",
     mute_voice: "Couper le son",
     unmute_voice: "Muet — réactiver",
+    config_account: "Compte",
+    logout_discord: "Se déconnecter de Discord",
+    logout_confirm: "Déconnexion totale ? Il faudra re-scanner le QR.",
+    logout_yes: "Déconnexion",
+    logout_cancel: "Annuler",
   },
   de: {
     audio_auto: "Auto (System-Standard)",
