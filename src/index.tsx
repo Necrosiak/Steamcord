@@ -639,7 +639,21 @@ const AboutSection = () => {
 
 const LogoutSection = () => {
   const [confirm, setConfirm] = useState(false);
+  const [focused, setFocused] = useState<string | null>(null);
   const Btn = DialogButton as any;
+  // Texte TOUJOURS blanc + halo blanc au focus (le fond ne change pas → jamais de
+  // texte illisible sur le surlignage clair de Steam).
+  const btn = (key: string, bg: string, extra: any = {}) => ({
+    onFocus: () => setFocused(key),
+    onBlur: () => setFocused((f: string | null) => (f === key ? null : f)),
+    style: {
+      margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600,
+      borderRadius: 6, color: "#fff", background: bg,
+      boxShadow: focused === key ? "0 0 0 2px #fff" : "none",
+      transition: "box-shadow .08s ease",
+      ...extra,
+    },
+  });
   return (
     <>
       <hr />
@@ -648,26 +662,17 @@ const LogoutSection = () => {
       </SR>
       <SR>
         {!confirm ? (
-          <Btn
-            onClick={() => setConfirm(true)}
-            style={{ width: "100%", margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600, borderRadius: 6, background: "rgba(237,66,69,0.22)" }}
-          >
+          <Btn onClick={() => setConfirm(true)} {...btn("out", "rgba(237,66,69,0.6)", { width: "100%" })}>
             🚪 {t("logout_discord")}
           </Btn>
         ) : (
           <div style={{ width: "100%" }}>
-            <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 6, textAlign: "center" }}>{t("logout_confirm")}</div>
+            <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 6, textAlign: "center", color: "#fff" }}>{t("logout_confirm")}</div>
             <div style={{ display: "flex", gap: 8 }}>
-              <Btn
-                onClick={() => { call("logout_discord").catch(() => {}); setConfirm(false); }}
-                style={{ flex: 1, margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600, borderRadius: 6, background: "#ed4245" }}
-              >
+              <Btn onClick={() => { call("logout_discord").catch(() => {}); setConfirm(false); }} {...btn("yes", "#ed4245", { flex: 1 })}>
                 {t("logout_yes")}
               </Btn>
-              <Btn
-                onClick={() => setConfirm(false)}
-                style={{ flex: 1, margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, borderRadius: 6, background: "rgba(255,255,255,0.08)" }}
-              >
+              <Btn onClick={() => setConfirm(false)} {...btn("cancel", "rgba(255,255,255,0.18)", { flex: 1 })}>
                 {t("logout_cancel")}
               </Btn>
             </div>
