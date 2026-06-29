@@ -32,6 +32,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { patchMenu } from "./patches/menuPatch";
+import { notify } from "./notify";
 import { DiscordTab } from "./components/DiscordTab";
 import {
   useSteamcordState,
@@ -612,6 +613,29 @@ const AudioDevicesConfig = () => {
   );
 };
 
+// À propos rapide (bas de l'onglet Config).
+const AboutSection = () => {
+  const [version, setVersion] = useState<string>("");
+  useEffect(() => { call<[], string>("get_version").then((v) => setVersion(v || "")).catch(() => {}); }, []);
+  const open = (url: string) => { try { (window as any).SteamClient?.URL?.ExecuteSteamURL?.("steam://openurl/" + url); } catch {} };
+  return (
+    <>
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>ℹ️ {t("about")}</div>
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, color: "#aaa", lineHeight: 1.6 }}>
+          <div><b style={{ color: "#fff" }}>Steamcord</b>{version ? ` v${version}` : ""}</div>
+          <div>{t("about_by")} <span style={{ color: "#67a3ff" }}>Necrosiak</span></div>
+        </div>
+      </SR>
+      <SR>
+        <WideBtn onClick={() => open("https://github.com/Necrosiak/Steamcord")}>🔗 GitHub</WideBtn>
+      </SR>
+    </>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div>
@@ -629,6 +653,8 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔄 {t("config_updates")}</div>
       </SR>
       <UpdaterSection />
+      <hr />
+      <AboutSection />
     </div>
   );
 };
@@ -697,24 +723,7 @@ export default definePlugin(() => {
       console.log("Dispatching Steamcord notification: ", payload);
       // Incoming DM call: localize the title to the SteamOS language.
       const title = payload.kind === "call" ? `📞 ${t("incoming_call")}` : payload.title;
-      // NE PAS utiliser Decky `toaster.toast` : sur ce build de Steam ça crée des
-      // entrées de notif SANS `notification_type` → aucun popup ET ça FAIT PLANTER
-      // le panneau de notifs Steam ("Cannot read properties of undefined (reading
-      // 'notification_type')"). On passe par l'API NATIVE Steam avec un type qui a
-      // popup+son d'activés : EClientUINotificationType 1 (GroupChatMessage) — le
-      // type 2 (FriendChatMessage) est en panneau-seul ici. Le type porte un vrai
-      // notification_type → plus de crash, ET popup + son OK (validé en live).
-      try {
-        const App = (window as any).App;
-        const steamid = App?.GetCurrentUser?.()?.strSteamID || App?.m_CurrentUser?.strSteamID || "";
-        (window as any).SteamClient?.ClientNotifications?.DisplayClientNotification?.(
-          1,
-          JSON.stringify({ title, body: payload.body, state: "active", steamid }),
-          () => {},
-        );
-      } catch (e) {
-        console.error("[Steamcord] notification failed", e);
-      }
+      notify({ title, body: payload.body });
     },
     MIC_PEER_CONNECTION: undefined,
   };

@@ -1,6 +1,7 @@
-import { call, toaster } from "@decky/api";
+import { call } from "@decky/api";
 import { Toggle } from "@decky/ui";
 import { useState } from "react";
+import { notify } from "../../notify";
 
 const PTT_BUTTON = 33;
 
@@ -12,7 +13,7 @@ export function PushToTalkButton() {
     setPtt(checked);
     if (!pttEnabled) {
       call("enable_ptt", true);
-      toaster.toast({ title: "Push-To-Talk", body: "Hold down the R5 button to talk" });
+      notify({ title: "Push-To-Talk", body: "Hold down the R5 button to talk" });
       unregisterPtt = SteamClient.Input.RegisterForControllerInputMessages(
         (events: any) => {
           for (const event of events)

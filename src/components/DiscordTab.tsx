@@ -1,7 +1,8 @@
-import { call, toaster } from "@decky/api"
+import { call } from "@decky/api"
 import { Router } from "@decky/ui"
 import { useLayoutEffect } from "react"
 import { t } from "../i18n"
+import { notify } from "../notify"
 
 export const DiscordTab = () => {
     useLayoutEffect(() => {
@@ -12,7 +13,7 @@ export const DiscordTab = () => {
                 window.DISCORD_TAB.m_browserView.SetFocus(true);
             }
             else {
-                toaster.toast({
+                notify({
                     title: "Steamcord",
                     body: t("not_loaded")
                 });

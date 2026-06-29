@@ -301,6 +301,10 @@ class Plugin:
         return await updater.check()
 
     @classmethod
+    async def get_version(cls):
+        return updater.get_current_version()
+
+    @classmethod
     async def apply_update(cls, url):
         ok = await updater.apply(url)
         if ok:
