@@ -625,6 +625,51 @@ const AudioDevicesConfig = () => {
   );
 };
 
+// Réglages micro Discord (Voix & Vidéo) pilotés via le client CDP : réduction de
+// bruit tri-état (Krisp > Standard > Aucune) + annulation d'écho + gain auto.
+const MicProcessingConfig = () => {
+  const [cfg, setCfg] = useState<any>(null);
+
+  useEffect(() => {
+    call<[], any>("get_audio_processing").then((d) => {
+      if (d && !d.error) setCfg(d);
+    }).catch(() => {});
+  }, []);
+
+  if (!cfg) return null;
+  const noiseOpts = [
+    { data: "krisp", label: t("mic_noise_krisp") },
+    { data: "standard", label: t("mic_noise_standard") },
+    { data: "none", label: t("mic_noise_none") },
+  ];
+
+  return (
+    <>
+      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "2px 0" }}>🎙️ {t("mic_noise_reduction")}</div></SR>
+      <SR>
+        <Dropdown rgOptions={noiseOpts as any} selectedOption={cfg.noise}
+          onChange={(e: any) => { setCfg({ ...cfg, noise: e.data }); call("set_noise_reduction", e.data).catch(() => {}); }} />
+      </SR>
+      <SR>
+        <ToggleField
+          label={t("mic_echo_cancellation")}
+          checked={!!cfg.echoCancellation}
+          onChange={(v: boolean) => { setCfg({ ...cfg, echoCancellation: v }); call("set_echo_cancellation", v).catch(() => {}); }}
+          bottomSeparator="none"
+        />
+      </SR>
+      <SR>
+        <ToggleField
+          label={t("mic_auto_gain")}
+          checked={!!cfg.automaticGainControl}
+          onChange={(v: boolean) => { setCfg({ ...cfg, automaticGainControl: v }); call("set_automatic_gain_control", v).catch(() => {}); }}
+          bottomSeparator="none"
+        />
+      </SR>
+    </>
+  );
+};
+
 // À propos rapide (bas de l'onglet Config).
 const AboutSection = () => {
   const [version, setVersion] = useState<string>("");
@@ -706,6 +751,11 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎧 {t("config_audio")}</div>
       </SR>
       <AudioDevicesConfig />
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎤 {t("config_mic")}</div>
+      </SR>
+      <MicProcessingConfig />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔄 {t("config_updates")}</div>

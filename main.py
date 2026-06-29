@@ -573,6 +573,22 @@ class Plugin:
         return await cls.evt_handler.api.set_local_mute(user_id, muted)
 
     @classmethod
+    async def get_audio_processing(cls):
+        return await cls.evt_handler.api.get_audio_processing()
+
+    @classmethod
+    async def set_noise_reduction(cls, mode):
+        return await cls.evt_handler.api.set_noise_reduction(mode)
+
+    @classmethod
+    async def set_echo_cancellation(cls, enabled):
+        return await cls.evt_handler.api.set_echo_cancellation(enabled)
+
+    @classmethod
+    async def set_automatic_gain_control(cls, enabled):
+        return await cls.evt_handler.api.set_automatic_gain_control(enabled)
+
+    @classmethod
     async def _screen_diag(cls):
         # Diagnostic capture d'écran : log périodiquement si on est en mode JEU
         # (gamescope) et quels nodes vidéo PipeWire existent. Tourne dans plugin_loader

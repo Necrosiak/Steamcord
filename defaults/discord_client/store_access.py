@@ -120,3 +120,15 @@ class StoreAccess:
         return await self._store_access_request("$toggle_local_mute", id=user_id)
     async def set_local_mute(self, user_id, muted):
         return await self._store_access_request("$set_local_mute", id=user_id, muted=muted)
+
+    async def get_audio_processing(self):
+        return await self._store_access_request("$get_audio_processing")
+
+    async def set_noise_reduction(self, mode):
+        return await self._store_access_request("$set_noise_reduction", mode=mode)
+
+    async def set_echo_cancellation(self, enabled):
+        return await self._store_access_request("$set_echo_cancellation", enabled=enabled)
+
+    async def set_automatic_gain_control(self, enabled):
+        return await self._store_access_request("$set_automatic_gain_control", enabled=enabled)

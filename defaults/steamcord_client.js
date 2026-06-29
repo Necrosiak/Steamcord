@@ -733,6 +733,49 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     }
                                     return;
                                 }
+                                case "$get_audio_processing": {
+                                    // Réglages micro Discord (Voix & Vidéo). La réduction de bruit
+                                    // est un tri-état : Krisp (noiseCancellation) > Standard
+                                    // (noiseSuppression) > Aucune. + écho + gain auto.
+                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const nc = !!MES.getNoiseCancellation();
+                                    const ns = !!MES.getNoiseSuppression();
+                                    result = {
+                                        noise: nc ? "krisp" : (ns ? "standard" : "none"),
+                                        echoCancellation: !!MES.getEchoCancellation(),
+                                        automaticGainControl: !!MES.getAutomaticGainControl(),
+                                        ncSupported: MES.isNoiseCancellationSupported ? !!MES.isNoiseCancellationSupported() : true,
+                                        nsSupported: MES.isNoiseSuppressionSupported ? !!MES.isNoiseSuppressionSupported() : true,
+                                        agcSupported: MES.isAutomaticGainControlSupported ? !!MES.isAutomaticGainControlSupported() : true,
+                                    };
+                                    break;
+                                }
+                                case "$set_noise_reduction": {
+                                    // data.mode: "none" | "standard" | "krisp"
+                                    const SET = Vencord.Webpack.findByProps("setNoiseCancellation");
+                                    if (SET) {
+                                        if (data.mode === "krisp") { SET.setNoiseSuppression(false); SET.setNoiseCancellation(true); }
+                                        else if (data.mode === "standard") { SET.setNoiseCancellation(false); SET.setNoiseSuppression(true); }
+                                        else { SET.setNoiseCancellation(false); SET.setNoiseSuppression(false); }
+                                    }
+                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    result = { noise: MES.getNoiseCancellation() ? "krisp" : (MES.getNoiseSuppression() ? "standard" : "none") };
+                                    break;
+                                }
+                                case "$set_echo_cancellation": {
+                                    const SET = Vencord.Webpack.findByProps("setEchoCancellation");
+                                    if (SET) SET.setEchoCancellation(!!data.enabled);
+                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    result = { echoCancellation: !!MES.getEchoCancellation() };
+                                    break;
+                                }
+                                case "$set_automatic_gain_control": {
+                                    const SET = Vencord.Webpack.findByProps("setAutomaticGainControl");
+                                    if (SET) SET.setAutomaticGainControl(!!data.enabled);
+                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    result = { automaticGainControl: !!MES.getAutomaticGainControl() };
+                                    break;
+                                }
                             }
                         } catch (error) {
                             result = { error: error }
