@@ -32,7 +32,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { patchMenu } from "./patches/menuPatch";
-import { notify } from "./notify";
+import { notify, patchDeckyToaster } from "./notify";
 import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
 import {
@@ -783,6 +783,10 @@ export default definePlugin(() => {
 
   // Réception vidéo (voir le Go Live/cam des autres dans leur bloc).
   initVideoRelay();
+
+  // Anti-crash panneau de notifs Steam : sécurise le toaster Decky partagé
+  // (Decky + plugins tiers) qui crée des entrées sans notification_type.
+  patchDeckyToaster();
 
   // Always follow the default audio INPUT automatically: when a mic is plugged
   // in/out (headset, RØDECaster…), swap the relayed track for the new default
