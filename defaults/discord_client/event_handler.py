@@ -250,11 +250,19 @@ class EventHandler:
             elif user_id in self.vc_members:
                 del self.vc_members[user_id]
 
+    # Échos de Discord (AUDIO_TOGGLE_SELF_MUTE/DEAF). Ces events arrivent AUSSI quand
+    # c'est NOUS qui avons déclenché le toggle (Discord ré-émet l'event qu'on lui a
+    # envoyé) → re-toggler ici annulait notre action (« ça se démute direct »). On LIT
+    # l'état réel et on le FIXE (idempotent) : marche pour nos toggles ET les externes.
     async def _toggle_mute(self, data):
-        await self.toggle_mute()
+        s = await self.api.get_media()
+        self.me.is_muted = s["mute"]
+        self.me.is_deafened = s["deaf"]
 
     async def _toggle_deaf(self, data):
-        await self.toggle_deafen()
+        s = await self.api.get_media()
+        self.me.is_muted = s["mute"]
+        self.me.is_deafened = s["deaf"]
 
     async def _rpc_notification(self, data):
         self.notification = {"title": data["message"]["embeds"][0]["author"]["name"], "body": data["message"]["embeds"][0]["description"]}
