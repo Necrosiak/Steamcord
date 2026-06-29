@@ -1,14 +1,23 @@
 #Most of the code here is adapted from https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-examples/webrtc/sendrecv/gst/webrtc_sendrecv.py
 #Code for setting up pipelinesrc and audio pipeline is from https://github.com/marissa999/decky-recorder
 
+import sys
 import aiohttp # type: ignore
 from aiohttp import web # type: ignore
+import logging
 from logging import getLogger
 from gi import require_version # type: ignore
 import asyncio
 from asyncio import run_coroutine_threadsafe
 from subprocess import getoutput
 
+# Ce script tourne comme sous-process (stdout/stderr capturés par stream_watcher →
+# préfixe [gst] dans le journal Steamcord). Sans handler racine, tous les log.info
+# (node écran choisi, "listening", erreurs de bus GStreamer) étaient JETÉS
+# silencieusement → diagnostic écran noir impossible. On force un handler INFO sur
+# stdout pour rendre tout ça visible.
+logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                    format="%(levelname)s %(name)s: %(message)s", force=True)
 log = getLogger("webrtc")
 
 require_version("Gst", "1.0")

@@ -46,7 +46,7 @@ _uspec.loader.exec_module(updater)
 logger.setLevel(INFO)
 
 
-async def stream_watcher(stream, is_err=False):
+async def stream_watcher(stream, is_err=False, prefix="[gst]"):
     async for line in stream:
         line = line.decode("utf-8").rstrip()
         if not line.strip():
@@ -54,9 +54,9 @@ async def stream_watcher(stream, is_err=False):
         # Surface GStreamer/WebRTC subprocess output in the journal (was logger.debug,
         # invisible at INFO level — made screenshare failures impossible to diagnose).
         if is_err:
-            logger.warning("[gst] " + line)
+            logger.warning(prefix + " " + line)
         else:
-            logger.info("[gst] " + line)
+            logger.info(prefix + " " + line)
 
 
 async def initialize():
@@ -76,7 +76,45 @@ async def initialize():
     Plugin.discord_tab = tab
 
     create_task(watchdog(tab))
+    create_task(_ensure_handshake(tab))
     return tab
+
+
+# The injected client only emits LOADED / CONNECTION_OPEN once, on its first
+# DOMContentLoaded. If the backend (re-)initializes AFTER that point — watchdog
+# recovery (re-initialize()), a soft websocket reconnect, or simply Vesktop having
+# survived a plugin_loader restart — the handshake is never re-delivered, so
+# evt_handler.loaded stays False and the QAM is stuck on "Initializing…" forever
+# even though Vesktop/CDP/the Discord tab all work. Actively re-request the
+# handshake from the already-injected client until the backend sees itself loaded.
+_REHANDSHAKE_JS = """
+(() => {
+  try {
+    var w = window.STEAMCORD_WS;
+    if (!w || w.readyState !== 1) return;
+    if (!(window.Vencord && Vencord.Webpack && Vencord.Webpack.Common
+          && Vencord.Webpack.Common.UserStore)) return;
+    w.send(JSON.stringify({ type: "LOADED", result: true }));
+    var u = Vencord.Webpack.Common.UserStore.getCurrentUser();
+    if (u) w.send(JSON.stringify({ type: "CONNECTION_OPEN", user: u }));
+  } catch (e) {}
+})()
+"""
+
+
+async def _ensure_handshake(tab: Tab):
+    # Poll for up to ~30s: as soon as the backend is loaded we're done; otherwise
+    # nudge the client to re-emit the handshake. Idempotent (LOADED just re-sets the
+    # flag, CONNECTION_OPEN refreshes the current user). Bounded so the QR/login flow
+    # (never "loaded" until the user scans) doesn't loop forever.
+    for _ in range(30):
+        if Plugin.evt_handler.loaded:
+            return
+        try:
+            await tab.evaluate(_REHANDSHAKE_JS)
+        except Exception:
+            pass
+        await sleep(1)
 
 
 async def watchdog(tab: Tab):
@@ -190,6 +228,8 @@ class Plugin:
                 "DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{uid}/bus"
             ),
         }
+        # Réutilisé par le feeder webcam virtuelle (gst_camera.py).
+        cls._gst_env = gst_env
         # Auto-install des dépendances du partage d'écran (self-contained sur toute
         # BC-250 fraîche) AVANT de lancer gst_webrtc.py.
         await cls._ensure_screenshare_deps()
@@ -704,6 +744,66 @@ class Plugin:
     @classmethod
     async def stop_go_live(cls):
         await cls.evt_handler.ws.send_json({"type": "$golive", "stop": True})
+
+    # ── Partage d'écran via CAMÉRA virtuelle (contournement gamescope) ──────────
+    # gamescope n'a pas de portail → Go Live (getDisplayMedia) = écran noir. À la
+    # place : gst_camera.py capture le node PipeWire gamescope → /dev/video42
+    # (v4l2loopback), que Discord utilise comme caméra. Voir gst_camera.py + client.
+    @classmethod
+    async def start_screen_camera(cls):
+        import os
+        from pathlib import Path as _P
+        if not os.path.exists("/dev/video42"):
+            logger.warning("[gstcam] /dev/video42 absent — v4l2loopback non chargé "
+                           "(reboot requis après setup, ou module non installé).")
+            return False
+        # Tuer un feeder précédent puis (re)lancer.
+        try:
+            import vesktop
+            killer = await create_subprocess_exec("pkill", "-f", "gst_camera.py",
+                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
+            await killer.wait()
+            await sleep(0.5)
+        except Exception:
+            pass
+        script = _P(DECKY_PLUGIN_DIR) / "gst_camera.py"
+        if not script.exists():
+            script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_camera.py"
+        cls.camera_feeder = await create_subprocess_exec(
+            "/usr/bin/python",
+            str(script),
+            env=getattr(cls, "_gst_env", None) or dict(os.environ),
+            stdout=PIPE, stderr=PIPE,
+        )
+        create_task(stream_watcher(cls.camera_feeder.stdout, prefix="[gstcam]"))
+        create_task(stream_watcher(cls.camera_feeder.stderr, True, prefix="[gstcam]"))
+        # Laisser le pipeline s'établir avant de sélectionner la caméra côté Discord.
+        await sleep(2)
+        await cls.evt_handler.ws.send_json({"type": "$screen_camera", "stop": False})
+        return True
+
+    @classmethod
+    async def stop_screen_camera(cls):
+        import os
+        try:
+            await cls.evt_handler.ws.send_json({"type": "$screen_camera", "stop": True})
+        except Exception:
+            pass
+        try:
+            import vesktop
+            killer = await create_subprocess_exec("pkill", "-f", "gst_camera.py",
+                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
+            await killer.wait()
+        except Exception:
+            pass
+        if hasattr(cls, "camera_feeder") and cls.camera_feeder:
+            try:
+                cls.camera_feeder.kill()
+                await cls.camera_feeder.wait()
+            except Exception:
+                pass
+            cls.camera_feeder = None
+        return True
 
     @classmethod
     async def mic_webrtc_answer(cls, answer):

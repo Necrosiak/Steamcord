@@ -8,6 +8,8 @@ from subprocess import DEVNULL, PIPE
 from pathlib import Path
 from aiohttp import ClientSession  # type: ignore
 
+from decky import logger  # type: ignore
+
 from tab_utils.cdp import Tab
 
 VESKTOP_CDP = "http://127.0.0.1:9223"
@@ -155,6 +157,24 @@ async def launch():
     # systemd-run client only needs to reach the user manager:
     env = _user_env()
 
+    # [launchdiag] Gamemode-specific stuck-on-Initializing diagnosis: capture exactly
+    # which compositor sockets exist and what graphical env the manager exported. In
+    # pure gamemode the root compositor is gamescope (not KWin), so wayland-0 may be
+    # gamescope's socket — or absent — which would keep Vesktop from rendering and 9223
+    # from ever opening. This logs even when the user is away in gamemode.
+    try:
+        socks = sorted(
+            p.name for p in Path(runtime_dir).iterdir()
+            if p.is_socket() and (p.name.startswith("wayland-") or p.name.startswith("gamescope-"))
+        )
+    except Exception as e:
+        socks = [f"err {e!r}"]
+    logger.info(
+        f"[launchdiag] sockets={socks} env.WAYLAND_DISPLAY={session_env.get('WAYLAND_DISPLAY')!r} "
+        f"env.DISPLAY={session_env.get('DISPLAY')!r} env.XAUTHORITY={'set' if xauth else 'empty'} "
+        f"targeting WAYLAND_DISPLAY=wayland-0"
+    )
+
     # If OUR debug unit is already coming up, never kill it — just wait for the port.
     # Only a FOREIGN (non-debug) Vesktop needs killing: Electron is single-instance, so a
     # second `flatpak run` would only wake it and drop our flags. Blindly killing on every
@@ -219,10 +239,15 @@ async def launch():
         "--start-minimized",
         stdout=DEVNULL, stderr=DEVNULL, env=env,
     )
-    for _ in range(60):
+    for i in range(60):
         if await is_up():
+            logger.info(f"[launchdiag] Vesktop CDP 9223 up after ~{i}s")
             return True
         await sleep(1)
+    logger.warning(
+        "[launchdiag] Vesktop launched but CDP 9223 never opened after 60s "
+        "(Electron likely got no usable display) — QAM will stay on 'Initializing'"
+    )
     return False
 
 
@@ -247,6 +272,7 @@ async def get_discord_tab(client_js) -> Tab:
             await tab.open_websocket()
             await tab.enable()
             url = page.get("url", "")
+            logger.info(f"[launchdiag] Vesktop page url={url!r}")
             if "first-launch" in url:
                 # Accept defaults and proceed to Discord
                 await tab.evaluate("(()=>{const b=document.getElementById('submit');if(b)b.click();})()")

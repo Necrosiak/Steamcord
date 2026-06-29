@@ -126,6 +126,9 @@ class EventHandler:
     def _process_event(self, data):
         if data["type"] == "$ping":
             return
+        if data["type"] == "$diag":
+            logger.info(f"[clientdiag] {data.get('m')}")
+            return
         if data["type"] == "$steamcord_request" and "increment" in data:
             self.api._set_result(data["increment"], data["result"])
             return

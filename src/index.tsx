@@ -51,6 +51,7 @@ import {
 } from "./components/VoiceChatViews";
 import { UploadScreenshot } from "./components/UploadScreenshot";
 import { GoLiveButton } from "./components/buttons/GoLiveButton";
+import { ScreenCameraButton } from "./components/buttons/ScreenCameraButton";
 import { ChannelBrowser } from "./components/ChannelBrowser";
 import { DMBrowser } from "./components/DMBrowser";
 import { TextChat } from "./components/TextChat";
@@ -512,6 +513,9 @@ const Content = () => {
                 <VoiceChatMembers />
                 <div style={{ marginTop: 8 }}>
                   <GoLiveButton />
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <ScreenCameraButton />
                 </div>
                 {/* Rejoindre un AUTRE vocal sans quitter l'appel courant. */}
                 <div style={{ marginTop: 8 }}>

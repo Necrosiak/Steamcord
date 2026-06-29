@@ -90,6 +90,53 @@ window.Vencord.Plugins.plugins.Steamcord = {
             window.STEAMCORD_WS.send(JSON.stringify({ type: "$MIC_WEBRTC", offer: peerConnection.localDescription }));
         });
 
+        // ── Partage d'écran via CAMÉRA virtuelle (contournement gamescope) ──────────
+        // En mode jeu, gamescope n'a PAS de portail → getDisplayMedia (Go Live) = noir.
+        // À la place : gst_camera.py capture le node PipeWire gamescope → /dev/video42
+        // (v4l2loopback "Steamcord Screen"). Ici on sélectionne cette caméra et on
+        // active la vidéo dans le salon vocal. getUserMedia(video) renverra le vrai
+        // device (STEAMCORD_CAMERA_ENABLED=true → branche "real device" plus haut).
+        window.STEAMCORD_enableScreenCamera = async (on) => {
+            const log = (m) => { try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag", m: "[cam] " + m })); } catch (_) {} };
+            try {
+                const WP = Vencord.Webpack;
+                if (!on) {
+                    window.STEAMCORD_CAMERA_ENABLED = false;
+                    try {
+                        const mss = WP.findStore?.("MediaEngineStore");
+                        const setVid = WP.findByCode?.("setVideoEnabled") || WP.findByProps?.("setVideoEnabled");
+                        const fn = setVid?.setVideoEnabled || setVid;
+                        if (typeof fn === "function") { fn(false); log("caméra coupée"); }
+                        else log("setVideoEnabled introuvable (off)");
+                    } catch (e) { log("off err " + e); }
+                    return;
+                }
+                window.STEAMCORD_CAMERA_ENABLED = true;
+                // 1) Trouver notre device par label.
+                const devs = await navigator.mediaDevices.enumerateDevices();
+                const vins = devs.filter(d => d.kind === "videoinput");
+                log("videoinputs=" + JSON.stringify(vins.map(d => d.label || "(label vide)")));
+                const cam = vins.find(d => /steamcord screen/i.test(d.label)) || vins[0];
+                if (!cam) { log("AUCUN videoinput — /dev/video42 invisible (Vesktop lancé avant le device ?)"); return; }
+                log("device choisi: " + JSON.stringify(cam.label) + " id=" + cam.deviceId.slice(0, 12));
+                // 2) Sélectionner le device vidéo dans Discord.
+                try {
+                    const va = WP.findByProps?.("setVideoDevice");
+                    if (va?.setVideoDevice) { va.setVideoDevice(cam.deviceId); log("setVideoDevice OK"); }
+                    else log("setVideoDevice introuvable");
+                } catch (e) { log("setVideoDevice err " + e); }
+                // 3) Activer la caméra dans le salon vocal courant.
+                try {
+                    const selCh = WP.findStore?.("SelectedChannelStore");
+                    const vcId = selCh?.getVoiceChannelId?.();
+                    if (!vcId) { log("pas dans un vocal — la cam s'activera au prochain appel"); }
+                    const va = WP.findByProps?.("setVideoEnabled");
+                    if (va?.setVideoEnabled) { va.setVideoEnabled(true); log("setVideoEnabled(true) OK"); }
+                    else log("setVideoEnabled introuvable");
+                } catch (e) { log("enable err " + e); }
+            } catch (e) { log("FATAL " + e); }
+        };
+
         // ── Relais vidéo INVERSE (Vesktop → QAM) ────────────────────────────────
         // Pour VOIR le Go Live/cam d'un participant dans le panneau QAM : on regarde
         // son stream (Discord décode + rend un <video>), on capture sa piste vidéo et
@@ -490,6 +537,10 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     } catch (e) {
                                         console.error("[Steamcord] Go Live échec:", e);
                                     }
+                                    return;
+                                }
+                                case "$screen_camera": {
+                                    await window.STEAMCORD_enableScreenCamera?.(!data.stop);
                                     return;
                                 }
                                 case "$get_dm_channels": {
