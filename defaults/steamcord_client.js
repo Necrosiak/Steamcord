@@ -917,42 +917,44 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 if (window.STEAMCORD_WS?.readyState === 1)
                     window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_QR_SVG", svg_b64: url }));
             };
-            // A real QR is black & white; Discord's "loading" placeholder in the same
-            // 240×240 canvas is a colorful shapes animation. Only mirror an actual QR so
-            // the QAM never shows the weird loading image.
-            const looksLikeQR = (canvas) => {
-                try {
-                    const ctx = canvas.getContext("2d");
-                    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-                    let colorful = 0, total = 0;
-                    for (let i = 0; i < d.length; i += 4 * 64) {
-                        const r = d[i], g = d[i + 1], b = d[i + 2];
-                        if (Math.max(r, g, b) - Math.min(r, g, b) > 40) colorful++;
-                        total++;
-                    }
-                    // Le vrai QR est quasi N/B (~0.1 « coloré », petit logo central) ;
-                    // le placeholder de chargement = grille de formes colorées (~0.43).
-                    // Seuil 0.25 = laisse passer le vrai QR, écarte le placeholder.
-                    return total > 0 && (colorful / total) < 0.25;
-                } catch (e) { return true; }
+            // Discord rend désormais le QR en <svg> (≈160px, viewBox carré "0 0 37 37",
+            // un gros <path> de modules), PAS en canvas (le canvas 240×240 est un
+            // placeholder caché/coloré). On capture le SVG → data URL que l'<img> du QAM
+            // affiche directement. Détection = SVG carré 100–300px avec une grosse data
+            // de path (le QR ≈ 35 Ko ; les logos/icônes ont des paths courts).
+            const findQRSvg = () => {
+                for (const s of document.querySelectorAll("svg")) {
+                    const r = s.getBoundingClientRect();
+                    if (r.width < 100 || r.width > 320 || Math.abs(r.width - r.height) > 30) continue;
+                    let pathLen = 0;
+                    for (const p of s.querySelectorAll("path, rect")) pathLen += (p.getAttribute("d") || "").length;
+                    if (pathLen > 3000) return s;
+                }
+                return null;
+            };
+            const svgToDataUrl = (svg) => {
+                const clone = svg.cloneNode(true);
+                clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+                const s = new XMLSerializer().serializeToString(clone);
+                return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(s)));
             };
             let lastUrl = null;
             setInterval(() => {
-                if (Vencord.Webpack.Common.UserStore?.getCurrentUser?.()) {
+                try {
+                    if (Vencord.Webpack.Common.UserStore?.getCurrentUser?.()) {
+                        if (lastUrl !== null) { lastUrl = null; sendQR(null); }
+                        return;
+                    }
+                    const svg = findQRSvg();
+                    if (svg) {
+                        const url = svgToDataUrl(svg);
+                        if (url.length > 2000 && url !== lastUrl) { lastUrl = url; sendQR(url); }
+                        return;
+                    }
+                    // Pas encore de vrai QR (placeholder/chargement) → vider pour que le QAM
+                    // affiche « Chargement… » plutôt qu'une image bizarre.
                     if (lastUrl !== null) { lastUrl = null; sendQR(null); }
-                    return;
-                }
-                // NB : pas de check global `[class*="spinner"]` — il matchait n'importe
-                // quel spinner de la page login et bloquait la capture. `looksLikeQR`
-                // suffit à écarter le placeholder coloré.
-                const canvas = Array.from(document.querySelectorAll('canvas')).find(c => c.width === 240 && c.height === 240);
-                if (canvas && looksLikeQR(canvas)) {
-                    const url = canvas.toDataURL('image/png');
-                    if (url.length > 5000 && url !== lastUrl) { lastUrl = url; sendQR(url); }
-                    return;
-                }
-                // No real QR yet (loading placeholder) → clear so the QAM shows "loading"
-                if (lastUrl !== null) { lastUrl = null; sendQR(null); }
+                } catch (e) { /* ignore */ }
             }, 1500);
         })();
 
