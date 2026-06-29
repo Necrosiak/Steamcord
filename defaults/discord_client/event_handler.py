@@ -18,6 +18,7 @@ class EventHandler:
             "CONNECTION_OPEN": self._logged_in,
             "REMOTE_AUTH_FINGERPRINT": self._remote_auth_fingerprint,
             "REMOTE_AUTH_QR_SVG": self._remote_auth_qr_svg,
+            "REMOTE_AUTH_SCANNED": self._remote_auth_scanned,
             "REMOTE_AUTH_TICKET": self._remote_auth_ticket,
             "STREAM_START": self._stream_start,
             "STREAM_STOP": self._stream_stop,
@@ -46,6 +47,7 @@ class EventHandler:
         # éviter une race : STREAM_START peut arriver avant que la liste vocale soit
         # peuplée (ou les membres sont reconstruits à chaque VOICE_STATE_UPDATES).
         self.streaming_users = set()
+        self._qr_scanned = False  # QR scanné, en attente de validation sur le téléphone
         self.state_changed_event = Event()
         self.notification = None
         self.remote_auth = RemoteAuth()
@@ -57,6 +59,7 @@ class EventHandler:
             "me": self.me.to_dict(),
             "vc": self._build_vc_dict(),
             "qr_login": self.remote_auth.qr_b64,
+            "qr_scanned": self._qr_scanned,
             "captcha_needed": getattr(self, "_captcha_needed", False),
         }
 
@@ -147,6 +150,7 @@ class EventHandler:
 
     async def _logged_in(self, data):
         self.logged_in = True
+        self._qr_scanned = False
         self.remote_auth.stop()
         self._login_tab_visible = False
         user_data = data.get("user") if isinstance(data, dict) else None
@@ -160,6 +164,7 @@ class EventHandler:
 
     async def _logout(self, data):
         self.logged_in = False
+        self._qr_scanned = False
         self.me = User({"id": "", "username": "", "discriminator": None, "avatar": ""})
         # Purger l'état d'appel pour ne pas laisser un faux « en vocal » au QAM.
         self.vc_channel_id = None
@@ -300,6 +305,12 @@ class EventHandler:
 
     async def _remote_auth_qr_svg(self, data):
         self.remote_auth.qr_b64 = data.get("svg_b64")
+        if data.get("svg_b64"):
+            self._qr_scanned = False  # un QR visible = pas encore scanné
+
+    async def _remote_auth_scanned(self, data):
+        # QR scanné → Discord attend la validation sur le téléphone.
+        self._qr_scanned = bool(data.get("scanned"))
 
     async def _remote_auth_ticket(self, data):
         from discord_client.remote_auth import exchange_ticket

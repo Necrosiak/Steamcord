@@ -938,22 +938,30 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const s = new XMLSerializer().serializeToString(clone);
                 return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(s)));
             };
-            let lastUrl = null;
+            const sendScanned = (b) => {
+                if (window.STEAMCORD_WS?.readyState === 1)
+                    window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_SCANNED", scanned: b }));
+            };
+            let lastUrl = null, lastScanned = false;
             setInterval(() => {
                 try {
                     if (Vencord.Webpack.Common.UserStore?.getCurrentUser?.()) {
                         if (lastUrl !== null) { lastUrl = null; sendQR(null); }
+                        if (lastScanned) { lastScanned = false; sendScanned(false); }
                         return;
                     }
                     const svg = findQRSvg();
                     if (svg) {
+                        if (lastScanned) { lastScanned = false; sendScanned(false); }
                         const url = svgToDataUrl(svg);
                         if (url.length > 2000 && url !== lastUrl) { lastUrl = url; sendQR(url); }
                         return;
                     }
-                    // Pas encore de vrai QR (placeholder/chargement) → vider pour que le QAM
-                    // affiche « Chargement… » plutôt qu'une image bizarre.
+                    // Pas de QR. Soit SCANNÉ (Discord affiche « regarde ton téléphone » avec
+                    // l'avatar du compte → attente de validation), soit en chargement.
                     if (lastUrl !== null) { lastUrl = null; sendQR(null); }
+                    const scanned = !!document.querySelector('img[src*="avatars"]');
+                    if (scanned !== lastScanned) { lastScanned = scanned; sendScanned(scanned); }
                 } catch (e) { /* ignore */ }
             }, 1500);
         })();

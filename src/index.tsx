@@ -76,12 +76,19 @@ declare global {
 const SP = PanelSection || ((p: any) => <div>{p.children}</div>);
 const SR = PanelSectionRow || ((p: any) => <div>{p.children}</div>);
 
-const NotLoggedIn = ({ qr_login, captcha_needed }: { qr_login?: string; captcha_needed?: boolean }) => {
+const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: string; qr_scanned?: boolean; captcha_needed?: boolean }) => {
   if (captcha_needed) { call("show_discord_login").catch(() => {}); }
   return (
     <div style={{ display: "flex", flexDirection: "column", padding: "8px 15px" }}>
       <h2 style={{ marginBottom: 4 }}>{t("not_connected")}</h2>
-      {qr_login ? (
+      {qr_scanned ? (
+        // QR scanné → Discord attend la validation sur le téléphone.
+        <div style={{ textAlign: "center", padding: "12px 0" }}>
+          <div style={{ fontSize: 26, marginBottom: 8 }}>📱✅</div>
+          <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>{t("qr_scanned_title")}</p>
+          <p style={{ fontSize: 11, opacity: 0.65, margin: 0, lineHeight: 1.4 }}>{t("qr_scanned_body")}</p>
+        </div>
+      ) : qr_login ? (
         <div style={{ textAlign: "center" }}>
           <p style={{ fontSize: 12, opacity: 0.8, margin: "4px 0 8px" }}>
             {t("qr_scan")}
@@ -425,7 +432,7 @@ const Content = () => {
       </div>
     );
   } else if (!state?.logged_in) {
-    return <NotLoggedIn qr_login={state?.qr_login} captcha_needed={state?.captcha_needed} />;
+    return <NotLoggedIn qr_login={state?.qr_login} qr_scanned={state?.qr_scanned} captcha_needed={state?.captcha_needed} />;
   } else {
     return (
       <SP>
