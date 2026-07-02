@@ -25,16 +25,19 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 
 - **Aanmelden met QR-code** — Scan een QR-code met de Discord-app op je telefoon om direct in te loggen. Op je telefoon: *Discord → Instellingen → QR-code scannen*, richt dan op de code in het paneel. Geen wachtwoord typen op de Deck.
 - **Volledig scherm aanmelden (terugval)** — Opent Discord op volledig scherm om in te loggen met e-mail/wachtwoord of een CAPTCHA op te lossen wanneer QR niet mogelijk is.
-- **Spraakchat** — Word lid van spraakkanalen en hoor iedereen, met elk lid live weergegeven (sprekring, mute/doof-badges) en een volumeschuif per persoon (0–200 %). Microfoon en audio zijn native (Vesktop).
+- **Uniforme navigatie** — Tabbladen **Spraak / Tekst / ⚙️ Instellingen** bovenaan, met daaronder een gedeelde **Servers / DM's**-schakelaar: dezelfde bronkeuze geldt voor spraak en tekst.
+- **Spraakchat** — Word lid van spraakkanalen en hoor iedereen, met elk lid live weergegeven (sprekring, mute/doof-badges), een volumeschuif per persoon (0–200 %) **en een lokale mute per persoon** (demp iemand alleen voor jou, zonder dat diegene het weet). Microfoon en audio zijn native (Vesktop).
 - **Privéberichten (DM's & groeps-DM's)** — Blader door je gesprekken en start/neem deel aan spraakoproepen met vrienden rechtstreeks vanuit het snelmenu. Actieve oproepen worden gemarkeerd.
 - **Spraakbrowser voor servers** — Zie in welke spraakkanalen mensen zitten (met avatars) voordat je deelneemt.
-- **Tekstkanalen** — Lees de recente berichten van een serverkanaal vanuit het QAM en antwoord met het schermtoetsenbord van Steam (het opent vanzelf wanneer je het invoerveld focust).
-- **Discord-status** — Stel je status in (online / afwezig / niet storen / onzichtbaar) vanuit het QAM. Een optionele automatische synchronisatie laat Discord je **Steam-status volgen** op de achtergrond; een status met de hand kiezen schakelt terug naar handmatig.
+- **Tekstchat — servers *en* DM's** — Lees en beantwoord een serverkanaal **of een privégesprek** vanuit het QAM (invoerveld op volle breedte, het Steam-toetsenbord opent vanzelf). **Bijgevoegde afbeeldingen verschijnen als miniaturen** (alleen geladen zolang het kanaal open is) en **links openen in de browser van de spelmodus**. Scrolt automatisch naar het nieuwste bericht.
+- **Discord-status op je naam** — Je **klikbare gebruikersnaam** bovenaan toont je huidige status; tik erop om hem te wijzigen. Een optionele automatische synchronisatie laat Discord je **Steam-status volgen** op de achtergrond; een status met de hand kiezen schakelt terug naar handmatig.
+- **Audioapparaten kiezen** — Kies in de Instellingen het **uitvoerapparaat (Discord-geluid)** en het **invoerapparaat (microfoon)** — *Auto (systeemstandaard)* of een specifiek apparaat, bv. Discord-geluid alleen naar je **headset** terwijl het spel op HDMI blijft.
 - **Mute / Doof / Verbinding verbreken** — Spraakbediening met één tik vanuit het QAM.
-- **Go Live (scherm delen)** — Deel je hele scherm in een spraakkanaal.
-- **Meldingen in het spel** — DM- en ping-meldingen verschijnen als Steam-meldingen (en respecteren je Discord-status — gedempt bij onzichtbaar / niet storen).
+- **Scherm delen** — Deel je hele scherm in een spraakkanaal (Go Live). Werkt native in Desktop / Big Picture. **In de spelmodus (gamescope) is dit _bèta_:** gamescope heeft geen schermopname-portaal (de normale Go Live blijft zwart), dus een aparte knop **„Scherm delen (spelmodus)"** legt het spel vast via een virtuele camera (v4l2loopback) die rechtstreeks door gamescopes PipeWire-uitvoer wordt gevoed — de enige opnameweg die daar werkt. Vereist een eenmalige v4l2loopback-installatie.
+- **Spelgeluid delen** — Stuur het geluid van je spel **samen met je stem** het spraakkanaal in. Twee mixschuiven (🎙️ stem / 🎮 spel) bepalen wat de anderen horen, terwijl jij het spel gewoon blijft horen — en het werkt zelfs **zonder fysieke microfoon** (de plugin maakt een virtuele ingang *Steamcord Mic*).
+- **Meldingen in het spel** — Inkomende DM-oproepen en pings verschijnen als **native Steam-meldingen (popup + geluid)**, met respect voor je Discord-status (gedempt bij onzichtbaar / niet storen).
 - **Push-to-talk** — Met een fysieke toets (standaard R5).
-- **Schermafbeeldingen versturen** — Stuur een Steam-schermafbeelding naar elk Discord-kanaal.
+- **Schermafbeeldingen versturen** — Stuur een Steam-schermafbeelding rechtstreeks naar het geopende gesprek.
 - **[Vencord](https://vencord.dev/)** is ingebouwd in Vesktop en geeft toegang tot zijn plugin-ecosysteem.
 
 ---

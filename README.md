@@ -34,6 +34,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 - **Audio device selection** — From Settings, choose the **output (Discord sound)** and **input (microphone)** device — *Auto (system default)* or a specific device, e.g. send Discord audio to your **headset only** while games stay on HDMI.
 - **Mute / Deafen / Disconnect** — One-tap voice controls from the QAM.
 - **Screen share** — Share your whole screen to a voice channel (Go Live). Works natively in Desktop / Big Picture. **In Gaming Mode (gamescope) this is _beta_:** gamescope ships no screen-capture portal (so the normal Go Live is a black screen), so a separate **"Share screen (game mode)"** button captures the game through a virtual camera (v4l2loopback) fed straight from gamescope's PipeWire output — the only capture path that works there. Needs a one-time v4l2loopback setup.
+- **Share game audio** — Stream your game's sound into the voice channel **along with your voice**. Two mix sliders (🎙️ voice / 🎮 game) control what the others hear, while you keep hearing the game normally — and it works even **without a physical microphone** (the plugin creates a virtual *Steamcord Mic* input).
 - **In-game notifications** — Incoming DM calls and pings appear as **native Steam notifications (popup + sound)**, respecting your Discord status (silenced when invisible / do-not-disturb).
 - **Push-to-talk** — With a physical keybind (R5 by default).
 - **Share screenshots** — Send a Steam screenshot straight into the conversation you have open.

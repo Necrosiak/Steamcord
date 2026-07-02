@@ -25,16 +25,19 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 
 - **QR-Code-Anmeldung** — Scanne einen QR-Code mit der Discord-Handy-App, um dich sofort anzumelden. Auf deinem Handy: *Discord → Einstellungen → QR-Code scannen*, dann auf den im Panel angezeigten Code richten. Kein Passwort-Tippen auf dem Deck.
 - **Vollbild-Anmeldung (Ausweichlösung)** — Öffnet Discord im Vollbild zur Anmeldung mit E-Mail/Passwort oder zum Lösen eines CAPTCHAs, wenn QR nicht möglich ist.
-- **Sprachchat** — Tritt Sprachkanälen bei und höre alle, jedes Mitglied live angezeigt (Sprechring, Stumm-/Taub-Abzeichen) mit Lautstärkeregler pro Person (0–200 %). Mikrofon und Ton sind nativ (Vesktop).
+- **Einheitliche Navigation** — Oben die Tabs **Sprache / Text / ⚙️ Einstellungen**, darunter ein gemeinsamer **Server / DMs**-Umschalter — dieselbe Quellenauswahl gilt für Sprache und Text.
+- **Sprachchat** — Tritt Sprachkanälen bei und höre alle, jedes Mitglied live angezeigt (Sprechring, Stumm-/Taub-Abzeichen), mit Lautstärkeregler pro Person (0–200 %) **und lokalem Stummschalten pro Person** (jemanden nur für dich stummschalten, ohne dass er es merkt). Mikrofon und Ton sind nativ (Vesktop).
 - **Direktnachrichten (DMs & Gruppen-DMs)** — Durchsuche deine Unterhaltungen und starte/tritt Sprachanrufen mit Freunden direkt aus dem Schnellzugriffsmenü bei. Aktive Anrufe werden hervorgehoben.
 - **Server-Sprachbrowser** — Sieh, in welchen Sprachkanälen Leute sind (mit Avataren), bevor du beitrittst.
-- **Textkanäle** — Lies die letzten Nachrichten eines Serverkanals im QAM und antworte mit der Steam-Bildschirmtastatur (sie öffnet sich automatisch, wenn du das Eingabefeld fokussierst).
-- **Discord-Status** — Setze deinen Status (online / abwesend / bitte nicht stören / unsichtbar) im QAM. Eine optionale Auto-Synchronisierung lässt Discord deinem **Steam-Status folgen** (im Hintergrund); wählst du einen Status von Hand, wird wieder manuell umgeschaltet.
+- **Textchat — Server *und* DMs** — Lies und antworte auf einen Serverkanal **oder eine private Unterhaltung** direkt im QAM (Eingabefeld in voller Breite, die Steam-Tastatur öffnet sich automatisch). **Bildanhänge erscheinen als Vorschaubilder** (nur geladen, solange der Kanal offen ist) und **Links öffnen sich im Steam-Spielmodus-Browser**. Scrollt automatisch zur neuesten Nachricht.
+- **Discord-Status auf deinem Namen** — Dein **anklickbarer Benutzername** oben zeigt deinen aktuellen Status; tippe darauf, um ihn zu ändern. Eine optionale Auto-Synchronisierung lässt Discord deinem **Steam-Status folgen** (im Hintergrund); wählst du einen Status von Hand, wird wieder auf manuell umgeschaltet.
+- **Audiogeräte-Auswahl** — Wähle in den Einstellungen das **Ausgabegerät (Discord-Ton)** und das **Eingabegerät (Mikrofon)** — *Auto (Systemstandard)* oder ein bestimmtes Gerät, z. B. Discord-Ton nur aufs **Headset**, während das Spiel auf HDMI bleibt.
 - **Stumm / Taub / Trennen** — Sprachsteuerung mit einem Tippen aus dem QAM.
-- **Go Live (Bildschirmübertragung)** — Teile deinen ganzen Bildschirm in einem Sprachkanal.
-- **Benachrichtigungen im Spiel** — DM- und Ping-Benachrichtigungen erscheinen als Steam-Toasts (und respektieren deinen Discord-Status — stumm bei unsichtbar / bitte nicht stören).
+- **Bildschirmübertragung** — Teile deinen ganzen Bildschirm in einem Sprachkanal (Go Live). Funktioniert nativ im Desktop-/Big-Picture-Modus. **Im Spielmodus (gamescope) ist das _Beta_:** gamescope hat kein Bildschirmaufnahme-Portal (das normale Go Live zeigt nur Schwarz), daher nimmt ein separater Knopf **„Bildschirm teilen (Spielmodus)"** das Spiel über eine virtuelle Kamera (v4l2loopback) auf, die direkt aus gamescopes PipeWire-Ausgabe gespeist wird — der einzige Aufnahmeweg, der dort funktioniert. Benötigt eine einmalige v4l2loopback-Einrichtung.
+- **Spielsound teilen** — Überträgt den Ton deines Spiels **zusammen mit deiner Stimme** in den Sprachkanal. Zwei Mix-Regler (🎙️ Stimme / 🎮 Spiel) bestimmen, was die anderen hören, während du das Spiel weiter normal hörst — und es funktioniert sogar **ohne physisches Mikrofon** (das Plugin erstellt einen virtuellen Eingang *Steamcord-Mikrofon*).
+- **Benachrichtigungen im Spiel** — Eingehende DM-Anrufe und Pings erscheinen als **native Steam-Benachrichtigungen (Popup + Ton)** und respektieren deinen Discord-Status (stumm bei unsichtbar / bitte nicht stören).
 - **Push-to-Talk** — Mit physischer Tastenbelegung (R5 standardmäßig).
-- **Screenshots senden** — Sende einen Steam-Screenshot an jeden Discord-Kanal.
+- **Screenshots senden** — Sende einen Steam-Screenshot direkt in die geöffnete Unterhaltung.
 - **[Vencord](https://vencord.dev/)** ist in Vesktop integriert und gibt Zugang zu seinem Plugin-Ökosystem.
 
 ---
@@ -50,7 +53,7 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 
 Vesktop wird beim ersten Start automatisch vom Plugin installiert und gestartet. Melde dich einmal an (QR oder Vollbild) und du bleibst angemeldet.
 
-### Voraussetzung (Bildschirmübertragung)
+### Bildschirmübertragung
 Die Bildschirmfreigabe funktioniert sofort — das Plugin installiert seine Python-Abhängigkeit (aiohttp) beim ersten Start automatisch. GStreamer kommt vom System.
 
 ---

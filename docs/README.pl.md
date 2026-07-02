@@ -25,16 +25,19 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 
 - **Logowanie kodem QR** — Zeskanuj kod QR aplikacją Discord na telefonie, aby zalogować się natychmiast. Na telefonie: *Discord → Ustawienia → Skanuj kod QR*, a następnie wyceluj w kod pokazany w panelu. Bez wpisywania hasła na Decku.
 - **Logowanie na pełnym ekranie (zapasowe)** — Otwiera Discord na pełnym ekranie, aby zalogować się e-mailem/hasłem lub rozwiązać CAPTCHA, gdy QR nie jest możliwy.
-- **Czat głosowy** — Dołączaj do kanałów głosowych i słysz wszystkich, każdy członek pokazany na żywo (pierścień mówienia, plakietki wyciszenia/ogłuszenia) oraz suwak głośności na osobę (0–200 %). Mikrofon i dźwięk są natywne (Vesktop).
+- **Ujednolicona nawigacja** — Karty **Głos / Tekst / ⚙️ Ustawienia** u góry, a pod nimi wspólny przełącznik **Serwery / DM**: ten sam wybór źródła działa dla głosu i tekstu.
+- **Czat głosowy** — Dołączaj do kanałów głosowych i słysz wszystkich, każdy członek pokazany na żywo (pierścień mówienia, plakietki wyciszenia/ogłuszenia), suwak głośności na osobę (0–200 %) **oraz lokalne wyciszenie na osobę** (wycisz kogoś tylko dla siebie, bez jego wiedzy). Mikrofon i dźwięk są natywne (Vesktop).
 - **Wiadomości prywatne (DM i grupy)** — Przeglądaj rozmowy oraz rozpoczynaj/dołączaj do połączeń głosowych ze znajomymi bezpośrednio z menu szybkiego dostępu. Aktywne połączenia są wyróżnione.
 - **Przeglądarka głosowa serwerów** — Zobacz, w których kanałach głosowych są ludzie (z awatarami), zanim dołączysz.
-- **Kanały tekstowe** — Czytaj ostatnie wiadomości kanału serwera z poziomu QAM i odpowiadaj klawiaturą ekranową Steam (otwiera się sama po zaznaczeniu pola).
-- **Status Discord** — Ustaw swój status (online / zaraz wracam / nie przeszkadzać / niewidoczny) z poziomu QAM. Opcjonalna automatyczna synchronizacja sprawia, że Discord **podąża za twoim statusem Steam** w tle; ręczny wybór statusu przełącza z powrotem na tryb ręczny.
+- **Czat tekstowy — serwery *i* DM** — Czytaj i odpowiadaj na kanale serwera **lub w prywatnej rozmowie** z poziomu QAM (pole na całą szerokość, klawiatura Steam otwiera się sama). **Załączone obrazy pokazują się jako miniatury** (ładowane tylko gdy kanał jest otwarty), a **linki otwierają się w przeglądarce trybu gry**. Automatyczne przewijanie do najnowszej wiadomości.
+- **Status Discord na twojej nazwie** — Twoja **klikalna nazwa użytkownika** u góry pokazuje aktualny status; stuknij ją, aby go zmienić. Opcjonalna automatyczna synchronizacja sprawia, że Discord **podąża za twoim statusem Steam** w tle; ręczny wybór statusu przełącza z powrotem na tryb ręczny.
+- **Wybór urządzeń audio** — W Ustawieniach wybierz urządzenie **wyjściowe (dźwięk Discorda)** i **wejściowe (mikrofon)** — *Auto (domyślne systemowe)* lub konkretne, np. dźwięk Discorda tylko na **słuchawki**, podczas gdy gra zostaje na HDMI.
 - **Wycisz / Ogłusz / Rozłącz** — Sterowanie głosem jednym dotknięciem z QAM.
-- **Go Live (udostępnianie ekranu)** — Udostępnij cały ekran na kanale głosowym.
-- **Powiadomienia w grze** — DM-y i wzmianki pojawiają się jako powiadomienia Steam (i respektują twój status Discord — wyciszone przy niewidoczny / nie przeszkadzać).
+- **Udostępnianie ekranu** — Udostępnij cały ekran na kanale głosowym (Go Live). Działa natywnie w trybie pulpitu / Big Picture. **W trybie gry (gamescope) to _beta_:** gamescope nie ma portalu przechwytywania ekranu (zwykłe Go Live daje czarny ekran), więc osobny przycisk **„Udostępnij ekran (tryb gry)”** przechwytuje grę przez wirtualną kamerę (v4l2loopback) zasilaną bezpośrednio z wyjścia PipeWire gamescope'a — jedyna działająca tam ścieżka przechwytywania. Wymaga jednorazowej konfiguracji v4l2loopback.
+- **Udostępnianie dźwięku gry** — Przesyłaj dźwięk swojej gry na kanał głosowy **razem ze swoim głosem**. Dwa suwaki miksu (🎙️ głos / 🎮 gra) decydują, co słyszą inni, podczas gdy ty dalej normalnie słyszysz grę — i działa to nawet **bez fizycznego mikrofonu** (wtyczka tworzy wirtualne wejście *Steamcord Mic*).
+- **Powiadomienia w grze** — Przychodzące połączenia DM i wzmianki pojawiają się jako **natywne powiadomienia Steam (popup + dźwięk)**, respektując twój status Discord (wyciszone przy niewidoczny / nie przeszkadzać).
 - **Push-to-talk** — Z fizycznym przyciskiem (domyślnie R5).
-- **Wysyłanie zrzutów ekranu** — Wyślij zrzut ekranu Steam na dowolny kanał Discord.
+- **Wysyłanie zrzutów ekranu** — Wyślij zrzut ekranu Steam prosto do otwartej rozmowy.
 - **[Vencord](https://vencord.dev/)** jest wbudowany w Vesktop, dając dostęp do swojego ekosystemu wtyczek.
 
 ---

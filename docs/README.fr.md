@@ -25,16 +25,19 @@ Le passage au natif règle les problèmes difficiles de l'ancienne approche par 
 
 - **Connexion par QR code** — Scanne un QR code avec l'app mobile Discord pour te connecter instantanément. Sur ton téléphone : *Discord → Réglages → Scanner le QR Code*, puis vise le code affiché dans le panneau. Aucun mot de passe à taper sur la Deck.
 - **Connexion plein écran (secours)** — Ouvre Discord en plein écran pour se connecter par e-mail/mot de passe ou résoudre un CAPTCHA quand le QR n'est pas possible.
-- **Chat vocal** — Rejoins les salons vocaux et entends tout le monde, chaque membre affiché en direct (anneau quand il parle, badges muet/sourd) et un curseur de volume par personne (0–200 %). Micro et audio natifs (Vesktop).
+- **Navigation unifiée** — Onglets **Vocal / Messages / ⚙️ Réglages** en haut, avec un sélecteur **Serveurs / MP** partagé en dessous : le même interrupteur de source sert au vocal et au texte.
+- **Chat vocal** — Rejoins les salons vocaux et entends tout le monde, chaque membre affiché en direct (anneau quand il parle, badges muet/sourd), un curseur de volume par personne (0–200 %) **et un mute local par personne** (coupe quelqu'un juste pour toi, sans qu'il le sache). Micro et audio natifs (Vesktop).
 - **Messages privés (MP & groupes)** — Parcours tes conversations et lance/rejoins des appels vocaux avec tes amis directement depuis le menu d'accès rapide. Les appels actifs sont mis en évidence.
 - **Explorateur vocal des serveurs** — Vois quels salons vocaux ont du monde (avec les avatars) avant de rejoindre.
-- **Salons textuels** — Lis les messages récents d'un salon de serveur depuis le QAM et réponds avec le clavier à l'écran de Steam (il s'ouvre tout seul au focus du champ).
-- **Statut Discord** — Règle ton statut (en ligne / absent / ne pas déranger / invisible) depuis le QAM. Une synchro auto optionnelle fait **suivre ton statut Steam** par Discord en arrière-plan ; choisir un statut à la main repasse en manuel.
+- **Chat texte — serveurs *et* MP** — Lis et réponds à un salon de serveur **ou à une conversation privée** depuis le QAM (champ pleine largeur, le clavier Steam s'ouvre tout seul). **Les images jointes s'affichent en miniatures** (chargées seulement quand le salon est ouvert) et **les liens s'ouvrent dans le navigateur du mode Jeu**. Défilement auto vers le dernier message.
+- **Statut Discord sur ton nom** — Ton **pseudo cliquable** en haut affiche ton statut actuel ; appuie dessus pour le changer. Une synchro auto optionnelle fait **suivre ton statut Steam** par Discord en arrière-plan ; choisir un statut à la main repasse en manuel.
+- **Choix des périphériques audio** — Depuis les Réglages, choisis le périphérique de **sortie (son Discord)** et d'**entrée (micro)** — *Auto (défaut système)* ou un périphérique précis, p. ex. envoyer le son Discord vers ton **casque uniquement** pendant que le jeu reste sur le HDMI.
 - **Muet / Sourdine / Déconnexion** — Contrôles vocaux en un appui depuis le QAM.
-- **Go Live (partage d'écran)** — Partage ton écran entier dans un salon vocal.
-- **Notifications en jeu** — Les MP et mentions apparaissent en notifications Steam (et respectent ton statut Discord — silencieuses en invisible / ne pas déranger).
+- **Partage d'écran** — Partage ton écran entier dans un salon vocal (Go Live). Fonctionne nativement en Bureau / Big Picture. **En Mode Jeu (gamescope) c'est en _bêta_ :** gamescope n'a pas de portail de capture d'écran (le Go Live normal donne un écran noir), donc un bouton séparé **« Partager l'écran (mode jeu) »** capture le jeu via une caméra virtuelle (v4l2loopback) alimentée directement par la sortie PipeWire de gamescope — le seul chemin de capture qui marche là. Nécessite une configuration v4l2loopback unique.
+- **Partage du son du jeu** — Diffuse le son de ton jeu dans le salon vocal **en même temps que ta voix**. Deux jauges de mixage (🎙️ voix / 🎮 jeu) règlent ce que les autres entendent, pendant que toi tu continues d'entendre le jeu normalement — et ça marche même **sans micro physique** (le plugin crée une entrée virtuelle *Micro-Steamcord*).
+- **Notifications en jeu** — Les appels MP entrants et les mentions apparaissent en **notifications Steam natives (popup + son)**, en respectant ton statut Discord (silencieuses en invisible / ne pas déranger).
 - **Push-to-talk** — Avec un raccourci physique (R5 par défaut).
-- **Envoi de captures** — Envoie une capture Steam dans n'importe quel salon Discord.
+- **Envoi de captures** — Envoie une capture d'écran Steam directement dans la conversation ouverte.
 - **[Vencord](https://vencord.dev/)** est intégré à Vesktop, donnant accès à son écosystème de plugins.
 
 ---
@@ -50,7 +53,7 @@ Le passage au natif règle les problèmes difficiles de l'ancienne approche par 
 
 Vesktop est installé et lancé automatiquement par le plugin au premier démarrage. Connecte-toi une seule fois (QR ou plein écran) et tu restes connecté.
 
-### Prérequis (partage d'écran)
+### Partage d'écran
 Le partage d'écran fonctionne tout seul — le plugin installe automatiquement sa dépendance Python (aiohttp) au premier lancement. GStreamer est fourni par le système.
 
 ---

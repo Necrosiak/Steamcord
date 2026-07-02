@@ -25,16 +25,19 @@ Ir para o nativo resolve os problemas difíceis da antiga abordagem de navegador
 
 - **Login por código QR** — Escaneie um código QR com o app do Discord no celular para entrar na hora. No celular: *Discord → Configurações → Ler código QR*, depois aponte para o código mostrado no painel. Sem digitar senha no Deck.
 - **Login em tela cheia (alternativa)** — Abre o Discord em tela cheia para entrar com e-mail/senha ou resolver um CAPTCHA quando o QR não é possível.
-- **Chat de voz** — Entre em canais de voz e ouça todos, com cada membro mostrado ao vivo (anel ao falar, selos de mudo/sem áudio) e um controle de volume por pessoa (0–200 %). Microfone e áudio nativos (Vesktop).
+- **Navegação unificada** — Abas **Voz / Texto / ⚙️ Configurações** no topo, com um seletor **Servidores / DMs** compartilhado logo abaixo: o mesmo interruptor de fonte vale para a voz e para o texto.
+- **Chat de voz** — Entre em canais de voz e ouça todos, com cada membro mostrado ao vivo (anel ao falar, selos de mudo/sem áudio), um controle de volume por pessoa (0–200 %) **e um mudo local por pessoa** (silencie alguém só para você, sem que a pessoa saiba). Microfone e áudio nativos (Vesktop).
 - **Mensagens diretas (DMs e grupos)** — Navegue pelas suas conversas e inicie/entre em chamadas de voz com amigos direto pelo menu de acesso rápido. Chamadas ativas são destacadas.
 - **Navegador de voz dos servidores** — Veja quais canais de voz têm pessoas (com avatares) antes de entrar.
-- **Canais de texto** — Leia as mensagens recentes de um canal de servidor pelo QAM e responda com o teclado na tela do Steam (ele abre sozinho ao focar o campo).
-- **Status do Discord** — Defina seu status (online / ausente / não perturbe / invisível) pelo QAM. Uma sincronização automática opcional faz o Discord **seguir o seu status do Steam** em segundo plano; escolher um status manualmente volta ao modo manual.
+- **Chat de texto — servidores *e* DMs** — Leia e responda a um canal de servidor **ou a uma conversa privada** pelo QAM (campo em largura total, o teclado do Steam abre sozinho). **Imagens anexadas aparecem como miniaturas** (carregadas só enquanto o canal está aberto) e **links abrem no navegador do Modo Jogo**. Rolagem automática até a última mensagem.
+- **Status do Discord no seu nome** — Seu **nome de usuário clicável** no topo mostra o status atual; toque nele para mudar. Uma sincronização automática opcional faz o Discord **seguir o seu status do Steam** em segundo plano; escolher um status manualmente volta ao modo manual.
+- **Seleção de dispositivos de áudio** — Nas Configurações, escolha o dispositivo de **saída (som do Discord)** e de **entrada (microfone)** — *Auto (padrão do sistema)* ou um específico, p. ex. mandar o som do Discord só para o **fone** enquanto o jogo continua no HDMI.
 - **Mudo / Sem áudio / Desconectar** — Controles de voz com um toque pelo QAM.
-- **Go Live (compartilhar tela)** — Compartilhe sua tela inteira em um canal de voz.
-- **Notificações no jogo** — DMs e menções aparecem como notificações do Steam (e respeitam seu status do Discord — silenciadas em invisível / não perturbe).
+- **Compartilhar tela** — Compartilhe sua tela inteira em um canal de voz (Go Live). Funciona nativamente no Desktop / Big Picture. **No Modo Jogo (gamescope) está em _beta_:** o gamescope não tem portal de captura de tela (o Go Live normal fica preto), então um botão separado **«Compartilhar tela (modo jogo)»** captura o jogo por uma câmera virtual (v4l2loopback) alimentada diretamente pela saída PipeWire do gamescope — o único caminho de captura que funciona lá. Requer uma configuração única do v4l2loopback.
+- **Compartilhar o áudio do jogo** — Transmita o som do seu jogo para o canal de voz **junto com a sua voz**. Dois controles de mixagem (🎙️ voz / 🎮 jogo) definem o que os outros ouvem, enquanto você continua ouvindo o jogo normalmente — e funciona até **sem microfone físico** (o plugin cria uma entrada virtual *Steamcord Mic*).
+- **Notificações no jogo** — Chamadas de DM e menções aparecem como **notificações nativas do Steam (popup + som)**, respeitando seu status do Discord (silenciadas em invisível / não perturbe).
 - **Push-to-talk** — Com uma tecla física (R5 por padrão).
-- **Enviar capturas** — Envie uma captura do Steam para qualquer canal do Discord.
+- **Enviar capturas** — Envie uma captura do Steam direto na conversa aberta.
 - **[Vencord](https://vencord.dev/)** está integrado no Vesktop, dando acesso ao seu ecossistema de plugins.
 
 ---
