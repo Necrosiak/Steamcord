@@ -53,23 +53,56 @@ const Btn = DialogButton as any;
 // secondes à créer/alimenter le device → on réessaie jusqu'à obtenir un flux.
 function SelfPreviewTile() {
   const [stream, setStream] = useState<MediaStream | null>(null);
+  // Aperçu de secours : le CEF de Steam refuse getUserMedia sur la caméra
+  // virtuelle en gamescope (vu 02/07 : pipeline OK mais préviz « give up »).
+  // Le feeder écrit un instantané JPEG toutes les 2s → on le polle au backend.
+  const [snap, setSnap] = useState("");
+  const [feederUp, setFeederUp] = useState<boolean | null>(null);
+  // Après ~16s (8 essais à 2s) sans device NI instantané, c'est qu'on n'est
+  // PAS en vraie session gamescope (le feeder ne crée jamais /dev/video42) →
+  // on le DIT clairement au lieu d'un « démarrage… » silencieux à l'infini.
+  const [giveUp, setGiveUp] = useState(false);
   useEffect(() => {
     let alive = true;
     let timer: any;
+    let tries = 0;
     const tryOpen = async () => {
       const s = await startSelfPreview();
       if (!alive) return;
-      if (s) setStream(s);
-      else timer = setTimeout(tryOpen, 2000); // device pas encore prêt
+      if (s) { setStream(s); return; }
+      tries += 1;
+      if (tries >= 8) setGiveUp(true);
+      timer = setTimeout(tryOpen, 2000); // device pas encore prêt
     };
     tryOpen();
-    return () => { alive = false; if (timer) clearTimeout(timer); };
+    const poll = setInterval(async () => {
+      try {
+        const r = await call<[], { running: boolean; jpg: string }>("get_camera_preview");
+        if (!alive) return;
+        setFeederUp(r.running);
+        if (r.jpg) setSnap(r.jpg);
+      } catch (_) { /* backend pas prêt : on retentera */ }
+    }, 2000);
+    return () => { alive = false; if (timer) clearTimeout(timer); clearInterval(poll); };
   }, []);
 
-  if (!stream) {
-    return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
+  if (stream) return <VideoTile stream={stream} />;
+  if (snap) {
+    return (
+      <img
+        src={"data:image/jpeg;base64," + snap}
+        style={{ width: "100%", borderRadius: 6, marginTop: 6, display: "block" }}
+      />
+    );
   }
-  return <VideoTile stream={stream} />;
+  if (giveUp && feederUp === false) {
+    return (
+      <div style={{ fontSize: 10, color: "#ffb74d", padding: "6px 4px", lineHeight: 1.35 }}>
+        {t("self_preview_nogamemode")}
+      </div>
+    );
+  }
+  return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
 }
 
 // Réagit aux changements d'état du partage d'écran (on/off).
@@ -145,7 +178,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
   };
 
   return (
-    <li style={{ listStyle: "none", marginBottom: 8, padding: "6px 0", background: "rgba(255,255,255,0.04)", borderRadius: 6, overflow: "hidden", boxSizing: "border-box" }}>
+    <li style={{ listStyle: "none", marginBottom: 8, padding: "6px 0", background: "rgba(255,255,255,0.04)", borderRadius: 6, overflow: "hidden", boxSizing: "border-box", width: "100%", maxWidth: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 8px" }}>
         <div style={{ position: "relative", flexShrink: 0 }}>
           <img
@@ -196,7 +229,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       )}
 
       {/* Volume VOIX (à quel point TU l'entends) — barre PLEINE LARGEUR. */}
-      <div style={{ padding: "0 10px", boxSizing: "border-box" }}>
+      <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
         <SliderFieldAny
           label={`🔊 ${localMuted ? t("video_muted") : volume + "%"}`}
           value={volume}
@@ -209,7 +242,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {/* Mute LOCAL : bouton pleine largeur (sélectionnable manette) collé sous la
           barre voix. C'est côté plugin-user seulement (l'autre ne le sait pas). */}
       {!isSelf && (
-        <div style={{ padding: "2px 10px 0" }}>
+        <div style={{ padding: "2px 6px 0", boxSizing: "border-box", width: "100%" }}>
           <Btn
             onClick={toggleLocalMute}
             onFocus={() => setMuteFocused(true)}
@@ -232,7 +265,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {/* Volume STREAM (audio du Go Live) — barre SÉPARÉE pleine largeur, seulement
           si l'utilisateur partage (le son micro et le son du stream sont distincts). */}
       {user?.is_live && (
-        <div style={{ padding: "0 10px", boxSizing: "border-box" }}>
+        <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
           <SliderFieldAny
             label={`🖥️ ${t("video_stream")} ${streamVol}%`}
             value={streamVol}
@@ -278,7 +311,7 @@ export function VoiceChatMembers() {
   if (!state?.vc?.users) return <div />;
   const meId = state?.me?.id;
   return (
-    <ul style={{ margin: 0, padding: 0 }}>
+    <ul style={{ margin: 0, padding: "0 4px", boxSizing: "border-box", width: "100%", listStyle: "none", overflow: "hidden" }}>
       {state.vc.users.map((user: any) => (
         <UserRow key={user.id} user={user} isSelf={user.id === meId} />
       ))}

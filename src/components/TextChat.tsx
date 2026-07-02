@@ -1,7 +1,7 @@
 import { DialogButton, Focusable, TextField } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
-import { t } from "../i18n";
+import { t, errText } from "../i18n";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -113,11 +113,11 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     if (source === "servers") {
       call<[], any>("get_text_channels")
         .then((res) => setGuilds(Array.isArray(res) ? res : []))
-        .catch((e) => setError(String(e)));
+        .catch((e) => setError(errText(e)));
     } else {
       call<[], any>("get_dm_channels")
         .then((res) => setDms(Array.isArray(res) ? res : []))
-        .catch((e) => setError(String(e)));
+        .catch((e) => setError(errText(e)));
     }
   }, [source]);
 

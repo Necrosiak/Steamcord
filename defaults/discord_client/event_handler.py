@@ -93,6 +93,18 @@ class EventHandler:
             "users": [u.to_dict() for u in users],
         }
 
+    async def send_client(self, payload):
+        """Envoi vers le client injecté, avec échec PROPRE si le ws est mort ou
+        en cours de fermeture (bascule Bureau↔gamemode : Vesktop meurt, re-init
+        ~2 min). Le code stable `discord_reconnecting` est traduit côté frontend
+        au lieu d'afficher « Cannot write to closing transport » brut."""
+        if self.ws is None or self.ws.closed:
+            raise Exception("discord_reconnecting")
+        try:
+            await self.ws.send_json(payload)
+        except Exception:
+            raise Exception("discord_reconnecting")
+
     async def toggle_mute(self, act=False):
         if act:
             # ON N'ENVOIE QUE LA COMMANDE — surtout PAS de lecture ni de push ici.
@@ -103,7 +115,7 @@ class EventHandler:
             # n'est pas encore appliqué quand on lit) → valeur ≠ écho → le bouton
             # « clignote » (part et revient). Un seul push (l'écho, settled) = zéro
             # flicker.
-            await self.ws.send_json({"type": "AUDIO_TOGGLE_SELF_MUTE", "context": "default", "syncRemote": False})
+            await self.send_client({"type": "AUDIO_TOGGLE_SELF_MUTE", "context": "default", "syncRemote": False})
             return
         self.me.is_muted = not self.me.is_muted
         self.state_changed_event.set()
@@ -112,13 +124,13 @@ class EventHandler:
         if act:
             # Idem mute : l'écho AUDIO_TOGGLE_SELF_DEAF (_toggle_deaf) est la source
             # unique. On n'envoie que la commande pour ne pas pousser un 2e état.
-            await self.ws.send_json({"type": "AUDIO_TOGGLE_SELF_DEAF", "context": "default"})
+            await self.send_client({"type": "AUDIO_TOGGLE_SELF_DEAF", "context": "default"})
             return
         self.me.is_deafened = not self.me.is_deafened
         self.state_changed_event.set()
 
     async def disconnect_vc(self):
-        await self.ws.send_json({"type": "VOICE_CHANNEL_SELECT", "channelId": None, "guildId": None})
+        await self.send_client({"type": "VOICE_CHANNEL_SELECT", "channelId": None, "guildId": None})
 
     async def yield_new_state(self):
         while True:
@@ -374,7 +386,7 @@ class EventHandler:
         token, captcha = await exchange_ticket(ticket, priv_jwk)
         if token:
             self._captcha_needed = False
-            await self.ws.send_json({"type": "$login_token", "token": token})
+            await self.send_client({"type": "$login_token", "token": token})
         else:
             self.remote_auth.qr_b64 = None
             if captcha:

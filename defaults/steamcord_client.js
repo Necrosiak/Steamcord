@@ -147,21 +147,57 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 }
                 if (!cam) { log("AUCUN 'Steamcord Screen' après 12s — le feeder gstcam n'a pas fait passer /dev/video42 en CAPTURE (lecteur keepalive ?)"); return; }
                 log("device choisi: " + JSON.stringify(cam.label) + " id=" + cam.deviceId.slice(0, 12));
-                // 2) Sélectionner le device vidéo dans Discord.
+                // 2) Sélectionner le device vidéo dans Discord. Ces actions renvoient
+                // des PROMESSES : sans await, une rejection est silencieuse et on
+                // loggait « OK » alors que la caméra ne s'activait jamais (test
+                // 02/07 : setVideoEnabled(true) OK mais is_video jamais true).
                 try {
                     const va = WP.findByProps?.("setVideoDevice");
-                    if (va?.setVideoDevice) { va.setVideoDevice(cam.deviceId); log("setVideoDevice OK"); }
-                    else log("setVideoDevice introuvable");
-                } catch (e) { log("setVideoDevice err " + e); }
+                    if (va?.setVideoDevice) {
+                        log("module setVideoDevice: " + Object.keys(va).slice(0, 12).join(","));
+                        await Promise.resolve(va.setVideoDevice(cam.deviceId));
+                        log("setVideoDevice OK");
+                    } else log("setVideoDevice introuvable");
+                } catch (e) { log("setVideoDevice REJETÉ " + e); }
                 // 3) Activer la caméra dans le salon vocal courant.
                 try {
                     const selCh = WP.findStore?.("SelectedChannelStore");
                     const vcId = selCh?.getVoiceChannelId?.();
                     if (!vcId) { log("pas dans un vocal — la cam s'activera au prochain appel"); }
                     const va = WP.findByProps?.("setVideoEnabled");
-                    if (va?.setVideoEnabled) { va.setVideoEnabled(true); log("setVideoEnabled(true) OK"); }
-                    else log("setVideoEnabled introuvable");
-                } catch (e) { log("enable err " + e); }
+                    if (va?.setVideoEnabled) {
+                        log("module setVideoEnabled: " + Object.keys(va).slice(0, 12).join(","));
+                        await Promise.resolve(va.setVideoEnabled(true));
+                        log("setVideoEnabled(true) OK (promesse résolue)");
+                    } else log("setVideoEnabled introuvable");
+                } catch (e) { log("setVideoEnabled REJETÉ " + e); }
+                // 4) VERDICT : seul l'état gateway self_video prouve que les autres
+                // reçoivent la vidéo (l'engine peut dire oui sans que rien parte).
+                // Si toujours off à 2,5s, on tente l'action du bouton caméra de
+                // Discord (toggleSelfVideo) en secours, puis re-verdict.
+                const verdict = (label) => {
+                    try {
+                        const meId = WP.findStore?.("UserStore")?.getCurrentUser?.()?.id;
+                        const vc2 = WP.findStore?.("SelectedChannelStore")?.getVoiceChannelId?.();
+                        const states = WP.findStore?.("VoiceStateStore")?.getVoiceStatesForChannel?.(vc2) || {};
+                        const st = meId ? states[meId] : null;
+                        const engOn = WP.findStore?.("MediaEngineStore")?.isSelfVideoEnabled?.();
+                        const on = st ? !!st.selfVideo : null;
+                        log(label + " selfVideo(gateway)=" + on + " selfVideo(engine)=" + engOn);
+                        return on;
+                    } catch (e) { log(label + " err " + e); return null; }
+                };
+                setTimeout(() => {
+                    if (verdict("VERDICT@2.5s:") === true) return;
+                    try {
+                        const tv = WP.findByProps?.("toggleSelfVideo");
+                        if (tv?.toggleSelfVideo) {
+                            log("secours: toggleSelfVideo() (module: " + Object.keys(tv).slice(0, 12).join(",") + ")");
+                            Promise.resolve(tv.toggleSelfVideo()).catch((e) => log("toggleSelfVideo REJETÉ " + e));
+                        } else log("toggleSelfVideo introuvable");
+                    } catch (e) { log("secours err " + e); }
+                    setTimeout(() => verdict("VERDICT@5s:"), 2500);
+                }, 2500);
             } catch (e) { log("FATAL " + e); }
         };
 

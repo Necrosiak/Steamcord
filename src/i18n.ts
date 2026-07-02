@@ -49,6 +49,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Servers",
     tab_dms: "DMs",
     loading_servers: "Loading servers…",
+    discord_reconnecting: "Reconnecting to Discord… try again in a few seconds.",
     connecting: "Connecting…",
     error: "Error: ",
     call: "Call",
@@ -108,6 +109,7 @@ const T: Record<Locale, Dict> = {
     video_muted: "Muted",
     self_preview_label: "Your stream (preview)",
     self_preview_wait: "Starting preview…",
+    self_preview_nogamemode: "⚠ No game-mode screen found. This button only works in the real Steam Deck console session (gamescope) — NOT in Big Picture or Desktop. There, use “Share screen (Go Live)” instead.",
     mute_voice: "Mute",
     unmute_voice: "Muted — tap to unmute",
     config_account: "Account",
@@ -132,6 +134,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Serveurs",
     tab_dms: "MP",
     loading_servers: "Chargement des serveurs…",
+    discord_reconnecting: "Reconnexion à Discord en cours… réessaie dans quelques secondes.",
     connecting: "Connexion…",
     error: "Erreur : ",
     call: "Appeler",
@@ -191,6 +194,7 @@ const T: Record<Locale, Dict> = {
     video_muted: "Muet",
     self_preview_label: "Ton stream (aperçu)",
     self_preview_wait: "Démarrage de l'aperçu…",
+    self_preview_nogamemode: "⚠ Aucun écran mode jeu trouvé. Ce bouton ne marche QUE dans la vraie session console Steam Deck (gamescope) — PAS en Big Picture ni au Bureau. Là, utilise « Partager l'écran (Go Live) ».",
     mute_voice: "Couper le son",
     unmute_voice: "Muet — réactiver",
     config_account: "Compte",
@@ -239,6 +243,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Server",
     tab_dms: "DMs",
     loading_servers: "Server werden geladen…",
+    discord_reconnecting: "Verbindung zu Discord wird wiederhergestellt… versuche es in ein paar Sekunden erneut.",
     connecting: "Verbinden…",
     error: "Fehler: ",
     call: "Anrufen",
@@ -296,6 +301,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Servidores",
     tab_dms: "MD",
     loading_servers: "Cargando servidores…",
+    discord_reconnecting: "Reconectando con Discord… inténtalo de nuevo en unos segundos.",
     connecting: "Conectando…",
     error: "Error: ",
     call: "Llamar",
@@ -353,6 +359,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Server",
     tab_dms: "MP",
     loading_servers: "Caricamento dei server…",
+    discord_reconnecting: "Riconnessione a Discord… riprova tra qualche secondo.",
     connecting: "Connessione…",
     error: "Errore: ",
     call: "Chiama",
@@ -410,6 +417,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Servidores",
     tab_dms: "DMs",
     loading_servers: "Carregando servidores…",
+    discord_reconnecting: "Reconectando ao Discord… tente novamente em alguns segundos.",
     connecting: "Conectando…",
     error: "Erro: ",
     call: "Ligar",
@@ -467,6 +475,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Servers",
     tab_dms: "DM's",
     loading_servers: "Servers laden…",
+    discord_reconnecting: "Opnieuw verbinden met Discord… probeer het over een paar seconden opnieuw.",
     connecting: "Verbinden…",
     error: "Fout: ",
     call: "Bellen",
@@ -524,6 +533,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Serwery",
     tab_dms: "PW",
     loading_servers: "Ładowanie serwerów…",
+    discord_reconnecting: "Ponowne łączenie z Discordem… spróbuj ponownie za kilka sekund.",
     connecting: "Łączenie…",
     error: "Błąd: ",
     call: "Zadzwoń",
@@ -581,6 +591,7 @@ const T: Record<Locale, Dict> = {
     tab_servers: "Серверы",
     tab_dms: "ЛС",
     loading_servers: "Загрузка серверов…",
+    discord_reconnecting: "Переподключение к Discord… попробуйте снова через несколько секунд.",
     connecting: "Подключение…",
     error: "Ошибка: ",
     call: "Позвонить",
@@ -599,6 +610,16 @@ const T: Record<Locale, Dict> = {
     follow_steam_status: "Следовать статусу Steam",
   },
 };
+
+// Message d'erreur AFFICHABLE : les codes d'erreur stables renvoyés par le
+// backend (ex. `discord_reconnecting` pendant une re-init Vesktop après une
+// bascule Bureau↔gamemode) sont traduits au lieu d'exposer l'exception Python
+// brute dans le QAM.
+export function errText(e: unknown): string {
+  const s = String(e);
+  if (s.includes("discord_reconnecting")) return t("discord_reconnecting");
+  return t("error") + s;
+}
 
 export function t(key: string, vars?: Record<string, string | number>): string {
   if (_locale === null) _locale = detectLocale();

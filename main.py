@@ -487,25 +487,25 @@ class Plugin:
 
     @classmethod
     async def set_ptt(cls, value):
-        await cls.evt_handler.ws.send_json({"type": "$ptt", "value": value})
+        await cls.evt_handler.send_client({"type": "$ptt", "value": value})
 
     @classmethod
     async def enable_ptt(cls, enabled):
-        await cls.evt_handler.ws.send_json({"type": "$setptt", "enabled": enabled})
+        await cls.evt_handler.send_client({"type": "$setptt", "enabled": enabled})
 
     @classmethod
     async def set_rpc(cls, game):
         logger.info("Setting RPC")
-        await cls.evt_handler.ws.send_json({"type": "$rpc", "game": game})
+        await cls.evt_handler.send_client({"type": "$rpc", "game": game})
 
     @classmethod
     async def set_user_volume(cls, user_id, volume, context="default"):
-        await cls.evt_handler.ws.send_json({"type": "$set_user_volume", "id": user_id, "volume": volume, "context": context})
+        await cls.evt_handler.send_client({"type": "$set_user_volume", "id": user_id, "volume": volume, "context": context})
 
     @classmethod
     async def set_discord_status(cls, status):
         # status: "online" | "idle" | "dnd" | "invisible"
-        await cls.evt_handler.ws.send_json({"type": "$set_status", "status": status})
+        await cls.evt_handler.send_client({"type": "$set_status", "status": status})
 
     @classmethod
     async def get_discord_status(cls):
@@ -626,7 +626,7 @@ class Plugin:
     @classmethod
     async def logout_discord(cls):
         # Déconnexion totale de Discord (invalide le token + retour login/QR).
-        await cls.evt_handler.ws.send_json({"type": "$logout"})
+        await cls.evt_handler.send_client({"type": "$logout"})
 
     # ── Sélection des périphériques audio (sortie/entrée) pour Discord ──────────
     # Discord/Vesktop ne voit que "Default" en headless → on pilote au niveau
@@ -761,11 +761,11 @@ class Plugin:
 
     @classmethod
     async def go_live(cls):
-        await cls.evt_handler.ws.send_json({"type": "$golive", "stop": False})
+        await cls.evt_handler.send_client({"type": "$golive", "stop": False})
 
     @classmethod
     async def stop_go_live(cls):
-        await cls.evt_handler.ws.send_json({"type": "$golive", "stop": True})
+        await cls.evt_handler.send_client({"type": "$golive", "stop": True})
 
     # ── Partage d'écran via CAMÉRA virtuelle (contournement gamescope) ──────────
     # gamescope n'a pas de portail → Go Live (getDisplayMedia) = écran noir. À la
@@ -801,14 +801,14 @@ class Plugin:
         create_task(stream_watcher(cls.camera_feeder.stderr, True, prefix="[gstcam]"))
         # Laisser le pipeline s'établir avant de sélectionner la caméra côté Discord.
         await sleep(2)
-        await cls.evt_handler.ws.send_json({"type": "$screen_camera", "stop": False})
+        await cls.evt_handler.send_client({"type": "$screen_camera", "stop": False})
         return True
 
     @classmethod
     async def stop_screen_camera(cls):
         import os
         try:
-            await cls.evt_handler.ws.send_json({"type": "$screen_camera", "stop": True})
+            await cls.evt_handler.send_client({"type": "$screen_camera", "stop": True})
         except Exception:
             pass
         try:
@@ -828,23 +828,45 @@ class Plugin:
         return True
 
     @classmethod
+    async def get_camera_preview(cls):
+        """Aperçu du partage écran pour le QAM : état du feeder + dernier JPEG.
+
+        Le CEF de Steam n'a pas accès caméra en gamescope (getUserMedia échoue
+        sur /dev/video42) → l'aperçu passe par les instantanés que gst_camera.py
+        écrit toutes les 2s dans /tmp/steamcord-preview.jpg."""
+        import base64
+        import os
+        import time as _t
+        feeder = getattr(cls, "camera_feeder", None)
+        running = feeder is not None and feeder.returncode is None
+        jpg = ""
+        path = "/tmp/steamcord-preview.jpg"
+        try:
+            if running and os.path.exists(path) and _t.time() - os.path.getmtime(path) < 6:
+                with open(path, "rb") as f:
+                    jpg = base64.b64encode(f.read()).decode()
+        except Exception:
+            jpg = ""
+        return {"running": running, "jpg": jpg}
+
+    @classmethod
     async def mic_webrtc_answer(cls, answer):
-        await cls.evt_handler.ws.send_json({"type": "$webrtc", "payload": answer})
+        await cls.evt_handler.send_client({"type": "$webrtc", "payload": answer})
 
     # ── Relais vidéo inverse (voir le Go Live/cam des autres dans le QAM) ──
     @classmethod
     async def watch_video(cls, user_id):
         # Ask the Discord tab to watch this user's stream, capture its video track
         # and offer it back to us. Correlated by user_id.
-        await cls.evt_handler.ws.send_json({"type": "$WATCH_VIDEO", "userId": user_id})
+        await cls.evt_handler.send_client({"type": "$WATCH_VIDEO", "userId": user_id})
 
     @classmethod
     async def unwatch_video(cls, user_id):
-        await cls.evt_handler.ws.send_json({"type": "$UNWATCH_VIDEO", "userId": user_id})
+        await cls.evt_handler.send_client({"type": "$UNWATCH_VIDEO", "userId": user_id})
 
     @classmethod
     async def video_webrtc_answer(cls, user_id, answer):
-        await cls.evt_handler.ws.send_json({"type": "$VIDEO_ANSWER", "userId": user_id, "payload": answer})
+        await cls.evt_handler.send_client({"type": "$VIDEO_ANSWER", "userId": user_id, "payload": answer})
 
     @classmethod
     async def _unload(cls):

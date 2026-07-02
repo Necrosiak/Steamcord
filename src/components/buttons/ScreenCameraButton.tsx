@@ -1,10 +1,10 @@
 import { DialogButton } from "@decky/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaGamepad, FaStop } from "react-icons/fa";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
-import { setScreenCamOn } from "../../screenCam";
+import { isScreenCamOn, setScreenCamOn, subscribeScreenCam } from "../../screenCam";
 
 const Btn = DialogButton as any;
 
@@ -13,11 +13,22 @@ const Btn = DialogButton as any;
 // comme caméra Discord. Voir gst_camera.py + start_screen_camera (backend).
 export function ScreenCameraButton() {
   const state = useSteamcordState();
-  const [on, setOn] = useState(false);
+  // L'état vit dans screenCam.ts (survit au démontage du QAM) : un useState local
+  // repartirait à false à chaque réouverture alors que le stream tourne encore.
+  const [on, setOn] = useState(isScreenCamOn());
   const [busy, setBusy] = useState(false);
   // Focus géré nous-mêmes (cf GoLiveButton) : texte blanc forcé + halo, sinon le
   // focus natif rend le texte illisible.
   const [focused, setFocused] = useState(false);
+
+  useEffect(() => subscribeScreenCam(() => setOn(isScreenCamOn())), []);
+  // Resync avec le backend au montage : si le frontend a été rechargé, le feeder
+  // peut tourner (ou être mort) sans que screenCam.ts le sache.
+  useEffect(() => {
+    call<[], { running: boolean }>("get_camera_preview")
+      .then((r) => { if (r && typeof r.running === "boolean") { setScreenCamOn(r.running); setOn(r.running); } })
+      .catch(() => {});
+  }, []);
 
   // Disponible seulement en vocal.
   if (!state?.vc?.channel_name) return null;

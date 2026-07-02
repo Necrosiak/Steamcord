@@ -1,7 +1,7 @@
 import { DialogButton } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
-import { t } from "../i18n";
+import { t, errText } from "../i18n";
 
 interface DMRecipient { id: string; username: string; avatar: string | null; }
 interface DMChannel {
@@ -110,7 +110,7 @@ export function DMBrowser() {
           setError(t("error") + JSON.stringify(res));
         }
       })
-      .catch(e => setError(String(e)))
+      .catch(e => setError(errText(e)))
       .finally(() => setLoading(false));
   };
 

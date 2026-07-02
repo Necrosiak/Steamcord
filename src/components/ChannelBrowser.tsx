@@ -1,7 +1,7 @@
 import { DialogButton } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
-import { t } from "../i18n";
+import { t, errText } from "../i18n";
 
 interface ChannelMember { id: string; avatar: string | null; }
 interface VoiceChannel { id: string; name: string; members: ChannelMember[]; }
@@ -41,14 +41,14 @@ export function ChannelBrowser() {
     call<[], any>("get_guilds_vc").then(res => {
       if (Array.isArray(res)) setGuilds(res);
       else setError(t("error") + JSON.stringify(res));
-    }).catch(e => setError(String(e)));
+    }).catch(e => setError(errText(e)));
   };
 
   useEffect(() => { refresh(); }, []);
 
   const join = async (channelId: string, guildId: string) => {
     setJoining(channelId);
-    await call("join_vc", channelId, guildId);
+    await call("join_vc", channelId, guildId).catch(e => setError(errText(e)));
     setTimeout(() => setJoining(null), 2000);
   };
 

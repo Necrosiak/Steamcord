@@ -929,7 +929,9 @@ export default definePlugin(() => {
 
   const setPlaying = () => {
     const app = Router.MainRunningApp;
-    call("set_rpc", app !== undefined ? app?.display_name : null);
+    // .catch : pendant une re-init Vesktop (bascule Bureau↔gamemode) le backend
+    // rejette (discord_reconnecting) → sans catch, rejet non géré dans le QAM.
+    call("set_rpc", app !== undefined ? app?.display_name : null).catch(() => {});
   };
 
   let lastDisplayIsExternal = false;
@@ -940,15 +942,17 @@ export default definePlugin(() => {
       async (settings: any) => {
         if (settings.bDisplayIsExternal != lastDisplayIsExternal) {
           lastDisplayIsExternal = settings.bDisplayIsExternal;
-          const bounds: any = await call("get_screen_bounds");
-          window.DISCORD_TAB.HEIGHT = bounds.height;
-          window.DISCORD_TAB.WIDTH = bounds.width;
-          window.DISCORD_TAB.m_browserView.SetBounds(
-            0,
-            0,
-            bounds.width,
-            bounds.height
-          );
+          try {
+            const bounds: any = await call("get_screen_bounds");
+            window.DISCORD_TAB.HEIGHT = bounds.height;
+            window.DISCORD_TAB.WIDTH = bounds.width;
+            window.DISCORD_TAB.m_browserView.SetBounds(
+              0,
+              0,
+              bounds.width,
+              bounds.height
+            );
+          } catch {}
         }
       }
     );

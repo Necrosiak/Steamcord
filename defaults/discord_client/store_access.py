@@ -1,4 +1,4 @@
-from asyncio import Event
+from asyncio import Event, wait_for
 
 class User:
     def __init__(self, data) -> None:
@@ -56,18 +56,41 @@ class StoreAccess:
     def __init__(self) -> None:
         self.request_increment = 0
         self.requests = {}
+        # Posé par EventHandler.main() à la connexion du client injecté. Avant
+        # ça (ou pendant une re-init Vesktop), il n'existait PAS → AttributeError
+        # brut dans le QAM.
+        self.ws = None
 
     def _set_result(self, increment, result):
-        response = self.requests[increment]
+        # .get : la réponse peut arriver APRÈS le timeout de la requête (entrée
+        # déjà retirée) — un KeyError ici tuerait la boucle d'events du ws.
+        response = self.requests.get(increment)
+        if response is None:
+            return
         response.result = result
         response.lock.set()
 
     async def _store_access_request(self, command, id="", **kwargs):
+        # Bascule Bureau↔gamemode : Vesktop meurt et le ws client traîne en
+        # fermeture pendant la re-init (~2 min). Échouer NET avec un code stable
+        # que le frontend traduit, au lieu d'exposer « Cannot write to closing
+        # transport » brut dans le QAM.
+        if self.ws is None or self.ws.closed:
+            raise Exception("discord_reconnecting")
         self.request_increment += 1
+        increment = self.request_increment
         response = Response()
-        self.requests[self.request_increment] = response
-        await self.ws.send_json({"type": command, "id": id, "increment": self.request_increment, **kwargs})
-        await response.lock.wait()
+        self.requests[increment] = response
+        try:
+            await self.ws.send_json({"type": command, "id": id, "increment": increment, **kwargs})
+            # Si le ws meurt entre l'envoi et la réponse, lock n'est jamais posé
+            # → sans timeout l'appel Decky resterait suspendu pour toujours
+            # (spinner infini côté QAM).
+            await wait_for(response.lock.wait(), timeout=30)
+        except Exception:
+            raise Exception("discord_reconnecting")
+        finally:
+            self.requests.pop(increment, None)
         return response.result
 
     async def get_user(self, id):
