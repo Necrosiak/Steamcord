@@ -12,6 +12,7 @@ import {
   SliderField,
   Dropdown,
   findModuleExport,
+  SteamSpinner,
 } from "@decky/ui";
 import { Component, Suspense, useState, useEffect } from "react";
 import { FaDiscord } from "react-icons/fa";
@@ -447,9 +448,14 @@ const Content = () => {
   useEffect(() => { setBrowsing(false); }, [inCall]);
 
   if (!state?.loaded) {
+    // La connexion à Discord peut prendre ~1 min → spinner Steam animé pour
+    // montrer que ça travaille (un titre statique ressemble à un plantage).
     return (
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <h2>{t("initializing")}</h2>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+        <h2 style={{ margin: "0" }}>{t("initializing")}</h2>
+        <div style={{ width: "48px", height: "48px" }}>
+          <SteamSpinner background="transparent" />
+        </div>
       </div>
     );
   } else if (!state?.logged_in) {
