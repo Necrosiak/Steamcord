@@ -451,7 +451,7 @@ const Content = () => {
     // La connexion à Discord peut prendre ~1 min → spinner Steam animé pour
     // montrer que ça travaille (un titre statique ressemble à un plantage).
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", minHeight: "60vh" }}>
         <h2 style={{ margin: "0" }}>{t("initializing")}</h2>
         <div style={{ width: "48px", height: "48px" }}>
           <SteamSpinner background="transparent" />

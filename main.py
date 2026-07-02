@@ -44,6 +44,19 @@ _uspec = _ilu.spec_from_file_location("sc_updater", str(_upath))
 updater = _ilu.module_from_spec(_uspec)
 _uspec.loader.exec_module(updater)
 
+# vesktop.py a le MÊME problème que updater.py : le deploy synchronise defaults/
+# mais PAS la copie racine → `import vesktop` chargeait une version figée au
+# 2026-06-28 (avec runImmediately, sans launchdiag). On charge defaults/vesktop.py
+# et on l'enregistre dans sys.modules AVANT tout `import vesktop` : sys.modules
+# gagne toujours sur la résolution par sys.path.
+_vpath = Path(DECKY_PLUGIN_DIR) / "defaults" / "vesktop.py"
+if not _vpath.exists():
+    _vpath = Path(DECKY_PLUGIN_DIR) / "vesktop.py"
+_vspec = _ilu.spec_from_file_location("vesktop", str(_vpath))
+_vmod = _ilu.module_from_spec(_vspec)
+sys.modules["vesktop"] = _vmod
+_vspec.loader.exec_module(_vmod)
+
 logger.setLevel(INFO)
 
 

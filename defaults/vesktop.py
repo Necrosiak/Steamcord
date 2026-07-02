@@ -121,17 +121,38 @@ async def _unit_active(unit):
         return False
 
 
+def _any_display(runtime_dir):
+    """True if SOME display Vesktop can render on exists. In pure gamemode the
+    compositor is gamescope: wayland-0 n'apparaît JAMAIS (seulement gamescope-0 +
+    XWayland X0/X1) — attendre wayland-0 brûlait les 120s complètes à CHAQUE boot
+    console (2 min d'« Initialisation… » pour rien, prouvé au boot du 2026-07-02 :
+    backend 16:01:31 → systemd-run 16:03:31, +120s pile). Electron retombe seul
+    sur X11 quand WAYLAND_DISPLAY pointe dans le vide, donc n'importe laquelle de
+    ces sockets suffit pour que Vesktop rende et ouvre le port CDP."""
+    if (Path(runtime_dir) / "wayland-0").exists():
+        return True
+    try:
+        if any(p.name.startswith("gamescope-") and p.is_socket()
+               for p in Path(runtime_dir).iterdir()):
+            return True
+    except Exception:
+        pass
+    try:
+        return any(Path("/tmp/.X11-unix").iterdir())
+    except Exception:
+        return False
+
+
 async def _wait_for_display(runtime_dir, timeout=120):
-    """Block until the host wayland socket exists. Booting straight into gamemode,
-    the plugin loads before the compositor creates wayland-0; launching Vesktop
-    before then gives Electron no display so it never opens the CDP debug port —
-    that was the infinite 'initialize() failed ... 9223 ConnectionRefused' loop."""
-    sock = Path(runtime_dir) / "wayland-0"
+    """Block until a usable display exists (see _any_display). Launching Vesktop
+    with no display at all gives Electron nothing to render on so it never opens
+    the CDP debug port — that was the infinite 'initialize() failed ... 9223
+    ConnectionRefused' loop at cold gamemode boot."""
     for _ in range(timeout):
-        if sock.exists():
+        if _any_display(runtime_dir):
             return True
         await sleep(1)
-    return sock.exists()
+    return _any_display(runtime_dir)
 
 
 async def launch():
@@ -180,7 +201,11 @@ async def launch():
     # second `flatpak run` would only wake it and drop our flags. Blindly killing on every
     # retry is what previously prevented the loop from ever recovering on its own.
     if await _unit_active(VESKTOP_UNIT):
-        for _ in range(60):
+        # 15s suffit largement : Electron ouvre le port CDP ~2s après le start
+        # (mesuré au boot). Au-delà = instance zombie (ex. gamescope mort sous
+        # Vesktop à la bascule mode jeu↔bureau) — attendre 60s ne faisait que
+        # rallonger la reconnexion de la QAM après chaque bascule.
+        for _ in range(15):
             if await is_up():
                 return True
             await sleep(1)
