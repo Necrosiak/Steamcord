@@ -1,10 +1,17 @@
 import io
 import base64
 import asyncio
-import segno
 
 
 def _make_qr_b64(url: str) -> str:
+    # segno is vendored in py_modules/ (pure python, BSD). Imported lazily so
+    # a missing module can never keep the plugin from booting — QR login is
+    # optional, booting isn't (issue #1: stock SteamOS has no system segno and
+    # the former top-level import crashed the plugin at load).
+    try:
+        import segno
+    except ImportError:
+        return None
     qr = segno.make(url, error="L")
     buf = io.BytesIO()
     qr.save(buf, kind="svg", scale=6, border=2)
