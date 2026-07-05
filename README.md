@@ -78,3 +78,10 @@ sudo systemctl restart plugin_loader
 - [@Epictek](https://github.com/Epictek) — QR Code login foundation
 - [@jessebofill](https://github.com/jessebofill) — Steam menu patching code
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — the native Discord client Steamcord drives
+
+### Community bug hunters
+
+People who reported, diagnosed or helped fix bugs — thank you!
+
+- [@theconker64](https://github.com/theconker64) — report & diagnosis of the `segno` boot crash on stock SteamOS ([#1](https://github.com/Necrosiak/Steamcord/issues/1), fixed in v1.8.2)
+- [@V3lvetStorm](https://github.com/V3lvetStorm) — confirmation & testing ([#1](https://github.com/Necrosiak/Steamcord/issues/1))
