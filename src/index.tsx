@@ -784,12 +784,18 @@ const TwitchConfig = () => {
   const [keyInput, setKeyInput] = useState("");
   const [keySet, setKeySet] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [saveFocus, setSaveFocus] = useState(false);
   const refresh = () =>
     call<[], any>("get_twitch_config")
       .then((c: any) => { setKeySet(!!c?.key_set); setStreaming(!!c?.streaming); })
       .catch(() => {});
   useEffect(() => { refresh(); }, []);
   const B = DialogButton as any;
+  const saveStyle = {
+    boxShadow: saveFocus ? "0 0 0 2px #fff, 0 0 8px 2px #9146ff" : "none",
+    transform: saveFocus ? "scale(1.02)" : "scale(1)",
+    transition: "box-shadow .08s ease, transform .08s ease",
+  };
   return (
     <div>
       <SR>
@@ -805,10 +811,12 @@ const TwitchConfig = () => {
         />
       </SR>
       <SR>
-        <B disabled={!keyInput} onClick={() => {
-          call<[string], any>("set_twitch_key", keyInput)
-            .then(() => { setKeyInput(""); refresh(); }).catch(() => {});
-        }}>💾 {t("twitch_save")}</B>
+        <B disabled={!keyInput} style={saveStyle}
+          onFocus={() => setSaveFocus(true)} onBlur={() => setSaveFocus(false)}
+          onClick={() => {
+            call<[string], any>("set_twitch_key", keyInput)
+              .then(() => { setKeyInput(""); refresh(); }).catch(() => {});
+          }}>💾 {t("twitch_save")}</B>
       </SR>
       <SR>
         <div style={{ fontSize: 11, opacity: 0.75, color: "#fff" }}>
