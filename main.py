@@ -936,41 +936,80 @@ class Plugin:
     # ── Streaming Twitch (RTMP via ffmpeg depuis la capture /dev/video42) ───────
     # Le jeu est capturé dans le loopback v4l2 /dev/video42 (même feeder que le
     # partage écran Discord) ; ffmpeg le lit + le son du jeu, encode h264/aac et
-    # pousse en RTMP vers Twitch. La clé de stream est stockée localement.
-    _TWITCH_CFG = os.path.expanduser("~/.config/steamcord-twitch.json")
+    # pousse en RTMP vers Twitch. La config (clé + réglages de stream) est
+    # stockée PAR COMPTE STEAM (comme les sessions Discord et les logins
+    # boutiques) : chaque compte a sa propre clé et ses réglages.
+    _TWITCH_INGEST = "rtmp://ingest.global-contribute.live-video.net/app"
     _twitch_proc = None
+
+    @classmethod
+    def _twitch_cfg_path(cls):
+        try:
+            import vesktop
+            acc = vesktop.steam_account_id()
+        except Exception:
+            acc = "default"
+        return os.path.expanduser(f"~/.config/steamcord-twitch-{acc}.json")
 
     @classmethod
     def _load_twitch_cfg(cls):
         from json import load
         try:
-            with open(cls._TWITCH_CFG) as f:
+            with open(cls._twitch_cfg_path()) as f:
                 return load(f)
         except Exception:
             return {}
 
     @classmethod
-    async def set_twitch_key(cls, key: str = ""):
+    def _save_twitch_cfg(cls, cfg):
         from json import dump
+        p = cls._twitch_cfg_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            dump(cfg, f)
+        os.chmod(p, 0o600)     # la clé est un secret
+
+    @classmethod
+    async def set_twitch_key(cls, key: str = ""):
         try:
-            os.makedirs(os.path.dirname(cls._TWITCH_CFG), exist_ok=True)
             cfg = cls._load_twitch_cfg()
             cfg["key"] = (key or "").strip()
-            with open(cls._TWITCH_CFG, "w") as f:
-                dump(cfg, f)
-            os.chmod(cls._TWITCH_CFG, 0o600)   # la clé est un secret
+            cls._save_twitch_cfg(cfg)
             return {"ok": True}
         except Exception as e:
             logger.warning(f"[twitch] save key failed: {e!r}")
             return {"ok": False, "error": str(e)}
 
     @classmethod
+    async def set_twitch_params(cls, resolution="720p", bitrate=4500,
+                                fps=60, audio_bitrate=160):
+        """Réglages de stream modifiables (inspirés de decky-streamer)."""
+        try:
+            cfg = cls._load_twitch_cfg()
+            cfg["resolution"] = (resolution if resolution in
+                                 ("720p", "1080p", "source") else "720p")
+            cfg["bitrate"] = max(500, min(int(bitrate), 12000))
+            cfg["fps"] = 60 if int(fps) >= 45 else 30
+            cfg["audio_bitrate"] = max(64, min(int(audio_bitrate), 320))
+            cls._save_twitch_cfg(cfg)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @classmethod
     async def get_twitch_config(cls):
-        """N'expose JAMAIS la clé au frontend — juste si elle est posée + l'état."""
+        """N'expose JAMAIS la clé au frontend — juste si elle est posée + l'état
+        + les réglages (par compte Steam actif)."""
         cfg = cls._load_twitch_cfg()
         proc = cls._twitch_proc
-        streaming = proc is not None and proc.returncode is None
-        return {"key_set": bool(cfg.get("key")), "streaming": streaming}
+        return {
+            "key_set": bool(cfg.get("key")),
+            "streaming": proc is not None and proc.returncode is None,
+            "resolution": cfg.get("resolution", "720p"),
+            "bitrate": int(cfg.get("bitrate", 4500)),
+            "fps": int(cfg.get("fps", 60)),
+            "audio_bitrate": int(cfg.get("audio_bitrate", 160)),
+        }
 
     @classmethod
     async def _default_monitor(cls):
@@ -1000,17 +1039,28 @@ class Plugin:
             await cls.start_screen_camera()
             await sleep(1)
         mon = await cls._default_monitor()
-        ingest = cfg.get("ingest") or "rtmp://live.twitch.tv/app"
-        bitrate = str(cfg.get("bitrate") or "4500") + "k"
+        ingest = cfg.get("ingest") or cls._TWITCH_INGEST
+        res = cfg.get("resolution", "720p")
+        fps = int(cfg.get("fps", 60))
+        vb = int(cfg.get("bitrate", 4500))
+        ab = int(cfg.get("audio_bitrate", 160))
+        # Filtre vidéo : mise à l'échelle (sauf "source") + framerate.
+        flt = []
+        scale = {"720p": "1280:720", "1080p": "1920:1080"}.get(res)
+        if scale:
+            flt.append(f"scale={scale}")
+        flt.append(f"fps={fps}")
+        vf = ["-vf", ",".join(flt)]
         import vesktop
         args = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning",
             "-f", "v4l2", "-i", "/dev/video42",
             "-f", "pulse", "-i", mon,
+            *vf,
             "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-            "-g", "60", "-keyint_min", "60",
-            "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", str(int(cfg.get("bitrate") or 4500) * 2) + "k",
-            "-c:a", "aac", "-b:a", "160k", "-ar", "44100",
+            "-g", str(fps * 2), "-keyint_min", str(fps * 2),
+            "-b:v", f"{vb}k", "-maxrate", f"{vb}k", "-bufsize", f"{vb * 2}k",
+            "-c:a", "aac", "-b:a", f"{ab}k", "-ar", "44100",
             "-f", "flv", f"{ingest}/{key}",
         ]
         try:

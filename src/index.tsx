@@ -785,11 +785,21 @@ const TwitchConfig = () => {
   const [keySet, setKeySet] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [saveFocus, setSaveFocus] = useState(false);
+  const [res, setRes] = useState("720p");
+  const [bitrate, setBitrate] = useState(4500);
+  const [fps, setFps] = useState(60);
   const refresh = () =>
     call<[], any>("get_twitch_config")
-      .then((c: any) => { setKeySet(!!c?.key_set); setStreaming(!!c?.streaming); })
+      .then((c: any) => {
+        setKeySet(!!c?.key_set); setStreaming(!!c?.streaming);
+        if (c?.resolution) setRes(c.resolution);
+        if (c?.bitrate) setBitrate(c.bitrate);
+        if (c?.fps) setFps(c.fps);
+      })
       .catch(() => {});
   useEffect(() => { refresh(); }, []);
+  const saveParams = (r: string, b: number, f: number) =>
+    call<[string, number, number, number], any>("set_twitch_params", r, b, f, 160).catch(() => {});
   const B = DialogButton as any;
   const saveStyle = {
     boxShadow: saveFocus ? "0 0 0 2px #fff, 0 0 8px 2px #9146ff" : "none",
@@ -817,6 +827,34 @@ const TwitchConfig = () => {
             call<[string], any>("set_twitch_key", keyInput)
               .then(() => { setKeyInput(""); refresh(); }).catch(() => {});
           }}>💾 {t("twitch_save")}</B>
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={[
+            { data: "720p", label: "720p" },
+            { data: "1080p", label: "1080p" },
+            { data: "source", label: "Source" },
+          ]}
+          selectedOption={res}
+          onChange={(e: any) => { setRes(e.data); saveParams(e.data, bitrate, fps); }}
+          strDefaultLabel={t("twitch_resolution")}
+        />
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={[{ data: 60, label: "60 FPS" }, { data: 30, label: "30 FPS" }]}
+          selectedOption={fps}
+          onChange={(e: any) => { setFps(e.data); saveParams(res, bitrate, e.data); }}
+          strDefaultLabel={t("twitch_fps")}
+        />
+      </SR>
+      <SR>
+        <SliderField
+          label={t("twitch_bitrate")}
+          value={bitrate}
+          min={1000} max={9000} step={500} showValue={true}
+          onChange={(v: number) => { setBitrate(v); saveParams(res, v, fps); }}
+        />
       </SR>
       <SR>
         <div style={{ fontSize: 11, opacity: 0.75, color: "#fff" }}>
