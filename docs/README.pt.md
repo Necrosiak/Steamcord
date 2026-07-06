@@ -23,6 +23,7 @@ Ir para o nativo resolve os problemas difíceis da antiga abordagem de navegador
 
 ## Funcionalidades
 
+- **Um Discord por conta Steam (multissessão)** — Cada utilizador Steam da máquina tem **o seu próprio perfil Discord**: mude de conta Steam e o Steamcord troca de Discord automaticamente em segundos (da primeira vez mostra o login por QR; depois cada sessão fica memorizada). Ninguém cai no Discord de outra pessoa.
 - **Login por código QR** — Escaneie um código QR com o app do Discord no celular para entrar na hora. No celular: *Discord → Configurações → Ler código QR*, depois aponte para o código mostrado no painel. Sem digitar senha no Deck.
 - **Login em tela cheia (alternativa)** — Abre o Discord em tela cheia para entrar com e-mail/senha ou resolver um CAPTCHA quando o QR não é possível.
 - **Navegação unificada** — Abas **Voz / Texto / ⚙️ Configurações** no topo, com um seletor **Servidores / DMs** compartilhado logo abaixo: o mesmo interruptor de fonte vale para a voz e para o texto.

@@ -2,7 +2,10 @@
 connect via CDP, get past the first-launch screen, and inject our client. Used
 instead of the Steam CEF BrowserView so the microphone works natively."""
 
+import json
 import os
+import re
+import shutil
 from asyncio import sleep, create_subprocess_exec
 from subprocess import DEVNULL, PIPE
 from pathlib import Path
@@ -14,6 +17,96 @@ from tab_utils.cdp import Tab
 
 VESKTOP_CDP = "http://127.0.0.1:9223"
 VESKTOP_APP = "dev.vencord.Vesktop"
+
+# ── multi-sessions: one Discord (Vesktop) profile per Steam account ─────────
+# Profiles live INSIDE the Vesktop flatpak app dir so the sandbox can write
+# them without extra --filesystem permissions. The active profile is selected
+# by atomically retargeting the `config/vesktop` symlink (flatpak forces the
+# XDG vars to the app dir, so an --env override does not work).
+VESKTOP_CONFIG_BASE = Path.home() / ".var/app" / VESKTOP_APP / "config"
+PROFILES_DIR = VESKTOP_CONFIG_BASE / "steamcord-profiles"
+_CURRENT_FILE = PROFILES_DIR / "current.json"
+
+# Steam install roots across distros (Bazzite/SteamOS/Arch/Debian…)
+_STEAM_ROOTS = ("~/.steam/steam", "~/.local/share/Steam", "~/.steam/root")
+
+
+def steam_account_id():
+    """AccountID (32-bit, as string) of the ACTIVE Steam session.
+    registry.vdf ActiveUser first (updated live on user switch; 0 while logged
+    out — ignored), then loginusers.vdf MostRecent (SteamID64 → accountid).
+    Falls back to "default" so Vesktop still works without Steam."""
+    try:
+        reg = (Path.home() / ".steam/registry.vdf").read_text(errors="ignore")
+        m = re.search(r'"ActiveUser"\s+"(\d+)"', reg)
+        if m and m.group(1) != "0":
+            return m.group(1)
+    except OSError:
+        pass
+    for root in _STEAM_ROOTS:
+        p = Path(os.path.expanduser(root)) / "config/loginusers.vdf"
+        try:
+            data = p.read_text(errors="ignore")
+        except OSError:
+            continue
+        for m in re.finditer(r'"(\d{17})"\s*\{(.*?)\}', data, re.S):
+            sid, block = m.groups()
+            if re.search(r'"MostRecent"\s+"1"', block):
+                return str(int(sid) - 76561197960265728)
+    return "default"
+
+
+def _ensure_profile(account):
+    """Prepare the profile of a Steam account and ROUTE Vesktop to it.
+    flatpak forces XDG_CONFIG_HOME to the app dir (`--env=` cannot override
+    the XDG vars — verified live), so the switch is the `config/vesktop`
+    SYMLINK itself: it is atomically retargeted to the active account's
+    profile while Vesktop is stopped. Manual `flatpak run` follows it too.
+    The very first time multi-sessions runs, the existing default config (the
+    currently logged-in Discord) is ADOPTED by the active account."""
+    prof = PROFILES_DIR / account
+    target = prof / "vesktop"
+    default = VESKTOP_CONFIG_BASE / "vesktop"
+    had_profiles = PROFILES_DIR.is_dir() and any(
+        p.is_dir() for p in PROFILES_DIR.iterdir())
+    if not target.exists():
+        prof.mkdir(parents=True, exist_ok=True)
+        if not had_profiles and default.is_dir() and not default.is_symlink():
+            shutil.move(str(default), str(target))
+            logger.info(f"[multisession] existing Discord session adopted by "
+                        f"Steam account {account}")
+        else:
+            target.mkdir(parents=True, exist_ok=True)
+    if default.is_dir() and not default.is_symlink():
+        # a manual run recreated a REAL default dir while profiles exist —
+        # park it so the symlink can take its place (nothing is ever deleted)
+        park = default.with_name(f"vesktop.parked-{os.getpid()}")
+        shutil.move(str(default), str(park))
+        logger.info(f"[multisession] stray default config parked as {park.name}")
+    # atomic retarget: build the new symlink beside, then rename over
+    tmp = default.with_name("vesktop.swap")
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    tmp.symlink_to(target)
+    os.replace(tmp, default)
+    return prof
+
+
+def _recorded_account():
+    try:
+        return json.loads(_CURRENT_FILE.read_text()).get("account", "")
+    except Exception:
+        return ""
+
+
+def _record_account(account):
+    try:
+        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+        _CURRENT_FILE.write_text(json.dumps({"account": account}))
+    except OSError as e:
+        logger.warning(f"[multisession] cannot record account: {e!r}")
 
 
 def _user_env():
@@ -196,20 +289,33 @@ async def launch():
         f"targeting WAYLAND_DISPLAY=wayland-0"
     )
 
+    # Multi-sessions: pick the Vesktop profile of the ACTIVE Steam account.
+    # (The profile dir itself is prepared AFTER any old instance is stopped,
+    # so the first-run adoption never moves a config Vesktop is writing to.)
+    account = steam_account_id()
+
     # If OUR debug unit is already coming up, never kill it — just wait for the port.
     # Only a FOREIGN (non-debug) Vesktop needs killing: Electron is single-instance, so a
     # second `flatpak run` would only wake it and drop our flags. Blindly killing on every
     # retry is what previously prevented the loop from ever recovering on its own.
     if await _unit_active(VESKTOP_UNIT):
-        # 15s suffit largement : Electron ouvre le port CDP ~2s après le start
-        # (mesuré au boot). Au-delà = instance zombie (ex. gamescope mort sous
-        # Vesktop à la bascule mode jeu↔bureau) — attendre 60s ne faisait que
-        # rallonger la reconnexion de la QAM après chaque bascule.
-        for _ in range(15):
-            if await is_up():
-                return True
-            await sleep(1)
-        # Our unit is up but the port never opened (hung instance) — clear it and relaunch.
+        if _recorded_account() != account:
+            # The running instance belongs to ANOTHER Steam account's profile —
+            # stop it and fall through to a relaunch on the right one.
+            logger.info(f"[multisession] Steam account changed "
+                        f"({_recorded_account() or '?'} → {account}) — "
+                        f"switching Discord profile")
+        else:
+            # 15s suffit largement : Electron ouvre le port CDP ~2s après le start
+            # (mesuré au boot). Au-delà = instance zombie (ex. gamescope mort sous
+            # Vesktop à la bascule mode jeu↔bureau) — attendre 60s ne faisait que
+            # rallonger la reconnexion de la QAM après chaque bascule.
+            for _ in range(15):
+                if await is_up():
+                    return True
+                await sleep(1)
+            # Our unit is up but the port never opened (hung instance) — clear it
+            # and relaunch.
         try:
             st = await create_subprocess_exec(
                 "systemctl", "--user", "stop", VESKTOP_UNIT,
@@ -218,7 +324,12 @@ async def launch():
             await st.wait()
         except Exception:
             pass
-    elif await _running():
+    # Stopping the unit is NOT enough: the sandboxed app (bwrap) can escape the
+    # unit's cgroup, keep 9223 open, and Electron is single-instance — a new
+    # `flatpak run` would just wake the OLD instance (old profile) and exit.
+    # Seen live on the first multisession switch (unit inactive, vesktop.bin
+    # alive since boot). So always flatpak-kill any leftover before spawning.
+    if await _running():
         try:
             killer = await create_subprocess_exec(
                 "flatpak", "kill", VESKTOP_APP, stdout=DEVNULL, stderr=DEVNULL, env=env,
@@ -250,6 +361,8 @@ async def launch():
     if xauth:
         setenv.append(f"--setenv=XAUTHORITY={xauth}")
 
+    _ensure_profile(account)
+    _record_account(account)
     await create_subprocess_exec(
         "systemd-run", "--user", "--collect", f"--unit={VESKTOP_UNIT}",
         *setenv,

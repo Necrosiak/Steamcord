@@ -280,9 +280,54 @@ class Plugin:
         create_task(cls._audio_routing_watcher())
         create_task(cls._screen_diag())
         create_task(cls._ga_boot_cleanup())
+        create_task(cls._account_watcher())
 
         async for state in cls.evt_handler.yield_new_state():
             await emit("state", state)
+
+    @classmethod
+    async def _account_watcher(cls):
+        """Multi-sessions : un profil Discord (Vesktop) par compte Steam. Quand
+        le compte Steam actif change (changement d'utilisateur sur la console),
+        vesktop.launch() détecte le désaccord de profil, arrête l'unité et
+        relance sur le bon profil ; le watchdog ré-injecte ensuite le client
+        tout seul dès que le CDP rebondit."""
+        import vesktop
+        last = vesktop.steam_account_id()
+        # Premier démarrage multi-sessions : l'instance qui tourne n'a aucun
+        # profil enregistré. On l'adopte/relance TOUT DE SUITE, pendant que le
+        # compte Steam actif est forcément celui de la session Discord actuelle
+        # — adopter plus tard risquerait d'attribuer la session du proprio au
+        # compte d'un autre (ex. la copine se connecte la première).
+        try:
+            if (vesktop._recorded_account() != last
+                    and await vesktop._unit_active(vesktop.VESKTOP_UNIT)):
+                logger.info(f"[multisession] instance sans profil → adoption "
+                            f"par le compte {last} + relance")
+                await vesktop.launch()
+        except Exception as e:
+            logger.warning(f"[multisession] adoption initiale: {e!r}")
+        while True:
+            # 5 s : deux petits fichiers lus, coût négligeable — et la détection
+            # est la seule part compressible du temps de bascule (le reste =
+            # redémarrage Vesktop + chargement Discord, ~15-30 s incompressibles).
+            await sleep(5)
+            try:
+                acc = vesktop.steam_account_id()
+                if acc != last:
+                    logger.info(f"[multisession] compte Steam actif {last} → {acc}")
+                    last = acc
+                    # Purger l'état Discord AVANT la relance : le nouveau profil
+                    # appartient à quelqu'un d'autre. Sans ça, logged_in restait
+                    # True → le LOADED du profil vierge ne démarrait jamais le QR
+                    # et le QAM affichait encore l'ancien compte (vu en live).
+                    # _logout relance aussi remote_auth (QR) ; si le nouveau
+                    # profil est déjà loggé, CONNECTION_OPEN reprendra la main.
+                    await cls.evt_handler._logout({})
+                    cls.evt_handler.state_changed_event.set()
+                    await vesktop.launch()
+            except Exception as e:
+                logger.warning(f"[multisession] account watcher: {e!r}")
 
     @classmethod
     async def _audio_keepalive(cls):

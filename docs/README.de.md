@@ -23,6 +23,7 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 
 ## Funktionen
 
+- **Ein Discord pro Steam-Konto (Multi-Session)** — Jeder Steam-Nutzer der Maschine bekommt **sein eigenes Discord-Profil**: Steam-Konto wechseln und Steamcord wechselt Discord automatisch in Sekunden (beim ersten Mal erscheint der QR-Login; danach wird jede Sitzung gemerkt). Niemand landet im Discord eines anderen.
 - **QR-Code-Anmeldung** — Scanne einen QR-Code mit der Discord-Handy-App, um dich sofort anzumelden. Auf deinem Handy: *Discord → Einstellungen → QR-Code scannen*, dann auf den im Panel angezeigten Code richten. Kein Passwort-Tippen auf dem Deck.
 - **Vollbild-Anmeldung (Ausweichlösung)** — Öffnet Discord im Vollbild zur Anmeldung mit E-Mail/Passwort oder zum Lösen eines CAPTCHAs, wenn QR nicht möglich ist.
 - **Einheitliche Navigation** — Oben die Tabs **Sprache / Text / ⚙️ Einstellungen**, darunter ein gemeinsamer **Server / DMs**-Umschalter — dieselbe Quellenauswahl gilt für Sprache und Text.

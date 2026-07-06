@@ -23,6 +23,7 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 
 ## Functies
 
+- **Eén Discord per Steam-account (multi-sessie)** — Elke Steam-gebruiker op de machine krijgt **zijn eigen Discord-profiel**: wissel van Steam-account en Steamcord wisselt binnen enkele seconden automatisch van Discord (de eerste keer verschijnt de QR-login; daarna wordt elke sessie onthouden). Niemand belandt in andermans Discord.
 - **Aanmelden met QR-code** — Scan een QR-code met de Discord-app op je telefoon om direct in te loggen. Op je telefoon: *Discord → Instellingen → QR-code scannen*, richt dan op de code in het paneel. Geen wachtwoord typen op de Deck.
 - **Volledig scherm aanmelden (terugval)** — Opent Discord op volledig scherm om in te loggen met e-mail/wachtwoord of een CAPTCHA op te lossen wanneer QR niet mogelijk is.
 - **Uniforme navigatie** — Tabbladen **Spraak / Tekst / ⚙️ Instellingen** bovenaan, met daaronder een gedeelde **Servers / DM's**-schakelaar: dezelfde bronkeuze geldt voor spraak en tekst.

@@ -23,6 +23,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 
 ## Features
 
+- **One Discord per Steam account (multi-session)** — Every Steam user on the machine gets their **own Discord profile**: switch the Steam account and Steamcord switches Discord automatically within seconds (the first time shows the QR login; after that each session is remembered). Nobody lands in someone else's Discord.
 - **QR code login** — Scan a QR code with the Discord mobile app to log in instantly. On your phone: *Discord → Settings → Scan QR Code*, then aim at the code shown in the panel. No password typing on the Deck.
 - **Fullscreen login (fallback)** — Opens Discord full-screen to log in with email/password or solve a CAPTCHA when QR isn't possible.
 - **Unified navigation** — Top tabs **Voice / Text / ⚙️ Settings**, with a shared **Servers / DMs** switch underneath, so the same source toggle works for both voice and text.

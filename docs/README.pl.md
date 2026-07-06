@@ -23,6 +23,7 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 
 ## Funkcje
 
+- **Jeden Discord na konto Steam (multi-sesja)** — Każdy użytkownik Steam na maszynie ma **własny profil Discorda**: zmień konto Steam, a Steamcord automatycznie przełączy Discorda w kilka sekund (za pierwszym razem pokaże logowanie QR; potem każda sesja jest zapamiętana). Nikt nie trafi na cudzego Discorda.
 - **Logowanie kodem QR** — Zeskanuj kod QR aplikacją Discord na telefonie, aby zalogować się natychmiast. Na telefonie: *Discord → Ustawienia → Skanuj kod QR*, a następnie wyceluj w kod pokazany w panelu. Bez wpisywania hasła na Decku.
 - **Logowanie na pełnym ekranie (zapasowe)** — Otwiera Discord na pełnym ekranie, aby zalogować się e-mailem/hasłem lub rozwiązać CAPTCHA, gdy QR nie jest możliwy.
 - **Ujednolicona nawigacja** — Karty **Głos / Tekst / ⚙️ Ustawienia** u góry, a pod nimi wspólny przełącznik **Serwery / DM**: ten sam wybór źródła działa dla głosu i tekstu.

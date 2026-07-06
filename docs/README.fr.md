@@ -23,6 +23,7 @@ Le passage au natif règle les problèmes difficiles de l'ancienne approche par 
 
 ## Fonctionnalités
 
+- **Un Discord par compte Steam (multi-sessions)** — Chaque utilisateur Steam de la machine a **son propre profil Discord** : changez de compte Steam et Steamcord bascule de Discord automatiquement en quelques secondes (la première fois affiche le login QR ; ensuite chaque session est mémorisée). Personne ne tombe sur le Discord de quelqu'un d'autre.
 - **Connexion par QR code** — Scanne un QR code avec l'app mobile Discord pour te connecter instantanément. Sur ton téléphone : *Discord → Réglages → Scanner le QR Code*, puis vise le code affiché dans le panneau. Aucun mot de passe à taper sur la Deck.
 - **Connexion plein écran (secours)** — Ouvre Discord en plein écran pour se connecter par e-mail/mot de passe ou résoudre un CAPTCHA quand le QR n'est pas possible.
 - **Navigation unifiée** — Onglets **Vocal / Messages / ⚙️ Réglages** en haut, avec un sélecteur **Serveurs / MP** partagé en dessous : le même interrupteur de source sert au vocal et au texte.
