@@ -40,6 +40,7 @@ Le passage au natif règle les problèmes difficiles de l'ancienne approche par 
 - **Push-to-talk** — Avec un raccourci physique (R5 par défaut).
 - **Envoi de captures** — Envoie une capture d'écran Steam directement dans la conversation ouverte.
 - **[Vencord](https://vencord.dev/)** est intégré à Vesktop, donnant accès à son écosystème de plugins.
+- 🐧 **Compatibilité** — nous faisons le nécessaire pour prendre en charge tous les OS capables de faire tourner Steam en mode jeu / Big Picture (Linux pour le moment) : détection portable, dépendances Python embarquées, aucune supposition propre à une distribution.
 
 ---
 

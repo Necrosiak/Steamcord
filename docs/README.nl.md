@@ -40,6 +40,7 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 - **Push-to-talk** — Met een fysieke toets (standaard R5).
 - **Schermafbeeldingen versturen** — Stuur een Steam-schermafbeelding rechtstreeks naar het geopende gesprek.
 - **[Vencord](https://vencord.dev/)** is ingebouwd in Vesktop en geeft toegang tot zijn plugin-ecosysteem.
+- 🐧 **Compatibiliteit** — we werken er actief aan om elk OS te ondersteunen dat Steam in gamemodus / Big Picture kan draaien (voorlopig Linux): portable detectie, meegeleverde Python-afhankelijkheden, geen distributiespecifieke aannames.
 
 ---
 

@@ -40,6 +40,7 @@ Il passaggio al nativo risolve i problemi difficili del vecchio approccio a brow
 - **Push-to-talk** — Con un tasto fisico (R5 di default).
 - **Invio di screenshot** — Invia uno screenshot di Steam direttamente nella conversazione aperta.
 - **[Vencord](https://vencord.dev/)** è integrato in Vesktop, dando accesso al suo ecosistema di plugin.
+- 🐧 **Compatibilità** — lavoriamo attivamente per supportare ogni OS in grado di eseguire Steam in modalità gioco / Big Picture (Linux per ora): rilevamento portabile, dipendenze Python incluse, nessuna assunzione specifica di distribuzione.
 
 ---
 

@@ -40,6 +40,7 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 - **Push-to-talk** — Z fizycznym przyciskiem (domyślnie R5).
 - **Wysyłanie zrzutów ekranu** — Wyślij zrzut ekranu Steam prosto do otwartej rozmowy.
 - **[Vencord](https://vencord.dev/)** jest wbudowany w Vesktop, dając dostęp do swojego ekosystemu wtyczek.
+- 🐧 **Kompatybilność** — aktywnie pracujemy nad wsparciem każdego systemu zdolnego uruchomić Steam w trybie gry / Big Picture (na razie Linux): przenośna detekcja, dołączone zależności Pythona, brak założeń specyficznych dla dystrybucji.
 
 ---
 

@@ -40,6 +40,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 - **Push-to-talk** — With a physical keybind (R5 by default).
 - **Share screenshots** — Send a Steam screenshot straight into the conversation you have open.
 - **[Vencord](https://vencord.dev/)** is built into Vesktop, giving access to its plugin ecosystem.
+- 🐧 **Compatibility** — we actively work to support every OS that can run Steam in Gaming Mode / Big Picture (Linux for now): portable detection, vendored Python deps, no distro-specific assumptions.
 
 ---
 
