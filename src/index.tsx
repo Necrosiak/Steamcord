@@ -13,6 +13,7 @@ import {
   Dropdown,
   findModuleExport,
   SteamSpinner,
+  TextField,
 } from "@decky/ui";
 import { Component, Suspense, useState, useEffect } from "react";
 import { FaDiscord } from "react-icons/fa";
@@ -775,6 +776,52 @@ const LogoutSection = () => {
   );
 };
 
+// Streaming Twitch : champ pour la clé de stream + bouton live. La capture jeu
+// (/dev/video42) est encodée par ffmpeg et poussée en RTMP vers Twitch.
+const TwitchConfig = () => {
+  const [keyInput, setKeyInput] = useState("");
+  const [keySet, setKeySet] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const refresh = () =>
+    call<[], any>("get_twitch_config")
+      .then((c: any) => { setKeySet(!!c?.key_set); setStreaming(!!c?.streaming); })
+      .catch(() => {});
+  useEffect(() => { refresh(); }, []);
+  const B = DialogButton as any;
+  return (
+    <div>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 6, color: "#fff" }}>{t("twitch_help")}</div>
+      </SR>
+      <SR>
+        <TextField
+          label={t("twitch_key")}
+          bIsPassword={true}
+          value={keyInput}
+          placeholder={keySet ? "••••••••••••" : "live_..."}
+          onChange={(e: any) => setKeyInput(e?.target?.value ?? "")}
+        />
+      </SR>
+      <SR>
+        <B disabled={!keyInput} onClick={() => {
+          call<[string], any>("set_twitch_key", keyInput)
+            .then(() => { setKeyInput(""); refresh(); }).catch(() => {});
+        }}>💾 {t("twitch_save")}</B>
+      </SR>
+      <SR>
+        <B disabled={!keySet}
+           style={{ background: streaming ? "#ed4245" : "#9146ff", color: "#fff" }}
+           onClick={() => {
+             (streaming ? call("stop_twitch_stream") : call("start_twitch_stream"))
+               .then(refresh).catch(() => {});
+           }}>
+          {streaming ? `⏹ ${t("twitch_stop")}` : `🔴 ${t("twitch_start")}`}
+        </B>
+      </SR>
+    </div>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div>
@@ -792,6 +839,11 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎤 {t("config_mic")}</div>
       </SR>
       <MicProcessingConfig />
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🟣 {t("twitch_config")}</div>
+      </SR>
+      <TwitchConfig />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔄 {t("config_updates")}</div>

@@ -933,6 +933,113 @@ class Plugin:
             jpg = ""
         return {"running": running, "jpg": jpg}
 
+    # ── Streaming Twitch (RTMP via ffmpeg depuis la capture /dev/video42) ───────
+    # Le jeu est capturé dans le loopback v4l2 /dev/video42 (même feeder que le
+    # partage écran Discord) ; ffmpeg le lit + le son du jeu, encode h264/aac et
+    # pousse en RTMP vers Twitch. La clé de stream est stockée localement.
+    _TWITCH_CFG = os.path.expanduser("~/.config/steamcord-twitch.json")
+    _twitch_proc = None
+
+    @classmethod
+    def _load_twitch_cfg(cls):
+        from json import load
+        try:
+            with open(cls._TWITCH_CFG) as f:
+                return load(f)
+        except Exception:
+            return {}
+
+    @classmethod
+    async def set_twitch_key(cls, key: str = ""):
+        from json import dump
+        try:
+            os.makedirs(os.path.dirname(cls._TWITCH_CFG), exist_ok=True)
+            cfg = cls._load_twitch_cfg()
+            cfg["key"] = (key or "").strip()
+            with open(cls._TWITCH_CFG, "w") as f:
+                dump(cfg, f)
+            os.chmod(cls._TWITCH_CFG, 0o600)   # la clé est un secret
+            return {"ok": True}
+        except Exception as e:
+            logger.warning(f"[twitch] save key failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+
+    @classmethod
+    async def get_twitch_config(cls):
+        """N'expose JAMAIS la clé au frontend — juste si elle est posée + l'état."""
+        cfg = cls._load_twitch_cfg()
+        proc = cls._twitch_proc
+        streaming = proc is not None and proc.returncode is None
+        return {"key_set": bool(cfg.get("key")), "streaming": streaming}
+
+    @classmethod
+    async def _default_monitor(cls):
+        """Nom PulseAudio du monitor du sink par défaut (= son du jeu)."""
+        try:
+            import vesktop
+            p = await create_subprocess_exec(
+                "pactl", "get-default-sink",
+                stdout=PIPE, stderr=DEVNULL, env=vesktop._user_env())
+            out, _ = await p.communicate()
+            sink = out.decode().strip()
+            return f"{sink}.monitor" if sink else "@DEFAULT_MONITOR@"
+        except Exception:
+            return "@DEFAULT_MONITOR@"
+
+    @classmethod
+    async def start_twitch_stream(cls):
+        cfg = cls._load_twitch_cfg()
+        key = cfg.get("key")
+        if not key:
+            return {"ok": False, "error": "no_key"}
+        if cls._twitch_proc is not None and cls._twitch_proc.returncode is None:
+            return {"ok": True, "already": True}
+        # S'assurer que la capture jeu alimente /dev/video42.
+        if not (getattr(cls, "camera_feeder", None)
+                and cls.camera_feeder.returncode is None):
+            await cls.start_screen_camera()
+            await sleep(1)
+        mon = await cls._default_monitor()
+        ingest = cfg.get("ingest") or "rtmp://live.twitch.tv/app"
+        bitrate = str(cfg.get("bitrate") or "4500") + "k"
+        import vesktop
+        args = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning",
+            "-f", "v4l2", "-i", "/dev/video42",
+            "-f", "pulse", "-i", mon,
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+            "-g", "60", "-keyint_min", "60",
+            "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", str(int(cfg.get("bitrate") or 4500) * 2) + "k",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "44100",
+            "-f", "flv", f"{ingest}/{key}",
+        ]
+        try:
+            cls._twitch_proc = await create_subprocess_exec(
+                *args, stdout=PIPE, stderr=PIPE, env=vesktop._user_env())
+            create_task(stream_watcher(cls._twitch_proc.stdout, prefix="[twitch]"))
+            create_task(stream_watcher(cls._twitch_proc.stderr, True, prefix="[twitch]"))
+            logger.info("[twitch] stream démarré vers Twitch")
+            return {"ok": True}
+        except Exception as e:
+            logger.warning(f"[twitch] start failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+
+    @classmethod
+    async def stop_twitch_stream(cls):
+        proc = cls._twitch_proc
+        cls._twitch_proc = None
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.terminate()
+                await sleep(0.5)
+                if proc.returncode is None:
+                    proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
+        logger.info("[twitch] stream arrêté")
+        return {"ok": True}
+
     @classmethod
     async def get_share_env(cls):
         # Bureau/Big Picture (KWin) vs console gamescope : décide quel bouton de
