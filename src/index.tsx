@@ -44,6 +44,7 @@ import {
 } from "./hooks/useSteamcordState";
 
 import { MuteButton } from "./components/buttons/MuteButton";
+import { TwitchLiveButton } from "./components/buttons/TwitchLiveButton";
 import { DeafenButton } from "./components/buttons/DeafenButton";
 import { DisconnectButton } from "./components/buttons/DisconnectButton";
 import { PushToTalkButton } from "./components/buttons/PushToTalk";
@@ -480,6 +481,7 @@ const Content = () => {
               <MuteButton />
               <DeafenButton />
               <DisconnectButton />
+              <TwitchLiveButton />
             </Focusable>
           </SR>
         </div>
@@ -809,14 +811,13 @@ const TwitchConfig = () => {
         }}>💾 {t("twitch_save")}</B>
       </SR>
       <SR>
-        <B disabled={!keySet}
-           style={{ background: streaming ? "#ed4245" : "#9146ff", color: "#fff" }}
-           onClick={() => {
-             (streaming ? call("stop_twitch_stream") : call("start_twitch_stream"))
-               .then(refresh).catch(() => {});
-           }}>
-          {streaming ? `⏹ ${t("twitch_stop")}` : `🔴 ${t("twitch_start")}`}
-        </B>
+        <div style={{ fontSize: 11, opacity: 0.75, color: "#fff" }}>
+          {streaming
+            ? `🔴 ${t("twitch_start")} — live`
+            : keySet
+              ? `🟣 ${t("twitch_key")} ✓ — ${t("twitch_start")} (${t("tab_voice")})`
+              : ""}
+        </div>
       </SR>
     </div>
   );
