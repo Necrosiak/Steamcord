@@ -13,7 +13,6 @@ import {
   Dropdown,
   findModuleExport,
   SteamSpinner,
-  TextField,
 } from "@decky/ui";
 import { Component, Suspense, useState, useEffect } from "react";
 import { FaDiscord } from "react-icons/fa";
@@ -35,6 +34,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 
 import { patchMenu } from "./patches/menuPatch";
 import { notify, patchDeckyToaster } from "./notify";
+import { ACCENT, DANGER, focusHalo } from "./components/Styled";
 import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
 import {
@@ -44,7 +44,6 @@ import {
 } from "./hooks/useSteamcordState";
 
 import { MuteButton } from "./components/buttons/MuteButton";
-import { TwitchLiveButton } from "./components/buttons/TwitchLiveButton";
 import { DeafenButton } from "./components/buttons/DeafenButton";
 import { DisconnectButton } from "./components/buttons/DisconnectButton";
 import { PushToTalkButton } from "./components/buttons/PushToTalk";
@@ -138,6 +137,8 @@ const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children 
     onClick={onClick}
     onFocus={onFocus}
     onBlur={onBlur}
+    onGamepadFocus={onFocus}
+    onGamepadBlur={onBlur}
     style={{
       flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
       fontSize: fontSize ?? 11, minHeight: 0, boxSizing: "border-box",
@@ -145,8 +146,8 @@ const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children 
       background: focused
         ? "rgba(88,101,242,0.85)"
         : active ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
-      boxShadow: focused ? "0 0 0 2px #fff" : "none",
       fontWeight: active ? 700 : 400,
+      ...focusHalo(ACCENT, focused),
     }}
   >
     {children}
@@ -159,11 +160,13 @@ const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => (
     onClick={onClick}
     onFocus={onFocus}
     onBlur={onBlur}
+    onGamepadFocus={onFocus}
+    onGamepadBlur={onBlur}
     style={{
       width: "100%", margin: 0, padding: "4px 0", fontSize: 11, minHeight: 0,
       boxSizing: "border-box", color: "#fff",
       background: focused ? "rgba(88,101,242,0.85)" : "rgba(255,255,255,0.06)",
-      boxShadow: focused ? "0 0 0 2px #fff" : "none",
+      ...focusHalo(ACCENT, focused),
     }}
   >
     {children}
@@ -270,7 +273,7 @@ const UserStatusButton = ({ me }: { me: any }) => {
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           padding: "4px 8px", margin: 0, minHeight: 0, boxSizing: "border-box",
           background: focused === "name" ? "rgba(88,101,242,0.6)" : "rgba(255,255,255,0.06)",
-          boxShadow: focused === "name" ? "0 0 0 2px #fff" : "none",
+          ...focusHalo(ACCENT, focused === "name"),
         }}
       >
         <img
@@ -481,7 +484,6 @@ const Content = () => {
               <MuteButton />
               <DeafenButton />
               <DisconnectButton />
-              <TwitchLiveButton />
             </Focusable>
           </SR>
         </div>
@@ -744,8 +746,7 @@ const LogoutSection = () => {
     style: {
       margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600,
       borderRadius: 6, color: "#fff", background: bg,
-      boxShadow: focused === key ? "0 0 0 2px #fff" : "none",
-      transition: "box-shadow .08s ease",
+      ...focusHalo(DANGER, focused === key),
       ...extra,
     },
   });
@@ -778,96 +779,6 @@ const LogoutSection = () => {
   );
 };
 
-// Streaming Twitch : champ pour la clé de stream + bouton live. La capture jeu
-// (/dev/video42) est encodée par ffmpeg et poussée en RTMP vers Twitch.
-const TwitchConfig = () => {
-  const [keyInput, setKeyInput] = useState("");
-  const [keySet, setKeySet] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [saveFocus, setSaveFocus] = useState(false);
-  const [res, setRes] = useState("720p");
-  const [bitrate, setBitrate] = useState(4500);
-  const [fps, setFps] = useState(60);
-  const refresh = () =>
-    call<[], any>("get_twitch_config")
-      .then((c: any) => {
-        setKeySet(!!c?.key_set); setStreaming(!!c?.streaming);
-        if (c?.resolution) setRes(c.resolution);
-        if (c?.bitrate) setBitrate(c.bitrate);
-        if (c?.fps) setFps(c.fps);
-      })
-      .catch(() => {});
-  useEffect(() => { refresh(); }, []);
-  const saveParams = (r: string, b: number, f: number) =>
-    call<[string, number, number, number], any>("set_twitch_params", r, b, f, 160).catch(() => {});
-  const B = DialogButton as any;
-  const saveStyle = {
-    boxShadow: saveFocus ? "0 0 0 2px #fff, 0 0 8px 2px #9146ff" : "none",
-    transform: saveFocus ? "scale(1.02)" : "scale(1)",
-    transition: "box-shadow .08s ease, transform .08s ease",
-  };
-  return (
-    <div>
-      <SR>
-        <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 6, color: "#fff" }}>{t("twitch_help")}</div>
-      </SR>
-      <SR>
-        <TextField
-          label={t("twitch_key")}
-          bIsPassword={true}
-          value={keyInput}
-          placeholder={keySet ? "••••••••••••" : "live_..."}
-          onChange={(e: any) => setKeyInput(e?.target?.value ?? "")}
-        />
-      </SR>
-      <SR>
-        <B disabled={!keyInput} style={saveStyle}
-          onFocus={() => setSaveFocus(true)} onBlur={() => setSaveFocus(false)}
-          onClick={() => {
-            call<[string], any>("set_twitch_key", keyInput)
-              .then(() => { setKeyInput(""); refresh(); }).catch(() => {});
-          }}>💾 {t("twitch_save")}</B>
-      </SR>
-      <SR>
-        <Dropdown
-          rgOptions={[
-            { data: "720p", label: "720p" },
-            { data: "1080p", label: "1080p" },
-            { data: "source", label: "Source" },
-          ]}
-          selectedOption={res}
-          onChange={(e: any) => { setRes(e.data); saveParams(e.data, bitrate, fps); }}
-          strDefaultLabel={t("twitch_resolution")}
-        />
-      </SR>
-      <SR>
-        <Dropdown
-          rgOptions={[{ data: 60, label: "60 FPS" }, { data: 30, label: "30 FPS" }]}
-          selectedOption={fps}
-          onChange={(e: any) => { setFps(e.data); saveParams(res, bitrate, e.data); }}
-          strDefaultLabel={t("twitch_fps")}
-        />
-      </SR>
-      <SR>
-        <SliderField
-          label={t("twitch_bitrate")}
-          value={bitrate}
-          min={1000} max={9000} step={500} showValue={true}
-          onChange={(v: number) => { setBitrate(v); saveParams(res, v, fps); }}
-        />
-      </SR>
-      <SR>
-        <div style={{ fontSize: 11, opacity: 0.75, color: "#fff" }}>
-          {streaming
-            ? `🔴 ${t("twitch_start")} — live`
-            : keySet
-              ? `🟣 ${t("twitch_key")} ✓ — ${t("twitch_start")} (${t("tab_voice")})`
-              : ""}
-        </div>
-      </SR>
-    </div>
-  );
-};
 
 const ConfigPanel = () => {
   return (
@@ -886,11 +797,6 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎤 {t("config_mic")}</div>
       </SR>
       <MicProcessingConfig />
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🟣 {t("twitch_config")}</div>
-      </SR>
-      <TwitchConfig />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔄 {t("config_updates")}</div>

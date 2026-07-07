@@ -40,7 +40,6 @@ Il passaggio al nativo risolve i problemi difficili del vecchio approccio a brow
 - **Push-to-talk** — Con un tasto fisico (R5 di default).
 - **Invio di screenshot** — Invia uno screenshot di Steam direttamente nella conversazione aperta.
 - **[Vencord](https://vencord.dev/)** è integrato in Vesktop, dando accesso al suo ecosistema di plugin.
-- 🟣 **Streaming su Twitch** — vai in diretta su Twitch dai controlli vocali: salva la chiave di stream (per account Steam, nascosta e protetta) e scegli risoluzione / frame-s / bitrate. Codificato con ffmpeg dalla cattura del gioco.
 - 🐧 **Compatibilità** — lavoriamo attivamente per supportare ogni OS in grado di eseguire Steam in modalità gioco / Big Picture (Linux per ora): rilevamento portabile, dipendenze Python incluse, nessuna assunzione specifica di distribuzione.
 
 ---

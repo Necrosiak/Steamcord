@@ -40,7 +40,6 @@ Ir para o nativo resolve os problemas difíceis da antiga abordagem de navegador
 - **Push-to-talk** — Com uma tecla física (R5 por padrão).
 - **Enviar capturas** — Envie uma captura do Steam direto na conversa aberta.
 - **[Vencord](https://vencord.dev/)** está integrado no Vesktop, dando acesso ao seu ecossistema de plugins.
-- 🟣 **Streaming na Twitch** — vai para o ar na Twitch a partir dos controlos de voz: guarda a tua chave de stream (por conta Steam, oculta e protegida) e escolhe resolução / fps / bitrate. Codificado com ffmpeg a partir da captura do jogo.
 - 🐧 **Compatibilidade** — trabalhamos ativamente para suportar todos os SO capazes de executar o Steam em modo de jogo / Big Picture (Linux por agora): deteção portátil, dependências Python incluídas, sem suposições específicas de distribuição.
 
 ---

@@ -58,3 +58,4 @@ cli/decky
 .vscode/tasks.json
 .vscode/setup.sh
 .vscode/defsettings.json
+deploy-local.sh

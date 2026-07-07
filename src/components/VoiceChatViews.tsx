@@ -5,6 +5,7 @@ import { t } from "../i18n";
 import { SliderField, DialogButton } from "@decky/ui";
 import { watchVideo, stopVideo, isWatching, getStream, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
+import { focusHalo, ACCENT, DANGER } from "./Styled";
 
 // Réagit à l'arrivée du flux vidéo relayé (Vesktop→QAM) pour cet utilisateur.
 function useRemoteVideo(userId: string) {
@@ -253,8 +254,8 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
               width: "100%", margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600,
               borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               color: "#fff",
-              background: localMuted ? "#ed4245" : (muteFocused ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.08)"),
-              boxShadow: muteFocused ? "inset 0 0 0 2px #fff" : "none",
+              background: localMuted ? DANGER : (muteFocused ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.08)"),
+              ...focusHalo(localMuted ? DANGER : ACCENT, muteFocused),
             }}
           >
             {localMuted ? `🔇 ${t("unmute_voice")}` : `🎙️ ${t("mute_voice")}`}
@@ -290,8 +291,8 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
               borderRadius: 6,
               display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               color: "#fff",
-              background: watching ? "#ed4245" : (videoFocused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.45)"),
-              boxShadow: videoFocused ? "inset 0 0 0 2px #fff" : "none",
+              background: watching ? DANGER : (videoFocused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.45)"),
+              ...focusHalo(watching ? DANGER : ACCENT, videoFocused),
             }}
           >
             {watching ? t("video_stop") : `${user?.is_live ? "🖥️" : "📷"} ${t("video_watch")}`}

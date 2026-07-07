@@ -5,6 +5,7 @@ import { FaGamepad, FaStop } from "react-icons/fa";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
 import { isScreenCamOn, setScreenCamOn, subscribeScreenCam } from "../../screenCam";
+import { focusHalo, ACCENT, DANGER } from "../Styled";
 
 const Btn = DialogButton as any;
 
@@ -56,10 +57,10 @@ export function ScreenCameraButton() {
         boxSizing: "border-box",
         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         fontSize: 12, fontWeight: 600,
-        color: "#fff",
-        background: on ? "#ed4245" : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
-        boxShadow: focused ? "inset 0 0 0 2px #fff" : "none",
+        color: "#fff", borderRadius: 6,
+        background: on ? DANGER : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
         opacity: busy ? 0.6 : 1,
+        ...focusHalo(on ? DANGER : ACCENT, focused),
       }}
     >
       {on ? <FaStop /> : <FaGamepad />}

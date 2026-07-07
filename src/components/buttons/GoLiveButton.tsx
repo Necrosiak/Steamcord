@@ -4,6 +4,7 @@ import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaDesktop, FaStop } from "react-icons/fa";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
+import { focusHalo, ACCENT, DANGER } from "../Styled";
 
 const Btn = DialogButton as any;
 
@@ -31,9 +32,9 @@ export function GoLiveButton() {
         boxSizing: "border-box",
         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         fontSize: 12, fontWeight: 600,
-        color: "#fff",
-        background: live ? "#ed4245" : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
-        boxShadow: focused ? "inset 0 0 0 2px #fff" : "none",
+        color: "#fff", borderRadius: 6,
+        background: live ? DANGER : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
+        ...focusHalo(live ? DANGER : ACCENT, focused),
       }}
     >
       {live ? <FaStop /> : <FaDesktop />}

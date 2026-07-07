@@ -40,7 +40,6 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 - **Push-to-Talk** — Mit physischer Tastenbelegung (R5 standardmäßig).
 - **Screenshots senden** — Sende einen Steam-Screenshot direkt in die geöffnete Unterhaltung.
 - **[Vencord](https://vencord.dev/)** ist in Vesktop integriert und gibt Zugang zu seinem Plugin-Ökosystem.
-- 🟣 **Twitch-Streaming** — geh aus den Sprachsteuerungen live auf Twitch: Stream-Schlüssel speichern (pro Steam-Konto, maskiert & sicher) und Auflösung / Bildrate / Bitrate wählen. Kodierung mit ffmpeg aus der Spielaufnahme.
 - 🐧 **Kompatibilität** — wir arbeiten aktiv daran, jedes OS zu unterstützen, das Steam im Gaming Mode / Big Picture ausführen kann (derzeit Linux): portable Erkennung, mitgelieferte Python-Abhängigkeiten, keine distributionsspezifischen Annahmen.
 
 ---
