@@ -163,17 +163,25 @@ def _apply_blocking(url: str) -> None:
                 shutil.copy2(src, dst)
 
 
-async def apply(url: str) -> bool:
+async def apply(url: str) -> dict:
+    """{"ok": True} ou {"ok": False, "error": "…"} — l'erreur remonte au QAM
+    (avant, un échec — ex. Permission denied sur une install root-owned —
+    laissait le bouton bloqué sur « installation » pour toujours)."""
     if not url:
-        return False
+        return {"ok": False, "error": "no url"}
     try:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _apply_blocking, url)
         logger.info("[updater] update unpacked; restarting plugin_loader")
-        return True
+        return {"ok": True}
+    except PermissionError as e:
+        logger.error(f"[updater] apply failed: {e}")
+        return {"ok": False,
+                "error": f"Permission denied ({getattr(e, 'filename', '')}) — "
+                         "plugin files not writable (root-owned local install?)"}
     except Exception as e:
         logger.error(f"[updater] apply failed: {e}")
-        return False
+        return {"ok": False, "error": str(e)}
 
 
 def restart_loader() -> None:

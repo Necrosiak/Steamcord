@@ -430,12 +430,12 @@ class Plugin:
 
     @classmethod
     async def apply_update(cls, url):
-        ok = await updater.apply(url)
-        if ok:
+        res = await updater.apply(url)
+        if res.get("ok"):
             await cls._toast("Steamcord", "Mise à jour installée — rechargement…")
             await sleep(1)
             updater.restart_loader()
-        return ok
+        return res
 
     @classmethod
     async def get_autoupdate(cls):

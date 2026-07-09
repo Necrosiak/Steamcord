@@ -350,8 +350,9 @@ const StatusAutoToggle = () => {
 const UpdaterSection = () => {
   const [auto, setAuto] = useState(true);
   const [status, setStatus] = useState<
-    "idle" | "checking" | "available" | "uptodate" | "installing"
+    "idle" | "checking" | "available" | "uptodate" | "installing" | "failed"
   >("idle");
+  const [updErr, setUpdErr] = useState("");
   const [latest, setLatest] = useState("");
   const [current, setCurrent] = useState("");
   const [url, setUrl] = useState("");
@@ -381,7 +382,17 @@ const UpdaterSection = () => {
   const doInstall = async () => {
     setStatus("installing");
     // The backend unpacks the release and restarts plugin_loader on success.
-    try { await call<[string], boolean>("apply_update", url); } catch {}
+    // On failure it now returns {ok:false, error} — surface it instead of
+    // leaving the button on "installing…" forever.
+    try {
+      const r: any = await call<[string], any>("apply_update", url);
+      if (!(r === true || r?.ok)) {
+        setUpdErr(r?.error || "");
+        setStatus("failed");
+      }
+    } catch {
+      setStatus("failed");
+    }
   };
 
   const onToggle = (v: boolean) => {
@@ -394,6 +405,7 @@ const UpdaterSection = () => {
     : status === "installing" ? t("update_installing")
     : status === "available" ? t("update_install", { v: latest })
     : status === "uptodate" ? t("update_up_to_date", { v: current })
+    : status === "failed" ? t("update_failed")
     : t("update_check");
 
   return (
@@ -413,9 +425,16 @@ const UpdaterSection = () => {
           onFocus={() => setFocused("upd")}
           onBlur={() => setFocused((f) => (f === "upd" ? null : f))}
         >
-          🔄 {label}
+          {status === "failed" ? "⚠️" : "🔄"} {label}
         </WideBtn>
       </SR>
+      {status === "failed" && updErr ? (
+        <SR>
+          <div style={{ fontSize: "11px", opacity: 0.8, padding: "2px 4px", wordBreak: "break-word" }}>
+            {updErr}
+          </div>
+        </SR>
+      ) : null}
     </>
   );
 };

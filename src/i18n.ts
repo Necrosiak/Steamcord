@@ -83,6 +83,7 @@ const T: Record<Locale, Dict> = {
     update_up_to_date: "Up to date ({v})",
     update_install: "Install {v}",
     update_installing: "Installing…",
+    update_failed: "Update failed — see the message below",
     text_messages: "Text messages",
     loading_messages: "Loading messages…",
     no_messages: "No messages",
@@ -174,6 +175,7 @@ const T: Record<Locale, Dict> = {
     update_up_to_date: "À jour ({v})",
     update_install: "Installer {v}",
     update_installing: "Installation…",
+    update_failed: "Échec de la mise à jour — voir le message dessous",
     text_messages: "Messages texte",
     loading_messages: "Chargement des messages…",
     no_messages: "Aucun message",
@@ -239,6 +241,7 @@ const T: Record<Locale, Dict> = {
     update_checking: "Wird geprüft…",
     update_install: "{v} installieren",
     update_installing: "Wird installiert…",
+    update_failed: "Update fehlgeschlagen — siehe Meldung unten",
     update_section: "Updates",
     update_up_to_date: "Aktuell ({v})",
 
@@ -298,6 +301,7 @@ const T: Record<Locale, Dict> = {
     update_checking: "Comprobando…",
     update_install: "Instalar {v}",
     update_installing: "Instalando…",
+    update_failed: "Error al actualizar — mira el mensaje de abajo",
     update_section: "Actualizaciones",
     update_up_to_date: "Actualizado ({v})",
 
@@ -357,6 +361,7 @@ const T: Record<Locale, Dict> = {
     update_checking: "Controllo…",
     update_install: "Installa {v}",
     update_installing: "Installazione…",
+    update_failed: "Aggiornamento non riuscito — vedi il messaggio sotto",
     update_section: "Aggiornamenti",
     update_up_to_date: "Aggiornato ({v})",
 
@@ -416,6 +421,7 @@ const T: Record<Locale, Dict> = {
     update_checking: "A verificar…",
     update_install: "Instalar {v}",
     update_installing: "A instalar…",
+    update_failed: "Falha na atualização — veja a mensagem abaixo",
     update_section: "Atualizações",
     update_up_to_date: "Atualizado ({v})",
 
@@ -475,6 +481,7 @@ const T: Record<Locale, Dict> = {
     update_checking: "Controleren…",
     update_install: "{v} installeren",
     update_installing: "Installeren…",
+    update_failed: "Update mislukt — zie het bericht hieronder",
     update_section: "Updates",
     update_up_to_date: "Up-to-date ({v})",
 
@@ -534,6 +541,7 @@ const T: Record<Locale, Dict> = {
     update_checking: "Sprawdzanie…",
     update_install: "Zainstaluj {v}",
     update_installing: "Instalowanie…",
+    update_failed: "Aktualizacja nie powiodła się — zobacz komunikat poniżej",
     update_section: "Aktualizacje",
     update_up_to_date: "Aktualne ({v})",
 
@@ -593,6 +601,7 @@ const T: Record<Locale, Dict> = {
     update_checking: "Проверка…",
     update_install: "Установить {v}",
     update_installing: "Установка…",
+    update_failed: "Не удалось обновиться — см. сообщение ниже",
     update_section: "Обновления",
     update_up_to_date: "Актуально ({v})",
 
