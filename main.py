@@ -206,8 +206,17 @@ class Plugin:
                 await initialize()
                 break
             except Exception as e:
-                logger.warning(f"initialize() failed ({e!r}); retrying in 2s")
-                await sleep(2)
+                # stand-alone : sans backend Vesktop (ni flatpak ni natif), inutile
+                # de marteler toutes les 2 s — on re-teste calmement (self-heal dès
+                # que le user installe flatpak ou le paquet vesktop).
+                import vesktop
+                if vesktop.backend() is None:
+                    logger.warning("initialize(): no Vesktop backend (flatpak/native) "
+                                   "— retrying in 15s")
+                    await sleep(15)
+                else:
+                    logger.warning(f"initialize() failed ({e!r}); retrying in 2s")
+                    await sleep(2)
         logger.info("Discord initialized")
 
         cls.server.add_routes(
@@ -861,9 +870,9 @@ class Plugin:
         import os
         from pathlib import Path as _P
         if not os.path.exists("/dev/video42"):
-            logger.warning("[gstcam] /dev/video42 absent — v4l2loopback non chargé "
-                           "(reboot requis après setup, ou module non installé).")
-            return False
+            hint = await cls._v4l2_hint()
+            logger.warning(f"[gstcam] /dev/video42 absent — {hint}")
+            return {"ok": False, "hint": hint}
         # Tuer un feeder précédent puis (re)lancer.
         try:
             import vesktop
@@ -887,7 +896,39 @@ class Plugin:
         # Laisser le pipeline s'établir avant de sélectionner la caméra côté Discord.
         await sleep(2)
         await cls.evt_handler.send_client({"type": "$screen_camera", "stop": False})
-        return True
+        return {"ok": True}
+
+    # ── stand-alone : une seule version pour tous les OS ────────────────────────
+    # Le plugin vérifie ce que la machine a et dit exactement quoi installer.
+    @staticmethod
+    def _pkg_hint(arch, fedora, debian):
+        import shutil as _sh
+        if _sh.which("pacman"):
+            return f"sudo pacman -S {arch}"
+        if _sh.which("rpm-ostree"):
+            return f"rpm-ostree install {fedora}"
+        if _sh.which("dnf"):
+            return f"sudo dnf install {fedora}"
+        if _sh.which("apt"):
+            return f"sudo apt install {debian}"
+        return f"install: {arch}"
+
+    @classmethod
+    async def _v4l2_hint(cls):
+        """Distingue « module pas installé » (installer le paquet) de « installé
+        mais pas chargé » (modprobe/reboot) pour donner LA bonne commande."""
+        try:
+            p = await create_subprocess_exec("modinfo", "v4l2loopback",
+                                             stdout=DEVNULL, stderr=DEVNULL)
+            installed = (await p.wait()) == 0
+        except Exception:
+            installed = False
+        if installed:
+            return ("v4l2loopback installé mais pas chargé : sudo modprobe v4l2loopback "
+                    "video_nr=42 card_label=Steamcord exclusive_caps=1 (puis réessaie)")
+        pkg = cls._pkg_hint("v4l2loopback-dkms", "v4l2loopback", "v4l2loopback-dkms")
+        return (f"module v4l2loopback manquant : {pkg} puis sudo modprobe "
+                "v4l2loopback video_nr=42 card_label=Steamcord exclusive_caps=1")
 
     @classmethod
     async def stop_screen_camera(cls):
@@ -933,6 +974,20 @@ class Plugin:
         except Exception:
             jpg = ""
         return {"running": running, "jpg": jpg}
+
+    @classmethod
+    async def get_vesktop_backend(cls):
+        # stand-alone : dit au QAM si un moyen de faire tourner Vesktop existe
+        # (flatpak ou binaire natif). backend=None → l'écran d'initialisation
+        # affiche la marche à suivre au lieu d'un spinner infini (cas CachyOS
+        # sans flatpak). Se ré-évalue à chaque appel → self-heal dès que le
+        # user installe flatpak/vesktop.
+        import vesktop
+        try:
+            return {"backend": vesktop.backend()}
+        except Exception as e:
+            logger.warning(f"[standalone] get_vesktop_backend: {e!r}")
+            return {"backend": "unknown"}
 
     @classmethod
     async def get_share_env(cls):

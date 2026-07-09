@@ -438,6 +438,26 @@ function useShareEnv(): "desktop" | "gamescope" | "unknown" {
   return env;
 }
 
+// stand-alone : tant que le backend n'est pas "loaded", vérifie qu'un moyen de
+// faire tourner Vesktop existe (flatpak ou paquet natif). null = rien → on
+// remplace le spinner par la marche à suivre (cas CachyOS sans flatpak).
+// Re-poll 10 s → le message disparaît tout seul dès que le user a installé.
+function useVesktopBackend(active: boolean): string | null | "unknown" {
+  const [backend, setBackend] = useState<string | null | "unknown">("unknown");
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    const poll = () =>
+      call<[], { backend: string | null }>("get_vesktop_backend")
+        .then((r) => { if (alive) setBackend(r?.backend ?? "unknown"); })
+        .catch(() => { if (alive) setBackend("unknown"); });
+    poll();
+    const id = setInterval(poll, 10000);
+    return () => { alive = false; clearInterval(id); };
+  }, [active]);
+  return backend;
+}
+
 const Content = () => {
   const state = useSteamcordState();
   const [topTab, setTopTab] = useState<"voice" | "text" | "config">("voice");
@@ -447,12 +467,23 @@ const Content = () => {
   // bascule browsing=true pour révéler la navigation SANS quitter l'appel.
   const [browsing, setBrowsing] = useState(false);
   const shareEnv = useShareEnv();
+  const vesktopBackend = useVesktopBackend(!state?.loaded);
 
   const inCall = !!state?.vc?.channel_id;
   // Chaque début/fin d'appel ramène à la vue naturelle (appel si en appel).
   useEffect(() => { setBrowsing(false); }, [inCall]);
 
   if (!state?.loaded) {
+    // stand-alone : sans flatpak NI vesktop natif (backend === null), le spinner
+    // tournerait pour toujours → afficher la marche à suivre à la place.
+    if (vesktopBackend === null) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", minHeight: "60vh", padding: "0 12px", textAlign: "center" }}>
+          <h2 style={{ margin: "0" }}>⚠️</h2>
+          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>{t("vesktop_missing")}</div>
+        </div>
+      );
+    }
     // La connexion à Discord peut prendre ~1 min → spinner Steam animé pour
     // montrer que ça travaille (un titre statique ressemble à un plantage).
     return (

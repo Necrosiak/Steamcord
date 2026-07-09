@@ -5,6 +5,7 @@ import { FaGamepad, FaStop } from "react-icons/fa";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
 import { isScreenCamOn, setScreenCamOn, subscribeScreenCam } from "../../screenCam";
+import { notify } from "../../notify";
 import { focusHalo, ACCENT, DANGER } from "../Styled";
 
 const Btn = DialogButton as any;
@@ -39,7 +40,16 @@ export function ScreenCameraButton() {
     setBusy(true);
     try {
       if (on) { await call("stop_screen_camera"); setOn(false); setScreenCamOn(false); }
-      else { await call("start_screen_camera"); setOn(true); setScreenCamOn(true); }
+      else {
+        // stand-alone : le backend vérifie v4l2loopback et renvoie la commande
+        // exacte pour cet OS si le module manque (au lieu d'un échec muet).
+        const r: any = await call("start_screen_camera");
+        if (r && r.ok === false) {
+          notify({ title: t("screen_cam_start"), body: r.hint || "v4l2loopback missing" });
+        } else {
+          setOn(true); setScreenCamOn(true);
+        }
+      }
     } finally {
       setBusy(false);
     }

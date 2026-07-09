@@ -18,14 +18,54 @@ from tab_utils.cdp import Tab
 VESKTOP_CDP = "http://127.0.0.1:9223"
 VESKTOP_APP = "dev.vencord.Vesktop"
 
+
+# ── stand-alone: Vesktop backend = flatpak OU binaire natif ──────────────────
+# Bazzite/SteamOS : flatpak (historique). CachyOS/Arch & co n'ont pas forcément
+# flatpak → on accepte aussi un Vesktop natif du PATH (paquet `vesktop`).
+# Priorité : flatpak déjà installé (garde la session existante) > natif présent
+# > flatpak installable silencieusement > rien (message clair côté QAM).
+def _native_bin():
+    return shutil.which("vesktop") or shutil.which("vesktop-bin")
+
+
+def _flatpak_available():
+    return shutil.which("flatpak") is not None
+
+
+def _flatpak_vesktop_installed():
+    return any((base / "app" / VESKTOP_APP).is_dir()
+               for base in (Path.home() / ".local/share/flatpak", Path("/var/lib/flatpak")))
+
+
+def backend():
+    """'flatpak' | 'native' | None (= aucun moyen d'avoir Vesktop)."""
+    if _flatpak_available() and _flatpak_vesktop_installed():
+        return "flatpak"
+    if _native_bin():
+        return "native"
+    if _flatpak_available():
+        return "flatpak"
+    return None
+
+
 # ── multi-sessions: one Discord (Vesktop) profile per Steam account ─────────
-# Profiles live INSIDE the Vesktop flatpak app dir so the sandbox can write
-# them without extra --filesystem permissions. The active profile is selected
-# by atomically retargeting the `config/vesktop` symlink (flatpak forces the
-# XDG vars to the app dir, so an --env override does not work).
-VESKTOP_CONFIG_BASE = Path.home() / ".var/app" / VESKTOP_APP / "config"
-PROFILES_DIR = VESKTOP_CONFIG_BASE / "steamcord-profiles"
-_CURRENT_FILE = PROFILES_DIR / "current.json"
+# flatpak : profiles INSIDE the Vesktop flatpak app dir so the sandbox can
+# write them without extra --filesystem permissions (flatpak forces the XDG
+# vars to the app dir, so an --env override does not work). natif : même
+# mécanique sur ~/.config. The active profile is selected by atomically
+# retargeting the `config/vesktop` symlink.
+def _config_base():
+    if backend() == "native":
+        return Path.home() / ".config"
+    return Path.home() / ".var/app" / VESKTOP_APP / "config"
+
+
+def _profiles_dir():
+    return _config_base() / "steamcord-profiles"
+
+
+def _current_file():
+    return _profiles_dir() / "current.json"
 
 # Steam install roots across distros (Bazzite/SteamOS/Arch/Debian…)
 _STEAM_ROOTS = ("~/.steam/steam", "~/.local/share/Steam", "~/.steam/root")
@@ -64,11 +104,12 @@ def _ensure_profile(account):
     profile while Vesktop is stopped. Manual `flatpak run` follows it too.
     The very first time multi-sessions runs, the existing default config (the
     currently logged-in Discord) is ADOPTED by the active account."""
-    prof = PROFILES_DIR / account
+    profiles = _profiles_dir()
+    prof = profiles / account
     target = prof / "vesktop"
-    default = VESKTOP_CONFIG_BASE / "vesktop"
-    had_profiles = PROFILES_DIR.is_dir() and any(
-        p.is_dir() for p in PROFILES_DIR.iterdir())
+    default = _config_base() / "vesktop"
+    had_profiles = profiles.is_dir() and any(
+        p.is_dir() for p in profiles.iterdir())
     if not target.exists():
         prof.mkdir(parents=True, exist_ok=True)
         if not had_profiles and default.is_dir() and not default.is_symlink():
@@ -96,15 +137,15 @@ def _ensure_profile(account):
 
 def _recorded_account():
     try:
-        return json.loads(_CURRENT_FILE.read_text()).get("account", "")
+        return json.loads(_current_file().read_text()).get("account", "")
     except Exception:
         return ""
 
 
 def _record_account(account):
     try:
-        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-        _CURRENT_FILE.write_text(json.dumps({"account": account}))
+        _profiles_dir().mkdir(parents=True, exist_ok=True)
+        _current_file().write_text(json.dumps({"account": account}))
     except OSError as e:
         logger.warning(f"[multisession] cannot record account: {e!r}")
 
@@ -148,24 +189,39 @@ async def is_up():
         return False
 
 
+# flatpak : vesktop.bin (dans le sandbox) ; natif : le chemin d'app contient
+# « vesktop » (/usr/lib/vesktop/app.asar, /opt/Vesktop/…) — pattern insensible
+# à la casse, assez précis pour ne pas matcher steamcord-vesktop (nom d'unité,
+# absent des cmdlines).
+_PROC_PATTERN = "[Vv]esktop"
+
+
 async def _running():
     """True if a Vesktop process exists, regardless of the debug port."""
     try:
-        proc = await create_subprocess_exec("pgrep", "-f", "vesktop.bin", stdout=DEVNULL, stderr=DEVNULL)
+        proc = await create_subprocess_exec("pgrep", "-f", _PROC_PATTERN, stdout=DEVNULL, stderr=DEVNULL)
         return (await proc.wait()) == 0
     except Exception:
         return False
 
 
 async def installed():
-    try:
-        proc = await create_subprocess_exec("flatpak", "info", VESKTOP_APP, stdout=DEVNULL, stderr=DEVNULL, env=_user_env())
-        return (await proc.wait()) == 0
-    except Exception:
-        return False
+    b = backend()
+    if b == "native":
+        return True
+    if b == "flatpak":
+        return _flatpak_vesktop_installed()
+    return False
 
 
 async def install():
+    if backend() != "flatpak":
+        # natif = déjà installé ; None = rien d'installable silencieusement
+        # (flatpak lui-même demande root) → le QAM affiche la marche à suivre.
+        if backend() is None:
+            logger.warning("[standalone] ni flatpak ni Vesktop natif — installe "
+                           "flatpak ou le paquet vesktop puis relance le plugin")
+        return
     # Silent USER-level install — no polkit/root prompt, so it can run unattended when
     # the plugin first loads. Ensure a user flathub remote exists first.
     r = await create_subprocess_exec(
@@ -329,11 +385,17 @@ async def launch():
     # `flatpak run` would just wake the OLD instance (old profile) and exit.
     # Seen live on the first multisession switch (unit inactive, vesktop.bin
     # alive since boot). So always flatpak-kill any leftover before spawning.
+    # (backend natif : pas de sandbox → pkill sur le pattern suffit.)
     if await _running():
         try:
-            killer = await create_subprocess_exec(
-                "flatpak", "kill", VESKTOP_APP, stdout=DEVNULL, stderr=DEVNULL, env=env,
-            )
+            if backend() == "flatpak":
+                killer = await create_subprocess_exec(
+                    "flatpak", "kill", VESKTOP_APP, stdout=DEVNULL, stderr=DEVNULL, env=env,
+                )
+            else:
+                killer = await create_subprocess_exec(
+                    "pkill", "-f", _PROC_PATTERN, stdout=DEVNULL, stderr=DEVNULL,
+                )
             await killer.wait()
             for _ in range(10):
                 await sleep(1)
@@ -363,10 +425,22 @@ async def launch():
 
     _ensure_profile(account)
     _record_account(account)
+    # stand-alone : la commande dépend du backend — flatpak (Bazzite/SteamOS)
+    # ou binaire natif (CachyOS/Arch…). Mêmes flags Electron dans les deux cas.
+    b = backend()
+    if b is None:
+        logger.warning("[standalone] aucun backend Vesktop (ni flatpak ni natif) "
+                       "— installe flatpak (ex: sudo pacman -S flatpak) ou le "
+                       "paquet vesktop, puis relance le plugin")
+        return False
+    if b == "flatpak":
+        cmd = ["flatpak", "run", VESKTOP_APP]
+    else:
+        cmd = [_native_bin()]
     await create_subprocess_exec(
         "systemd-run", "--user", "--collect", f"--unit={VESKTOP_UNIT}",
         *setenv,
-        "flatpak", "run", VESKTOP_APP,
+        *cmd,
         "--remote-debugging-port=9223",
         "--remote-allow-origins=*",
         "--disable-background-timer-throttling",
@@ -400,6 +474,11 @@ async def get_discord_tab(client_js) -> Tab:
     if not await is_up():
         if not await installed():
             await install()
+        if not await installed():
+            # stand-alone : rien pour faire tourner Vesktop (pas de flatpak, pas
+            # de binaire natif) → remonter une erreur claire plutôt que de
+            # marteler le port CDP ; le QAM affiche la marche à suivre.
+            raise RuntimeError("no Vesktop backend (flatpak or native) available")
         await launch()
 
     # Wait for a page target and get past the first-launch setup screen
