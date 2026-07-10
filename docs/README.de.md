@@ -44,6 +44,17 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 
 ---
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
+  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
+  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+</p>
+
 ## Installation
 
 > **Noch nicht im Decky Store.** Manuelle Installation über den Entwicklermodus.

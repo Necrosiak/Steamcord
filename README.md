@@ -44,6 +44,17 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 
 ---
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="docs/img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
+  <img src="docs/img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+</p>
+<p align="center">
+  <img src="docs/img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
+  <img src="docs/img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+</p>
+
 ## Installation
 
 > **Not yet on the Decky Store.** Install manually via Developer Mode.
