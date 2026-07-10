@@ -61,6 +61,14 @@ _vspec.loader.exec_module(_vmod)
 logger.setLevel(INFO)
 
 
+def sys_python():
+    """Python SYSTÈME (pour les bindings gi/Gst, absents du python du plugin).
+    /usr/bin/python n'existe pas sur Debian/Ubuntu (sauf python-is-python3) →
+    résoudre python3 du PATH d'abord."""
+    import shutil as _sh
+    return _sh.which("python3") or _sh.which("python") or "/usr/bin/python"
+
+
 async def stream_watcher(stream, is_err=False, prefix="[gst]"):
     async for line in stream:
         line = line.decode("utf-8").rstrip()
@@ -210,8 +218,12 @@ class Plugin:
                 # de marteler toutes les 2 s — on re-teste calmement (self-heal dès
                 # que le user installe flatpak ou le paquet vesktop).
                 import vesktop
-                if vesktop.backend() is None:
-                    logger.warning("initialize(): no Vesktop backend (flatpak/native) "
+                if vesktop.backend() is None or vesktop.install_failures > 0:
+                    # aucun backend, OU flatpak dispo mais l'install Vesktop échoue
+                    # (hors-ligne/flathub bloqué) — marteler toutes les 2 s ne sert
+                    # à rien, on re-teste calmement (self-heal au retour du réseau).
+                    logger.warning("initialize(): no usable Vesktop backend "
+                                   f"(install_failures={vesktop.install_failures}) "
                                    "— retrying in 15s")
                     await sleep(15)
                 else:
@@ -275,7 +287,7 @@ class Plugin:
         except Exception:
             pass
         cls.webrtc_server = await create_subprocess_exec(
-            "/usr/bin/python",
+            sys_python(),
             str(Path(DECKY_PLUGIN_DIR) / "gst_webrtc.py"),
             env=gst_env,
             stdout=PIPE,
@@ -830,7 +842,7 @@ class Plugin:
 
     @classmethod
     async def _ensure_screenshare_deps(cls):
-        # gst_webrtc.py tourne sous le SYSTEM /usr/bin/python (requis pour les bindings
+        # gst_webrtc.py tourne sous le python SYSTÈME (requis pour les bindings
         # GStreamer `gi`, absents du python embarqué du plugin). Sur une machine fraîche
         # cet interpréteur n'a pas aiohttp → partage d'écran muet. On l'installe
         # automatiquement en user-site (sans root) → plugin self-contained sur toute BC-250.
@@ -838,14 +850,14 @@ class Plugin:
         env = vesktop._user_env()
         try:
             check = await create_subprocess_exec(
-                "/usr/bin/python", "-c", "import aiohttp, aiohttp_cors",
+                sys_python(), "-c", "import aiohttp, aiohttp_cors",
                 stdout=DEVNULL, stderr=DEVNULL, env=env,
             )
             if (await check.wait()) == 0:
                 return
             logger.info("Screen-share deps missing — installing aiohttp (user-site) for system python…")
             proc = await create_subprocess_exec(
-                "/usr/bin/python", "-m", "pip", "install", "--user", "--quiet",
+                sys_python(), "-m", "pip", "install", "--user", "--quiet",
                 "aiohttp", "aiohttp_cors",
                 stdout=DEVNULL, stderr=DEVNULL, env=env,
             )
@@ -873,6 +885,10 @@ class Plugin:
             hint = await cls._v4l2_hint()
             logger.warning(f"[gstcam] /dev/video42 absent — {hint}")
             return {"ok": False, "hint": hint}
+        gst_hint = await cls._gst_python_hint()
+        if gst_hint:
+            logger.warning(f"[gstcam] {gst_hint}")
+            return {"ok": False, "hint": gst_hint}
         # Tuer un feeder précédent puis (re)lancer.
         try:
             import vesktop
@@ -886,7 +902,7 @@ class Plugin:
         if not script.exists():
             script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_camera.py"
         cls.camera_feeder = await create_subprocess_exec(
-            "/usr/bin/python",
+            sys_python(),
             str(script),
             env=getattr(cls, "_gst_env", None) or dict(os.environ),
             stdout=PIPE, stderr=PIPE,
@@ -909,9 +925,38 @@ class Plugin:
             return f"rpm-ostree install {fedora}"
         if _sh.which("dnf"):
             return f"sudo dnf install {fedora}"
+        if _sh.which("zypper"):
+            return f"sudo zypper install {fedora}"
         if _sh.which("apt"):
             return f"sudo apt install {debian}"
         return f"install: {arch}"
+
+    _gst_py_ok = False                    # cache : bindings gi/Gst OK (positif seulement)
+
+    @classmethod
+    async def _gst_python_hint(cls):
+        """None si le python système a gi + Gst + pipewiresrc (requis par
+        gst_camera.py), sinon le hint d'install pour cet OS. Présents sur
+        Bazzite/SteamOS, pas sur Arch/Fedora/Debian de base."""
+        if cls._gst_py_ok:
+            return None
+        import vesktop
+        try:
+            p = await create_subprocess_exec(
+                sys_python(), "-c",
+                "import gi; gi.require_version('Gst','1.0'); "
+                "from gi.repository import Gst; Gst.init(None); "
+                "raise SystemExit(0 if Gst.ElementFactory.find('pipewiresrc') else 1)",
+                stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
+            if (await p.wait()) == 0:
+                cls._gst_py_ok = True
+                return None
+        except Exception:
+            pass
+        return ("bindings GStreamer/PipeWire manquants pour la capture : "
+                + cls._pkg_hint("python-gobject gst-plugin-pipewire",
+                                "python3-gobject pipewire-gstreamer",
+                                "python3-gi gir1.2-gstreamer-1.0 gstreamer1.0-pipewire"))
 
     @classmethod
     async def _v4l2_hint(cls):
@@ -984,7 +1029,15 @@ class Plugin:
         # user installe flatpak/vesktop.
         import vesktop
         try:
-            return {"backend": vesktop.backend()}
+            b = vesktop.backend()
+            if (b == "flatpak" and vesktop.install_failures >= 3
+                    and not await vesktop.installed()):
+                # flatpak est là mais l'install Vesktop échoue en boucle (hors-
+                # ligne, flathub bloqué, disque plein) → montrer l'écran d'aide
+                # plutôt qu'un « Initializing » éternel. Se ré-évalue à chaque
+                # appel : dès qu'une install passe, le compteur retombe à 0.
+                return {"backend": None}
+            return {"backend": b}
         except Exception as e:
             logger.warning(f"[standalone] get_vesktop_backend: {e!r}")
             return {"backend": "unknown"}

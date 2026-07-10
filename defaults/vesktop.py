@@ -469,16 +469,26 @@ async def _get_page():
     return next((t for t in tabs if t.get("type") == "page"), None)
 
 
+# stand-alone : nombre d'installs Vesktop tentées SANS succès (flatpak dispo
+# mais hors-ligne/flathub bloqué/disque plein). ≥3 → le QAM bascule sur l'écran
+# d'aide au lieu d'« Initializing » éternel ; remis à 0 dès qu'une install passe.
+install_failures = 0
+
+
 async def get_discord_tab(client_js) -> Tab:
     """Ensure Vesktop is running and logged-into-able, inject our client, return the Tab."""
+    global install_failures
     if not await is_up():
         if not await installed():
             await install()
         if not await installed():
             # stand-alone : rien pour faire tourner Vesktop (pas de flatpak, pas
-            # de binaire natif) → remonter une erreur claire plutôt que de
-            # marteler le port CDP ; le QAM affiche la marche à suivre.
+            # de binaire natif, ou install flatpak qui échoue) → remonter une
+            # erreur claire plutôt que de marteler le port CDP.
+            if backend() == "flatpak":
+                install_failures += 1
             raise RuntimeError("no Vesktop backend (flatpak or native) available")
+        install_failures = 0
         await launch()
 
     # Wait for a page target and get past the first-launch setup screen
