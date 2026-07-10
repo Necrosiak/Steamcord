@@ -40,7 +40,7 @@ Pasar a nativo resuelve los problemas difíciles del antiguo enfoque de navegado
 - **Pulsar para hablar** — Con una tecla física (R5 por defecto).
 - **Enviar capturas** — Envía una captura de Steam directamente a la conversación que tengas abierta.
 - **[Vencord](https://vencord.dev/)** está integrado en Vesktop, dando acceso a su ecosistema de plugins.
-- 🐧 **Compatibilidad** — trabajamos activamente para soportar todos los SO capaces de ejecutar Steam en modo juego / Big Picture (Linux por ahora): detección portable, dependencias Python incluidas, sin suposiciones específicas de distribución.
+- 🐧 **Compatibilidad** — trabajamos activamente para soportar todos los SO capaces de ejecutar Steam en modo juego / Big Picture (Linux por ahora): detección portable, dependencias Python incluidas, sin suposiciones específicas de distribución. Notas por distribución: [OS-NOTES.md](OS-NOTES.md).
 
 ---
 
@@ -72,6 +72,19 @@ sudo systemctl restart plugin_loader
 ```
 
 ---
+
+## 🐛 Issues e ideas — ¡no lo dudes!
+
+¿Un bug, un comportamiento raro en tu distribución, una función que falta?
+**Abre una [issue](https://github.com/Necrosiak/Steamcord/issues)** — cada
+informe orienta directamente lo que se construye después. Incluye si puedes:
+
+- tu distribución y versión (Bazzite 42, CachyOS, Ubuntu 24.04…) y cómo corre Steam (modo juego / Big Picture / escritorio)
+- la versión del plugin (Ajustes → Actualización) y si Vesktop es flatpak o nativo
+- qué hiciste, qué esperabas, qué pasó en su lugar
+- logs: `~/homebrew/logs/Steamcord/` y `journalctl -b | grep -i steamcord`
+
+Las peticiones de funciones y los «¡funciona!» en configuraciones inusuales valen igual.
 
 ## Créditos
 

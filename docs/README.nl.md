@@ -40,7 +40,7 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 - **Push-to-talk** — Met een fysieke toets (standaard R5).
 - **Schermafbeeldingen versturen** — Stuur een Steam-schermafbeelding rechtstreeks naar het geopende gesprek.
 - **[Vencord](https://vencord.dev/)** is ingebouwd in Vesktop en geeft toegang tot zijn plugin-ecosysteem.
-- 🐧 **Compatibiliteit** — we werken er actief aan om elk OS te ondersteunen dat Steam in gamemodus / Big Picture kan draaien (voorlopig Linux): portable detectie, meegeleverde Python-afhankelijkheden, geen distributiespecifieke aannames.
+- 🐧 **Compatibiliteit** — we werken er actief aan om elk OS te ondersteunen dat Steam in gamemodus / Big Picture kan draaien (voorlopig Linux): portable detectie, meegeleverde Python-afhankelijkheden, geen distributiespecifieke aannames. Notities per distributie: [OS-NOTES.md](OS-NOTES.md).
 
 ---
 
@@ -72,6 +72,19 @@ sudo systemctl restart plugin_loader
 ```
 
 ---
+
+## 🐛 Issues & ideeën — aarzel niet!
+
+Een bug, vreemd gedrag op jouw distributie, een ontbrekende functie?
+**Open een [issue](https://github.com/Necrosiak/Steamcord/issues)** — elke
+melding bepaalt direct mee wat er hierna wordt gebouwd. Vermeld als het kan:
+
+- je distributie & versie (Bazzite 42, CachyOS, Ubuntu 24.04…) en hoe Steam draait (Gaming Mode / Big Picture / desktop)
+- de pluginversie (Instellingen → Update) en of Vesktop flatpak of native is
+- wat je deed, wat je verwachtte, wat er in plaats daarvan gebeurde
+- logs: `~/homebrew/logs/Steamcord/` en `journalctl -b | grep -i steamcord`
+
+Featureverzoeken en "het werkt!"-meldingen op ongewone setups zijn net zo waardevol.
 
 ## Met dank aan
 

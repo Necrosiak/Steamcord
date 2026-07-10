@@ -40,7 +40,7 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 - **Push-to-talk** — Z fizycznym przyciskiem (domyślnie R5).
 - **Wysyłanie zrzutów ekranu** — Wyślij zrzut ekranu Steam prosto do otwartej rozmowy.
 - **[Vencord](https://vencord.dev/)** jest wbudowany w Vesktop, dając dostęp do swojego ekosystemu wtyczek.
-- 🐧 **Kompatybilność** — aktywnie pracujemy nad wsparciem każdego systemu zdolnego uruchomić Steam w trybie gry / Big Picture (na razie Linux): przenośna detekcja, dołączone zależności Pythona, brak założeń specyficznych dla dystrybucji.
+- 🐧 **Kompatybilność** — aktywnie pracujemy nad wsparciem każdego systemu zdolnego uruchomić Steam w trybie gry / Big Picture (na razie Linux): przenośna detekcja, dołączone zależności Pythona, brak założeń specyficznych dla dystrybucji. Notatki dla dystrybucji: [OS-NOTES.md](OS-NOTES.md).
 
 ---
 
@@ -72,6 +72,19 @@ sudo systemctl restart plugin_loader
 ```
 
 ---
+
+## 🐛 Issues i pomysły — śmiało!
+
+Bug, dziwne zachowanie na twojej dystrybucji, brakująca funkcja?
+**Otwórz [issue](https://github.com/Necrosiak/Steamcord/issues)** — każde
+zgłoszenie bezpośrednio kształtuje to, co powstanie dalej. Podaj jeśli możesz:
+
+- dystrybucję i wersję (Bazzite 42, CachyOS, Ubuntu 24.04…) oraz jak działa Steam (tryb gry / Big Picture / pulpit)
+- wersję wtyczki (Ustawienia → Aktualizacja) i czy Vesktop jest flatpakiem czy natywny
+- co zrobiłeś, czego oczekiwałeś, co się stało zamiast tego
+- logi: `~/homebrew/logs/Steamcord/` oraz `journalctl -b | grep -i steamcord`
+
+Prośby o funkcje i zgłoszenia „działa!” na nietypowych konfiguracjach są równie cenne.
 
 ## Podziękowania
 
