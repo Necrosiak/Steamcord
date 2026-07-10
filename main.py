@@ -247,7 +247,17 @@ class Plugin:
         logger.info("Starting server.")
         await TCPSite(cls.runner, "0.0.0.0", 65123).start()
 
-        cls.shared_js_tab = await get_tab("SharedJSContext")
+        # Same failure mode as initialize() above: while the Steam UI is still
+        # (re)starting, CEF answers /json but SharedJSContext is not in the tab
+        # list yet — a one-shot lookup here killed _main (QAM showed the raw
+        # Python exception).
+        while True:
+            try:
+                cls.shared_js_tab = await get_tab("SharedJSContext")
+                break
+            except ValueError:
+                logger.warning("SharedJSContext tab not up yet — retrying in 3s")
+                await sleep(3)
         await cls.shared_js_tab.open_websocket()
         create_task(cls._notification_dispatcher())
 
