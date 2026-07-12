@@ -850,6 +850,33 @@ class Plugin:
         except Exception as e:
             logger.warning(f"save audio cfg failed: {e!r}")
 
+    # ── Raccourci manette vocal (mute-toggle / push-to-talk) ──
+    # La détection des boutons vit dans le FRONTEND (SteamClient.Input) ; ici
+    # on ne fait que persister la config pour qu'elle survive aux reboots.
+    _INPUT_CFG = os.path.expanduser("~/.config/steamcord-input.json")
+
+    @classmethod
+    async def get_voice_shortcut(cls):
+        from json import load
+        try:
+            with open(cls._INPUT_CFG) as f:
+                return load(f)
+        except Exception:
+            return {"enabled": False, "mode": "toggle", "buttons": [],
+                    "label": ""}
+
+    @classmethod
+    async def set_voice_shortcut(cls, cfg):
+        from json import dump
+        try:
+            os.makedirs(os.path.dirname(cls._INPUT_CFG), exist_ok=True)
+            with open(cls._INPUT_CFG, "w") as f:
+                dump(cfg, f)
+            return True
+        except Exception as e:
+            logger.warning(f"save input cfg failed: {e!r}")
+            return False
+
     @classmethod
     async def _ensure_screenshare_deps(cls):
         # gst_webrtc.py tourne sous le python SYSTÈME (requis pour les bindings

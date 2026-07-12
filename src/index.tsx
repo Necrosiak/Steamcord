@@ -46,7 +46,7 @@ import {
 import { MuteButton } from "./components/buttons/MuteButton";
 import { DeafenButton } from "./components/buttons/DeafenButton";
 import { DisconnectButton } from "./components/buttons/DisconnectButton";
-import { PushToTalkButton } from "./components/buttons/PushToTalk";
+import { initVoiceShortcut, getShortcutCfg, setShortcutCfg, captureBinding, cancelCapture, ShortcutCfg, DEFAULT_CFG } from "./voiceShortcut";
 import {
   VoiceChatChannel,
   VoiceChatMembers,
@@ -537,13 +537,6 @@ const Content = () => {
             </Focusable>
           </SR>
         </div>
-        <div style={{ marginBottom: "12px" }}>
-          <SR>
-            <Focusable flow-children="horizontal" style={{ display: "flex", justifyContent: "center" }}>
-              <PushToTalkButton />
-            </Focusable>
-          </SR>
-        </div>
         {/* Navigation Discord. Deux menus empilés, TOUJOURS visibles (même en
             appel) :
               1. Mode  : Vocal / Textuel  (en haut)
@@ -830,6 +823,61 @@ const LogoutSection = () => {
 };
 
 
+// Raccourci manette vocal : activer, mode (mute-toggle / PTT), capture de
+// l'accord de boutons. La logique globale vit dans voiceShortcut.ts — ici on
+// ne fait qu'éditer sa config (le listener tourne même QAM fermé).
+const VoiceShortcutConfig = () => {
+  const [cfg, setCfg] = useState<ShortcutCfg>({ ...DEFAULT_CFG });
+  const [capturing, setCapturing] = useState(false);
+
+  useEffect(() => {
+    setCfg({ ...getShortcutCfg() });
+    return () => cancelCapture();
+  }, []);
+
+  const save = (next: ShortcutCfg) => { setCfg(next); setShortcutCfg(next); };
+
+  const onCapture = async () => {
+    setCapturing(true);
+    const r = await captureBinding();
+    setCapturing(false);
+    save({ ...cfg, buttons: r.buttons, label: r.label });
+    notify({ title: "Steamcord", body: `${t("shortcut_saved")}: ${r.label}` });
+  };
+
+  const modeOpts = [
+    { data: "toggle", label: t("shortcut_mode_toggle") },
+    { data: "ptt", label: t("shortcut_mode_ptt") },
+  ];
+
+  return (
+    <>
+      <SR>
+        <ToggleField label={t("shortcut_enable")} checked={cfg.enabled}
+          onChange={(v: boolean) => save({ ...cfg, enabled: v })} bottomSeparator="none" />
+      </SR>
+      {cfg.enabled && (
+        <>
+          <SR>
+            <Dropdown rgOptions={modeOpts as any} selectedOption={cfg.mode}
+              onChange={(e: any) => save({ ...cfg, mode: e.data })} />
+          </SR>
+          <SR>
+            <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>
+              🕹️ {t("shortcut_binding")}: <b>{cfg.label || t("shortcut_none")}</b>
+            </div>
+          </SR>
+          <SR>
+            <DialogButton onClick={onCapture} disabled={capturing} style={{ fontSize: 13 }}>
+              {capturing ? t("shortcut_capture_hint") : t("shortcut_capture")}
+            </DialogButton>
+          </SR>
+        </>
+      )}
+    </>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div>
@@ -837,6 +885,11 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎮 {t("config_status")}</div>
       </SR>
       <StatusAutoToggle />
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🕹️ {t("config_shortcut")}</div>
+      </SR>
+      <VoiceShortcutConfig />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎧 {t("config_audio")}</div>
@@ -982,6 +1035,7 @@ export default definePlugin(() => {
 
   // Réception vidéo (voir le Go Live/cam des autres dans leur bloc).
   initVideoRelay();
+  initVoiceShortcut();
 
   // Anti-crash panneau de notifs Steam : sécurise le toaster Decky partagé
   // (Decky + plugins tiers) qui crée des entrées sans notification_type.
