@@ -919,13 +919,13 @@ class Plugin:
         import os
         from pathlib import Path as _P
         if not os.path.exists("/dev/video42"):
-            hint = await cls._v4l2_hint()
-            logger.warning(f"[gstcam] /dev/video42 absent — {hint}")
-            return {"ok": False, "hint": hint}
-        gst_hint = await cls._gst_python_hint()
-        if gst_hint:
-            logger.warning(f"[gstcam] {gst_hint}")
-            return {"ok": False, "hint": gst_hint}
+            info = await cls._v4l2_hint()
+            logger.warning(f"[gstcam] /dev/video42 absent — {info['hint']}")
+            return {"ok": False, **info}
+        info = await cls._gst_python_hint()
+        if info:
+            logger.warning(f"[gstcam] {info['hint']}")
+            return {"ok": False, **info}
         # Tuer un feeder précédent puis (re)lancer.
         try:
             import vesktop
@@ -953,6 +953,10 @@ class Plugin:
 
     # ── stand-alone : une seule version pour tous les OS ────────────────────────
     # Le plugin vérifie ce que la machine a et dit exactement quoi installer.
+    # Les hints sont STRUCTURÉS ({code, cmd, hint}) : le front traduit `code` via
+    # l'i18n 9 langues et affiche `cmd` verbatim ; `hint` = phrase anglaise pour
+    # les logs (issue #2 : le texte français codé en dur arrivait tel quel chez
+    # un utilisateur en portugais).
     @staticmethod
     def _pkg_hint(arch, fedora, debian):
         import shutil as _sh
@@ -968,12 +972,26 @@ class Plugin:
             return f"sudo apt install {debian}"
         return f"install: {arch}"
 
+    @staticmethod
+    def _is_steamos():
+        # SteamOS stock : rootfs lecture seule, pas de headers noyau, et les MAJ
+        # OS effacent les paquets ajoutés → « sudo pacman -S … » y est un faux
+        # conseil, on renvoie un code dédié à la place.
+        try:
+            with open("/etc/os-release") as f:
+                for line in f:
+                    if line.strip().startswith("ID="):
+                        return line.split("=", 1)[1].strip().strip('"') == "steamos"
+        except Exception:
+            pass
+        return False
+
     _gst_py_ok = False                    # cache : bindings gi/Gst OK (positif seulement)
 
     @classmethod
     async def _gst_python_hint(cls):
         """None si le python système a gi + Gst + pipewiresrc (requis par
-        gst_camera.py), sinon le hint d'install pour cet OS. Présents sur
+        gst_camera.py), sinon {code, cmd, hint} pour cet OS. Présents sur
         Bazzite/SteamOS, pas sur Arch/Fedora/Debian de base."""
         if cls._gst_py_ok:
             return None
@@ -990,15 +1008,20 @@ class Plugin:
                 return None
         except Exception:
             pass
-        return ("bindings GStreamer/PipeWire manquants pour la capture : "
-                + cls._pkg_hint("python-gobject gst-plugin-pipewire",
-                                "python3-gobject pipewire-gstreamer",
-                                "python3-gi gir1.2-gstreamer-1.0 gstreamer1.0-pipewire"))
+        cmd = cls._pkg_hint("python-gobject gst-plugin-pipewire",
+                            "python3-gobject pipewire-gstreamer",
+                            "python3-gi gir1.2-gstreamer-1.0 gstreamer1.0-pipewire")
+        return {"code": "gst_missing", "cmd": cmd,
+                "hint": f"GStreamer/PipeWire Python bindings missing for capture: {cmd}"}
+
+    _MODPROBE = ("sudo modprobe v4l2loopback video_nr=42 "
+                 "card_label=Steamcord exclusive_caps=1")
 
     @classmethod
     async def _v4l2_hint(cls):
-        """Distingue « module pas installé » (installer le paquet) de « installé
-        mais pas chargé » (modprobe/reboot) pour donner LA bonne commande."""
+        """Distingue « module pas installé » (installer le paquet — ou SteamOS,
+        où c'est impossible proprement) de « installé mais pas chargé »
+        (modprobe/reboot) pour donner LA bonne commande."""
         try:
             p = await create_subprocess_exec("modinfo", "v4l2loopback",
                                              stdout=DEVNULL, stderr=DEVNULL)
@@ -1006,11 +1029,16 @@ class Plugin:
         except Exception:
             installed = False
         if installed:
-            return ("v4l2loopback installé mais pas chargé : sudo modprobe v4l2loopback "
-                    "video_nr=42 card_label=Steamcord exclusive_caps=1 (puis réessaie)")
+            return {"code": "v4l2_not_loaded", "cmd": cls._MODPROBE,
+                    "hint": f"v4l2loopback installed but not loaded: {cls._MODPROBE}"}
+        if cls._is_steamos():
+            return {"code": "v4l2_steamos", "cmd": "",
+                    "hint": "v4l2loopback missing and stock SteamOS cannot keep it "
+                            "across OS updates — screen share (game mode) unavailable"}
         pkg = cls._pkg_hint("v4l2loopback-dkms", "v4l2loopback", "v4l2loopback-dkms")
-        return (f"module v4l2loopback manquant : {pkg} puis sudo modprobe "
-                "v4l2loopback video_nr=42 card_label=Steamcord exclusive_caps=1")
+        cmd = f"{pkg} && {cls._MODPROBE}"
+        return {"code": "v4l2_missing", "cmd": cmd,
+                "hint": f"v4l2loopback kernel module missing: {cmd}"}
 
     @classmethod
     async def stop_screen_camera(cls):

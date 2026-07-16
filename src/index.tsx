@@ -33,7 +33,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { patchMenu } from "./patches/menuPatch";
-import { notify, patchDeckyToaster } from "./notify";
+import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts } from "./notify";
 import { ACCENT, DANGER, focusHalo } from "./components/Styled";
 import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
@@ -341,6 +341,24 @@ const StatusAutoToggle = () => {
         label={t("follow_steam_status")}
         checked={auto}
         onChange={toggleAuto}
+        bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
+// Toasts Decky natifs (opt-in) : certains builds Steam plantent au rendu natif
+// des toasts Decky (voir notify.ts) → reroutage sûr par défaut, ce toggle rend
+// le look natif à ceux dont le build le supporte.
+const NotifStyleToggle = () => {
+  const [nat, setNat] = useState(getNativeToasts());
+  return (
+    <SR>
+      <ToggleField
+        label={t("native_toasts")}
+        description={t("native_toasts_desc")}
+        checked={nat}
+        onChange={(v: boolean) => { setNat(v); setNativeToasts(v); }}
         bottomSeparator="none"
       />
     </SR>
@@ -905,6 +923,11 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔄 {t("config_updates")}</div>
       </SR>
       <UpdaterSection />
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔔 {t("config_notifs")}</div>
+      </SR>
+      <NotifStyleToggle />
       <hr />
       <AboutSection />
       <LogoutSection />

@@ -3,6 +3,32 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.14.0 — 2026-07-16
+
+### Fixed
+- **Screen-share requirement hints are now translated (9 languages)** instead
+  of hardcoded French: when v4l2loopback or the GStreamer/PipeWire Python
+  bindings are missing, the backend returns a structured code plus the exact
+  install command for your distro, and the QAM shows the explanation in your
+  language with the command verbatim
+  ([#2](https://github.com/Necrosiak/Steamcord/issues/2)).
+- **SteamOS gets an honest message**: stock SteamOS does not ship the
+  v4l2loopback kernel module and OS updates wipe manual installs, so instead
+  of a `sudo pacman -S` command that cannot work there, Steamcord now says
+  screen share (game mode) is unavailable on SteamOS.
+
+### Added
+- **"Native Decky notifications" toggle** (Settings → 🔔 Notifications,
+  default OFF). Steamcord reroutes every Decky toast through a chat-style
+  Steam notification because some Steam builds crash while rendering native
+  Decky toasts (`TypeError: … reading 'notification_type'` — reproduced and
+  root-caused on current steamui: toast eType 31 is dispatched to
+  Steam-notification renderers that expect protobuf fields Decky toasts don't
+  have). If your Steam build renders them fine, flip the toggle ON to get the
+  native look back for all plugins
+  ([#2](https://github.com/Necrosiak/Steamcord/issues/2)). Turning it OFF
+  also sweeps crash-prone entries out of the notification tray.
+
 ## 1.13.0 — 2026-07-12
 
 ### Added

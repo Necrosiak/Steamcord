@@ -41,11 +41,17 @@ export function ScreenCameraButton() {
     try {
       if (on) { await call("stop_screen_camera"); setOn(false); setScreenCamOn(false); }
       else {
-        // stand-alone : le backend vérifie v4l2loopback et renvoie la commande
-        // exacte pour cet OS si le module manque (au lieu d'un échec muet).
+        // stand-alone : le backend vérifie v4l2loopback et renvoie un code
+        // structuré + la commande exacte pour cet OS si le module manque (au
+        // lieu d'un échec muet). Le code est traduit ici (langue du user), la
+        // commande est affichée verbatim ; r.hint (anglais) = fallback si un
+        // vieux backend tourne encore sous un front à jour.
         const r: any = await call("start_screen_camera");
         if (r && r.ok === false) {
-          notify({ title: t("screen_cam_start"), body: r.hint || "v4l2loopback missing" });
+          const msg = r.code ? t("hint_" + r.code) : "";
+          const body = (msg && msg !== "hint_" + r.code ? msg : r.hint || "v4l2loopback missing")
+            + (r.cmd ? "\n" + r.cmd : "");
+          notify({ title: t("screen_cam_start"), body });
         } else {
           setOn(true); setScreenCamOn(true);
         }

@@ -111,3 +111,4 @@ People who reported, diagnosed or helped fix bugs — thank you!
 
 - [@theconker64](https://github.com/theconker64) — report & diagnosis of the `segno` boot crash on stock SteamOS ([#1](https://github.com/Necrosiak/Steamcord/issues/1), fixed in v1.8.2)
 - [@V3lvetStorm](https://github.com/V3lvetStorm) — confirmation & testing ([#1](https://github.com/Necrosiak/Steamcord/issues/1))
+- [@DavidNotProgamer](https://github.com/DavidNotProgamer) — report of the untranslated screen-share hint and the chat-style look of Decky notifications ([#2](https://github.com/Necrosiak/Steamcord/issues/2), addressed in v1.14.0)
