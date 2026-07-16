@@ -19,6 +19,12 @@ import os
 from decky import logger, DECKY_PLUGIN_DIR, emit  # type: ignore
 from logging import INFO
 
+# defaults/ EN PREMIER : le deploy local ne synchronise QUE defaults/, la copie
+# racine (extraite du zip de release) reste figée. Sans cette priorité, un fix
+# dans discord_client/ ou tab_utils/ ne prenait effet qu'à la release suivante —
+# même piège que updater.py/vesktop.py (chargés explicitement plus bas), mais
+# invisible : les notifs perdues venaient du VIEUX _rpc_notification racine.
+sys.path.insert(0, str(Path(DECKY_PLUGIN_DIR) / "defaults"))
 sys.path.append(DECKY_PLUGIN_DIR)
 
 from tab_utils.tab import (
@@ -86,12 +92,21 @@ async def initialize():
     # NATIVE approach: drive Vesktop (a real Electron Discord, mic works) over CDP
     # instead of a hidden Steam CEF BrowserView (where the mic is impossible).
     import vesktop
-    client_js = open(Path(DECKY_PLUGIN_DIR) / "steamcord_client.js", "r").read()
+    # defaults/ d'abord : même piège que discord_client/tab_utils — la copie
+    # racine vient du zip de release et n'est PAS resynchronisée par le deploy
+    # local (le client injecté restait figé → pas d'enrichissement __sc_dm).
+    _cjs = Path(DECKY_PLUGIN_DIR) / "defaults" / "steamcord_client.js"
+    if not _cjs.exists():
+        _cjs = Path(DECKY_PLUGIN_DIR) / "steamcord_client.js"
+    client_js = open(_cjs, "r").read()
     # webrtc_client.js surcharge getDisplayMedia → capture d'écran GStreamer pour
     # le partage d'écran (Go Live). DOIT être injecté sous Vesktop aussi, sinon le
     # partage d'écran « ne donne rien » (getDisplayMedia natif inutilisable headless).
     try:
-        webrtc_js = open(Path(DECKY_PLUGIN_DIR) / "webrtc_client.js", "r").read()
+        _wjs = Path(DECKY_PLUGIN_DIR) / "defaults" / "webrtc_client.js"
+        if not _wjs.exists():
+            _wjs = Path(DECKY_PLUGIN_DIR) / "webrtc_client.js"
+        webrtc_js = open(_wjs, "r").read()
     except Exception:
         webrtc_js = ""
     tab = await vesktop.get_discord_tab(webrtc_js + "\n" + client_js)
@@ -523,12 +538,29 @@ class Plugin:
                     "title": notification["title"],
                     "body": notification["body"],
                     "kind": notification.get("kind", ""),
+                    "icon": notification.get("icon", ""),
                 }
             )
-            await cls.shared_js_tab.ensure_open()
-            await cls.shared_js_tab.evaluate(
-                f"window.STEAMCORD.dispatchNotification(JSON.parse('{payload}'));"
-            )
+            # payload (json.dumps ASCII) est une expression JS valide telle quelle.
+            # SURTOUT PAS JSON.parse('{payload}') : une apostrophe dans le message
+            # (« j'arrive ») cassait l'éval → notification silencieusement perdue.
+            js = f"window.STEAMCORD.dispatchNotification({payload});"
+            # Après un restart de Steam, le transport CDP peut être mort sans que
+            # ws.closed le dise (« Cannot write to closing transport ») : retry en
+            # rouvrant le tab, et la boucle NE MEURT JAMAIS — une notif ratée ne
+            # doit pas tuer toutes les suivantes (c'est exactement ce qui arrivait).
+            for attempt in range(3):
+                try:
+                    if attempt == 0:
+                        await cls.shared_js_tab.ensure_open()
+                    else:
+                        cls.shared_js_tab = await get_tab("SharedJSContext")
+                        await cls.shared_js_tab.open_websocket()
+                    await cls.shared_js_tab.evaluate(js)
+                    break
+                except Exception as e:
+                    logger.warning(f"notification dispatch attempt {attempt + 1}/3 failed: {e!r}")
+                    await sleep(1)
 
     @classmethod
     async def connect_ws(cls):

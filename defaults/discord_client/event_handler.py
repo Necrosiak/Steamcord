@@ -175,7 +175,10 @@ class EventHandler:
             self.state_changed_event.set()
             e = future.exception()
             if e:
-                print(f"Exception during handling of {data['type']} event.   {e}")
+                # logger, PAS print : l'exception d'un handler doit être visible
+                # dans le log du plugin (une notif perdue se diagnostiquait à
+                # l'aveugle avant).
+                logger.warning(f"Exception during handling of {data['type']} event: {e!r}")
 
         create_task(callback(data)).add_done_callback(_)
 
@@ -320,12 +323,45 @@ class EventHandler:
         self.me.is_deafened = s["deaf"]
 
     async def _rpc_notification(self, data):
-        self.notification = {"title": data["message"]["embeds"][0]["author"]["name"], "body": data["message"]["embeds"][0]["description"]}
+        # L'event NOTIFICATION_CREATE de Discord porte title/body/icon_url à la
+        # RACINE ; l'ancien chemin embeds[0] ne vaut que pour certains messages
+        # (et levait IndexError sur un message texte sans embed → notif perdue,
+        # silencieusement car l'exception du handler partait dans print()).
+        msg = data.get("message") or {}
+        author = msg.get("author") or {}
+        embeds = msg.get("embeds") or []
+        emb_author = (embeds[0].get("author") or {}) if embeds else {}
+        title = (data.get("title") or emb_author.get("name")
+                 or author.get("global_name") or author.get("username") or "Discord")
+        body = (data.get("body")
+                or (embeds[0].get("description") if embeds else None)
+                or msg.get("content") or "")
+        # icon = avatar Discord de l'expéditeur : icon_url de l'event si présent,
+        # sinon reconstruit depuis message.author (id + hash d'avatar CDN).
+        icon = data.get("icon_url") or ""
+        if not icon and author.get("id") and author.get("avatar"):
+            icon = f"https://cdn.discordapp.com/avatars/{author['id']}/{author['avatar']}.png?size=64"
+        # MP ou chan de serveur : enrichissement client (__sc_*) si présent, sinon
+        # fallback sans client — un message de serveur porte un guild_id, pas un MP
+        # (couvre un Vesktop qui tourne encore avec l'ancien client injecté).
+        dm = bool(data.get("__sc_dm")) if "__sc_dm" in data else not msg.get("guild_id")
+        if not dm:
+            chan = data.get("__sc_channel") or ""
+            guild = data.get("__sc_guild") or ""
+            ctx = ", ".join(x for x in (f"#{chan}" if chan else "", guild) if x)
+            if ctx:
+                title = f"{title} ({ctx})"
+        self.notification = {"title": title, "body": body, "icon": icon,
+                             "kind": "dm" if dm else "group"}
+        logger.info(f"notification built: kind={self.notification['kind']} "
+                    f"title={title!r} icon={'oui' if icon else 'non'} "
+                    f"enrichi={'__sc_dm' in data}")
         self.notification_event.set()
 
     async def _call_ring(self, data):
         # Incoming DM call → notify. The frontend localizes the title via kind="call".
-        self.notification = {"title": "", "body": data.get("caller") or "Discord", "kind": "call"}
+        self.notification = {"title": "", "body": data.get("caller") or "Discord",
+                             "kind": "call", "icon": data.get("caller_avatar") or ""}
         self.notification_event.set()
 
     async def _mic_webrtc(self, data):

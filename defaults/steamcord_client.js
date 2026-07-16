@@ -941,14 +941,15 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 if (isDM && !muted && !window.__sc_ringing[e.channelId]) {
                                     window.__sc_ringing[e.channelId] = true;
                                     let caller = ch.name;
-                                    if (!caller) {
-                                        const r = (ch.rawRecipients && ch.rawRecipients[0]) ||
-                                                  (ch.recipients && ch.recipients[0]);
-                                        const u = (r && typeof r === "object") ? r
-                                                : Vencord.Webpack.Common.UserStore.getUser(r);
-                                        caller = u?.global_name || u?.username || "Discord";
-                                    }
-                                    window.STEAMCORD_WS.send(JSON.stringify({ type: "CALL_RING", caller, channel_id: String(e.channelId) }));
+                                    let caller_avatar = null; // avatar Discord de l'appelant → persona de la notif Steam
+                                    const r = (ch.rawRecipients && ch.rawRecipients[0]) ||
+                                              (ch.recipients && ch.recipients[0]);
+                                    const u = (r && typeof r === "object") ? r
+                                            : Vencord.Webpack.Common.UserStore.getUser(r);
+                                    if (!caller) caller = u?.global_name || u?.username || "Discord";
+                                    if (u?.id && u?.avatar)
+                                        caller_avatar = "https://cdn.discordapp.com/avatars/" + u.id + "/" + u.avatar + ".png?size=64";
+                                    window.STEAMCORD_WS.send(JSON.stringify({ type: "CALL_RING", caller, caller_avatar, channel_id: String(e.channelId) }));
                                 }
                             }
                         }
@@ -969,6 +970,22 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         "SPEAKING"
                     ].includes(e.type);
                     if (shouldPass) {
+                        // Notification de message : enrichit l'event avec le contexte
+                        // (MP ou #chan de serveur) — le backend ne peut pas interroger
+                        // les stores Discord. Les mutes/réglages de notif Discord sont
+                        // déjà respectés : NOTIFICATION_CREATE n'arrive que si Discord
+                        // aurait notifié.
+                        if (e.type === "RPC_NOTIFICATION_CREATE") {
+                            try {
+                                const ch = Vencord.Webpack.Common.ChannelStore.getChannel(e.channelId);
+                                e.__sc_dm = !!ch && (ch.type === 1 || ch.type === 3);
+                                if (ch && !e.__sc_dm) {
+                                    e.__sc_channel = ch.name || "";
+                                    const g = ch.guild_id && Vencord.Webpack.Common.GuildStore?.getGuild?.(ch.guild_id);
+                                    e.__sc_guild = (g && g.name) || "";
+                                }
+                            } catch (_) {}
+                        }
                         console.log("Dispatching Steamcord event: ", e);
                         window.STEAMCORD_WS.send(JSON.stringify(e));
                     }

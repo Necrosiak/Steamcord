@@ -995,11 +995,29 @@ export default definePlugin(() => {
     ' Toggle=' + !!Toggle + ' SliderField=' + !!SliderField + ' Dropdown=' + !!Dropdown);
 
   window.STEAMCORD = {
-    dispatchNotification: (payload: { title: string; body: string; kind?: string }) => {
+    dispatchNotification: (payload: { title: string; body: string; kind?: string; icon?: string }) => {
       console.log("Dispatching Steamcord notification: ", payload);
-      // Incoming DM call: localize the title to the SteamOS language.
-      const title = payload.kind === "call" ? `📞 ${t("incoming_call")}` : payload.title;
-      notify({ title, body: payload.body });
+      if (payload.kind === "call") {
+        // Appel entrant (toujours un MP) : le backend met le nom de l'appelant
+        // dans body et son avatar Discord dans icon → persona = appelant.
+        notify({
+          title: "",
+          body: `📞 ${t("incoming_call")}`,
+          sender: payload.body || "Discord",
+          avatar: payload.icon,
+          dm: true,
+        });
+      } else {
+        // Message : title = pseudo de l'expéditeur (+ contexte « (#chan, Serveur) »
+        // pour un chan), icon = son avatar Discord, kind = dm|group du backend.
+        notify({
+          title: payload.title,
+          body: payload.body,
+          sender: payload.title,
+          avatar: payload.icon,
+          dm: payload.kind === "dm",
+        });
+      }
     },
     MIC_PEER_CONNECTION: undefined,
   };

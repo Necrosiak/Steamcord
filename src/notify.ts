@@ -45,17 +45,58 @@ function sweepDeckyTrayGroups() {
   } catch {}
 }
 
-// Rendu de secours : notif native Steam type GroupChatMessage. steamid
-// OBLIGATOIRE : sans lui, DisplayClientNotification crée une entrée malformée
-// qui fait planter le panneau de notifs Steam → on s'abstient.
-function chatStyleNotification(title: string, body: string) {
+// Rendu chat-style avec PERSONA FACTICE (demande user : « pseudo de l'expéditeur
+// + image Discord », pas mon propre profil). Le renderer GroupChatMessage tire
+// avatar + pseudo du persona Steam de `steamid` (champ proto steamid_sender) :
+// on dérive donc un accountid réservé du nom de l'expéditeur (hash → plage
+// haute 0xDExxxxx, loin des comptes réels), on crée/maquille son entrée locale
+// dans friendStore (m_strPlayerName + getters avatar_url_* shadowés par
+// defineProperty → l'URL CDN Discord passe la CSP, vérifié en live), puis on
+// notifie avec ce steamid. Chaque expéditeur garde SON persona (hash stable) ;
+// re-maquillé à chaque notif au cas où Steam rafraîchirait l'entrée.
+const DEFAULT_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png";
+const STEAMID_BASE = BigInt("76561197960265728");
+
+function fakeSenderSid(sender: string): { sid64: string; accountid: number } {
+  let h = 5381;
+  for (let i = 0; i < sender.length; i++) h = (Math.imul(h, 33) ^ sender.charCodeAt(i)) >>> 0;
+  const accountid = 0xde000000 + (h & 0xfffff);
+  return { sid64: (STEAMID_BASE + BigInt(accountid)).toString(), accountid };
+}
+
+function primeSenderPersona(sid64: string, accountid: number, name: string, avatar: string) {
   try {
-    const App = (window as any).App;
-    const steamid = App?.GetCurrentUser?.()?.strSteamID || App?.m_CurrentUser?.strSteamID || "";
-    if (!steamid) return;
+    const fs = (window as any).friendStore;
+    if (!fs?.GetFriendState) return; // pas de store → avatar/pseudo par défaut, la notif part quand même
+    const st = fs.GetFriendState({
+      GetAccountID: () => accountid,
+      ConvertTo64BitString: () => sid64,
+      BIsValid: () => true,
+    });
+    const p = st?.m_persona;
+    if (!p) return;
+    p.m_strPlayerName = name;
+    for (const k of ["avatar_url_small", "avatar_url_medium", "avatar_url_full"]) {
+      try {
+        Object.defineProperty(p, k, { get: () => avatar, configurable: true });
+      } catch {}
+    }
+  } catch {}
+}
+
+function chatStyleNotification(title: string, body: string, sender?: string, avatar?: string, dm?: boolean) {
+  try {
+    const name = sender || title || "Steamcord";
+    const { sid64, accountid } = fakeSenderSid(name);
+    primeSenderPersona(sid64, accountid, name, avatar || DEFAULT_AVATAR);
+    // Type 2 (FriendChatMessage) pour les MP/appels : rendu « message privé »
+    // (le type 1 affichait « Message de groupe » sur un MP — retour user).
+    // Type 1 (GroupChatMessage) pour les chans de serveur et les notifs système.
+    // `title` du proto = nom de groupe (affiché seulement hors gamemode) : on le
+    // vide quand il répéterait le pseudo déjà rendu via le persona.
     (window as any).SteamClient?.ClientNotifications?.DisplayClientNotification?.(
-      1,
-      JSON.stringify({ title, body, state: "active", steamid }),
+      dm ? 2 : 1,
+      JSON.stringify({ title: title === name ? "" : title, body, state: "active", steamid: sid64 }),
       () => {},
     );
   } catch (e) {
@@ -63,16 +104,17 @@ function chatStyleNotification(title: string, body: string) {
   }
 }
 
-// Notification Steamcord : passe par le toaster (wrappé) → suit le mode choisi.
-export function notify(payload: { title: string; body: string }) {
+// Notification Steamcord : chat-style persona en mode sûr, toast Decky natif si
+// le user a activé le mode natif.
+export function notify(payload: { title: string; body: string; sender?: string; avatar?: string; dm?: boolean }) {
   try {
     const dpl: any = (window as any).DeckyPluginLoader;
-    if (typeof dpl?.toaster?.toast === "function") {
-      dpl.toaster.toast({ title: payload.title, body: payload.body });
+    if (getNativeToasts() && typeof dpl?.toaster?.toast === "function") {
+      dpl.toaster.toast({ title: payload.sender || payload.title, body: payload.body });
       return;
     }
   } catch {}
-  chatStyleNotification(payload.title, payload.body); // toaster pas prêt (boot)
+  chatStyleNotification(payload.title, payload.body, payload.sender, payload.avatar, payload.dm);
 }
 
 // Enrobe toaster.toast (Decky + tous les plugins) selon le mode. Marqueur

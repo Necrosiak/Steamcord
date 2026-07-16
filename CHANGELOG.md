@@ -5,7 +5,26 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 
 ## 1.14.0 — 2026-07-16
 
+### Added
+- **Notifications now show the Discord sender, not your own Steam profile**:
+  the sender's Discord name and real avatar appear on every message and
+  incoming-call notification (a per-sender local persona is primed in the
+  Steam friends store; senders without a custom avatar get the Discord logo).
+  DMs and incoming calls render as private messages (FriendChatMessage),
+  server channels render as group messages labeled `Sender (#channel, Server)`.
+  Your Discord notification settings (server/channel mutes, mentions-only…)
+  are respected — Steamcord only relays what Discord itself would notify.
+
 ### Fixed
+- **Message notifications were broken entirely** — four stacked bugs:
+  a plain text message (no embed) crashed the handler with `IndexError`
+  (and handler exceptions went to an invisible `print()`); an apostrophe in
+  any message broke the JS dispatch eval (`JSON.parse('…')`); the dispatcher
+  task **died permanently** on the first `Cannot write to closing transport`
+  after a Steam restart (now retries with a fresh CDP tab and never dies);
+  and the plugin imported the **stale release-zip copies** of
+  `discord_client`/`tab_utils`/`steamcord_client.js` instead of the current
+  `defaults/` ones (defaults-first resolution now).
 - **Screen-share requirement hints are now translated (9 languages)** instead
   of hardcoded French: when v4l2loopback or the GStreamer/PipeWire Python
   bindings are missing, the backend returns a structured code plus the exact
