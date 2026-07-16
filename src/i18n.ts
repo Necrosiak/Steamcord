@@ -81,7 +81,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "GStreamer/PipeWire Python bindings are missing for capture. Install them in a terminal:",
     config_notifs: "Notifications",
     native_toasts: "Native Decky notifications",
-    native_toasts_desc: "Native look for all Decky plugin notifications. If an error screen appears when a notification fires, turn this back off — some Steam builds can't render them (Steamcord then uses a safe chat-style fallback).",
+    native_toasts_desc: "Native look for all Decky plugin notifications. Warning: many Steam builds (including current SteamOS stable) crash while rendering them — if an error screen appears or notifications stop showing entirely, turn this back OFF (the safe chat-style fallback works everywhere).",
     update_section: "Updates",
     update_auto: "Automatic updates",
     update_check: "Check for updates",
@@ -191,7 +191,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Les bindings Python GStreamer/PipeWire manquent pour la capture. Installe-les dans un terminal :",
     config_notifs: "Notifications",
     native_toasts: "Notifications Decky natives",
-    native_toasts_desc: "Rendu natif pour les notifications de tous les plugins Decky. Si un écran d'erreur apparaît quand une notification arrive, désactive : certains builds Steam ne savent pas les afficher (Steamcord utilise alors un rendu de secours style message).",
+    native_toasts_desc: "Rendu natif pour les notifications de tous les plugins Decky. Attention : beaucoup de builds Steam (dont la stable SteamOS actuelle) plantent en les affichant — si un écran d'erreur apparaît ou que plus aucune notification ne s'affiche, désactive (le rendu de secours style message marche partout).",
     update_section: "Mises à jour",
     update_auto: "Mises à jour automatiques",
     update_check: "Vérifier les mises à jour",
@@ -329,7 +329,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Die GStreamer/PipeWire-Python-Bindings für die Aufnahme fehlen. Installiere sie im Terminal:",
     config_notifs: "Benachrichtigungen",
     native_toasts: "Native Decky-Benachrichtigungen",
-    native_toasts_desc: "Natives Aussehen für die Benachrichtigungen aller Decky-Plugins. Erscheint beim Eintreffen einer Benachrichtigung ein Fehlerbildschirm, wieder ausschalten — manche Steam-Builds können sie nicht darstellen (Steamcord nutzt dann eine sichere Chat-Darstellung).",
+    native_toasts_desc: "Natives Aussehen für die Benachrichtigungen aller Decky-Plugins. Achtung: viele Steam-Builds (auch das aktuelle SteamOS Stable) stürzen beim Darstellen ab — erscheint ein Fehlerbildschirm oder kommen gar keine Benachrichtigungen mehr an, wieder AUSSCHALTEN (die sichere Chat-Darstellung funktioniert überall).",
   },
   es: {
     audio_auto: "Auto (predeterminado del sistema)",
@@ -407,7 +407,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Faltan los bindings de Python de GStreamer/PipeWire para la captura. Instálalos en una terminal:",
     config_notifs: "Notificaciones",
     native_toasts: "Notificaciones Decky nativas",
-    native_toasts_desc: "Aspecto nativo para las notificaciones de todos los plugins de Decky. Si aparece una pantalla de error al llegar una notificación, desactívalo: algunas versiones de Steam no pueden mostrarlas (Steamcord usa entonces un formato seguro estilo chat).",
+    native_toasts_desc: "Aspecto nativo para las notificaciones de todos los plugins de Decky. Atención: muchas versiones de Steam (incluida la SteamOS estable actual) fallan al mostrarlas — si aparece una pantalla de error o dejan de mostrarse todas las notificaciones, desactívalo (el formato seguro estilo chat funciona en todas partes).",
   },
   it: {
     audio_auto: "Auto (predefinito di sistema)",
@@ -485,7 +485,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Mancano i binding Python GStreamer/PipeWire per la cattura. Installali in un terminale:",
     config_notifs: "Notifiche",
     native_toasts: "Notifiche Decky native",
-    native_toasts_desc: "Aspetto nativo per le notifiche di tutti i plugin Decky. Se compare una schermata di errore all'arrivo di una notifica, disattivalo: alcune build di Steam non riescono a mostrarle (Steamcord usa allora una resa sicura in stile chat).",
+    native_toasts_desc: "Aspetto nativo per le notifiche di tutti i plugin Decky. Attenzione: molte build di Steam (compresa l'attuale SteamOS stabile) vanno in crash nel mostrarle — se compare una schermata di errore o le notifiche smettono del tutto di apparire, disattivalo (la resa sicura in stile chat funziona ovunque).",
   },
   pt: {
     audio_auto: "Auto (predefinição do sistema)",
@@ -563,7 +563,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Faltam os bindings Python do GStreamer/PipeWire para a captura. Instale-os em um terminal:",
     config_notifs: "Notificações",
     native_toasts: "Notificações Decky nativas",
-    native_toasts_desc: "Aparência nativa para as notificações de todos os plugins do Decky. Se uma tela de erro aparecer quando chegar uma notificação, desative: algumas versões do Steam não conseguem exibi-las (o Steamcord usa então um formato seguro em estilo de chat).",
+    native_toasts_desc: "Aparência nativa para as notificações de todos os plugins do Decky. Atenção: muitas versões do Steam (incluindo o SteamOS estável atual) travam ao exibi-las — se uma tela de erro aparecer ou as notificações pararem completamente de aparecer, desative (o formato seguro em estilo de chat funciona em qualquer lugar).",
   },
   nl: {
     audio_auto: "Auto (systeemstandaard)",
@@ -641,7 +641,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "De GStreamer/PipeWire-Python-bindings voor opname ontbreken. Installeer ze in een terminal:",
     config_notifs: "Meldingen",
     native_toasts: "Native Decky-meldingen",
-    native_toasts_desc: "Native weergave voor de meldingen van alle Decky-plugins. Verschijnt er een foutscherm wanneer een melding binnenkomt, zet dit dan weer uit — sommige Steam-builds kunnen ze niet weergeven (Steamcord gebruikt dan een veilige chat-weergave).",
+    native_toasts_desc: "Native weergave voor de meldingen van alle Decky-plugins. Let op: veel Steam-builds (ook de huidige stabiele SteamOS) crashen bij het weergeven — verschijnt er een foutscherm of komen er helemaal geen meldingen meer binnen, zet dit dan weer UIT (de veilige chat-weergave werkt overal).",
   },
   pl: {
     audio_auto: "Auto (domyślne systemu)",
@@ -719,7 +719,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Brakuje bindingów Pythona GStreamer/PipeWire do przechwytywania. Zainstaluj je w terminalu:",
     config_notifs: "Powiadomienia",
     native_toasts: "Natywne powiadomienia Decky",
-    native_toasts_desc: "Natywny wygląd powiadomień wszystkich wtyczek Decky. Jeśli po nadejściu powiadomienia pojawi się ekran błędu, wyłącz tę opcję — niektóre wersje Steam nie potrafią ich wyświetlić (Steamcord używa wtedy bezpiecznego widoku w stylu czatu).",
+    native_toasts_desc: "Natywny wygląd powiadomień wszystkich wtyczek Decky. Uwaga: wiele wersji Steam (w tym aktualny stabilny SteamOS) zawiesza się przy ich wyświetlaniu — jeśli pojawi się ekran błędu albo powiadomienia całkiem przestaną się pokazywać, wyłącz tę opcję (bezpieczny widok w stylu czatu działa wszędzie).",
   },
   ru: {
     audio_auto: "Авто (системное по умолчанию)",
@@ -797,7 +797,7 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Отсутствуют Python-биндинги GStreamer/PipeWire для захвата. Установите их в терминале:",
     config_notifs: "Уведомления",
     native_toasts: "Нативные уведомления Decky",
-    native_toasts_desc: "Нативный вид уведомлений всех плагинов Decky. Если при появлении уведомления возникает экран ошибки, выключите обратно — некоторые сборки Steam не могут их отобразить (тогда Steamcord использует безопасный вид в стиле чата).",
+    native_toasts_desc: "Нативный вид уведомлений всех плагинов Decky. Внимание: многие сборки Steam (включая текущую стабильную SteamOS) падают при их отображении — если появился экран ошибки или уведомления вовсе перестали показываться, выключите обратно (безопасный вид в стиле чата работает везде).",
   },
 };
 

@@ -54,7 +54,11 @@ function sweepDeckyTrayGroups() {
 // defineProperty → l'URL CDN Discord passe la CSP, vérifié en live), puis on
 // notifie avec ce steamid. Chaque expéditeur garde SON persona (hash stable) ;
 // re-maquillé à chaque notif au cas où Steam rafraîchirait l'entrée.
+// Avatar par défaut d'un évènement DISCORD sans avatar connu = logo Discord.
 const DEFAULT_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png";
+// Avatar des toasts REROUTÉS des autres plugins Decky : le « ? » Steam neutre —
+// un toast AutoFlatpaks avec le logo Discord était trompeur (issue #4).
+const NEUTRAL_AVATAR = "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg";
 const STEAMID_BASE = BigInt("76561197960265728");
 
 function fakeSenderSid(sender: string): { sid64: string; accountid: number } {
@@ -64,23 +68,58 @@ function fakeSenderSid(sender: string): { sid64: string; accountid: number } {
   return { sid64: (STEAMID_BASE + BigInt(accountid)).toString(), accountid };
 }
 
+// Steam rafraîchit en ASYNC le persona d'un accountid inconnu et efface
+// m_strPlayerName → titre qui « flicke »/disparaît sur le toast (issue #4).
+// Impossible de shadower le nom par getter : m_strPlayerName est un accessor
+// MobX NON-configurable (« Cannot redefine property », vérifié en live) — seul
+// le setter MobX est utilisable, et Steam repasse par lui pour écraser. Parade :
+// registre des personas factices + garde périodique qui ré-affirme le nom
+// (l'écriture MobX déclenche le re-render → le toast/tray se répare seul), plus
+// quelques ré-affirmations rapprochées juste après la notif pour couvrir la
+// fenêtre de rendu du toast. Les avatar_url_* restent shadowés par getter
+// (getters de prototype → defineProperty OK, vérifié en live).
+const fakePersonaNames = new Map<number, { sid64: string; name: string }>();
+let personaGuard: ReturnType<typeof setInterval> | null = null;
+
+function getFakePersona(sid64: string, accountid: number) {
+  const fs = (window as any).friendStore;
+  if (!fs?.GetFriendState) return null;
+  return fs.GetFriendState({
+    GetAccountID: () => accountid,
+    ConvertTo64BitString: () => sid64,
+    BIsValid: () => true,
+  })?.m_persona ?? null;
+}
+
+function assertPersonaName(sid64: string, accountid: number, name: string) {
+  try {
+    const p = getFakePersona(sid64, accountid);
+    if (p && p.m_strPlayerName !== name) p.m_strPlayerName = name;
+  } catch {}
+}
+
+function ensurePersonaGuard() {
+  if (personaGuard) return;
+  personaGuard = setInterval(() => {
+    for (const [accountid, e] of fakePersonaNames) assertPersonaName(e.sid64, accountid, e.name);
+  }, 2000);
+}
+
 function primeSenderPersona(sid64: string, accountid: number, name: string, avatar: string) {
   try {
-    const fs = (window as any).friendStore;
-    if (!fs?.GetFriendState) return; // pas de store → avatar/pseudo par défaut, la notif part quand même
-    const st = fs.GetFriendState({
-      GetAccountID: () => accountid,
-      ConvertTo64BitString: () => sid64,
-      BIsValid: () => true,
-    });
-    const p = st?.m_persona;
-    if (!p) return;
-    p.m_strPlayerName = name;
+    const p = getFakePersona(sid64, accountid);
+    if (!p) return; // pas de store → avatar/pseudo par défaut, la notif part quand même
+    try { p.m_strPlayerName = name; } catch {}
     for (const k of ["avatar_url_small", "avatar_url_medium", "avatar_url_full"]) {
       try {
         Object.defineProperty(p, k, { get: () => avatar, configurable: true });
       } catch {}
     }
+    fakePersonaNames.set(accountid, { sid64, name });
+    ensurePersonaGuard();
+    // Le refresh Steam qui efface le nom arrive typiquement <1 s après la
+    // création du persona → ré-affirmations rapprochées pendant le toast.
+    for (const ms of [300, 800, 1500]) setTimeout(() => assertPersonaName(sid64, accountid, name), ms);
   } catch {}
 }
 
@@ -144,14 +183,19 @@ export function patchDeckyToaster(_tries = 0) {
       }
       try {
         const str = (v: any) => (typeof v === "string" ? v : v == null ? "" : "Notification");
-        chatStyleNotification(str(toast?.title) || "Decky", str(toast?.body));
+        // Toast d'un plugin quelconque → avatar « ? » Steam neutre, PAS le logo
+        // Discord (issue #4 : AutoFlatpaks passait pour un message Discord).
+        chatStyleNotification(str(toast?.title) || "Decky", str(toast?.body), undefined, NEUTRAL_AVATAR);
       } catch (e) {
         console.error("[Steamcord] safe toaster failed", e);
       }
     };
-    // Entrées natives restantes (toasts d'avant le patch, ou session native
-    // précédente sur un build qui plante) → purge en mode sûr.
-    if (!getNativeToasts()) sweepDeckyTrayGroups();
+    // Purge SYSTÉMATIQUE au chargement des entrées Decky natives restantes
+    // (toasts d'avant le patch, ou session native précédente) : sur un build
+    // qui plante, une entrée empoisonnée dans le tray tue le panneau de notifs
+    // pour toute la session, même notifs OK par ailleurs (issue #4). Les toasts
+    // Decky d'une session précédente sont périmés de toute façon.
+    sweepDeckyTrayGroups();
     console.log("[Steamcord] Decky toaster sécurisé (mode " + (getNativeToasts() ? "natif" : "sûr") + ")");
   } catch (e) {
     console.error("[Steamcord] patchDeckyToaster failed", e);

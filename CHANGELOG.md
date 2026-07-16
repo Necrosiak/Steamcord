@@ -3,6 +3,33 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.14.1 — 2026-07-16
+
+### Fixed
+- **Rerouted notifications from other Decky plugins no longer wear the
+  Discord logo** (#4): a toast from e.g. AutoFlatpaks used the generic
+  Discord avatar and looked like a Discord message — plugin toasts now get
+  the neutral Steam default avatar; the Discord logo is reserved for actual
+  Discord events without a custom avatar.
+- **Notification title could flicker or vanish** (#4): Steam refreshes the
+  personas backing the notifications asynchronously and could wipe the
+  sender's name mid-render (the name is a non-configurable MobX accessor, so
+  it can't be shadowed with a getter like the avatars) — a persona guard now
+  re-asserts the names of all notification personas, repairing the toast and
+  the notification tray within moments of any overwrite.
+- **A poisoned notification tray could silence every plugin's notifications
+  for the whole session** (#4): after using native Decky toasts on a Steam
+  build that can't render them, stale tray entries kept crashing the
+  notifications panel. The tray is now swept of leftover Decky entries at
+  every startup, regardless of the toggle. The toggle's description now
+  warns explicitly that most current builds (including SteamOS stable
+  3.8.15, same steamui bundle as the dev machine) crash on native rendering.
+- **Screen could never turn off while Steamcord was loaded** (#3,
+  experimental fix): the Discord audio engine's `AudioContext` was kept
+  permanently resumed, making Chromium hold an audio wake-lock. It is now
+  kept alive only during a voice call on this device and actively suspended
+  when idle (rejoining a call resumes it within ~1.5 s).
+
 ## 1.14.0 — 2026-07-16
 
 ### Added

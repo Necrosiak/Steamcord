@@ -1110,17 +1110,28 @@ window.Vencord.Plugins.plugins.Steamcord = {
             }, 100)
         })();
 
-        // Resume Discord's MediaEngine AudioContext if it somehow gets suspended
+        // Keep Discord's MediaEngine AudioContext alive ONLY while in a voice
+        // call on THIS device (SelectedChannelStore.getVoiceChannelId, same
+        // source of truth as the voice poller). Outside calls the context is
+        // actively suspended: a permanently-running AudioContext makes Chromium
+        // hold an audio wake-lock that keeps the screen from turning off
+        // (issue #3). Rejoining a call resumes it within ~1.5s.
         (function keepAudioAlive() {
             setInterval(() => {
                 try {
                     const me = Vencord.Webpack.findStore?.("MediaEngineStore")?.getMediaEngine?.();
-                    if (me?.audioContext?.state === "suspended") {
-                        me.audioContext.resume();
-                        console.log("[Steamcord] Resumed MediaEngine AudioContext");
+                    const ctx = me?.audioContext;
+                    if (!ctx) return;
+                    const inCall = !!Vencord.Webpack.findStore?.("SelectedChannelStore")?.getVoiceChannelId?.();
+                    if (inCall && ctx.state === "suspended") {
+                        ctx.resume();
+                        console.log("[Steamcord] Resumed MediaEngine AudioContext (in call)");
+                    } else if (!inCall && ctx.state === "running") {
+                        ctx.suspend();
+                        console.log("[Steamcord] Suspended MediaEngine AudioContext (idle, frees the audio wake-lock)");
                     }
                 } catch(_) {}
-            }, 5000);
+            }, 1500);
         })();
 
         // Token login: callable from QAM via CDP
