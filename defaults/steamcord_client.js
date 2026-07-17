@@ -209,6 +209,29 @@ window.Vencord.Plugins.plugins.Steamcord = {
         // Corrélation par userId. findByCode (≠ id de module) survit aux MAJ Discord.
         window.STEAMCORD_VIDEO = window.STEAMCORD_VIDEO || {}; // userId -> { pc, streamKey }
 
+        // Streams visibles d'un salon = UNION de deux registres du store (issue #8) :
+        // « active streams » (les nôtres / déjà regardés — les seuls peuplés en appel
+        // 1:1, ce que le code utilisait partout) et « application streams » (registre
+        // gateway STREAM_CREATE/DELETE : contient AUSSI les streams des autres en
+        // salon de serveur/groupe et les re-partages, invisibles côté active tant
+        // qu'on ne les regarde pas). Dédupliqué par clé, l'entrée active (porteuse
+        // de state) gagne.
+        window.__sc_streamsForChannel = (chId) => {
+            const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
+            if (!ASS || !chId) return [];
+            const keyOf = (s) => {
+                const owner = s.ownerId || s.userId;
+                return s.guildId ? `guild:${s.guildId}:${s.channelId}:${owner}` : `call:${s.channelId}:${owner}`;
+            };
+            const out = new Map();
+            for (const s of (ASS.getAllActiveStreamsForChannel?.(chId) || [])) out.set(keyOf(s), s);
+            for (const s of (ASS.getAllApplicationStreamsForChannel?.(chId) || [])) {
+                const k = keyOf(s);
+                if (!out.has(k)) out.set(k, s);
+            }
+            return Array.from(out, ([key, s]) => ({ key, s }));
+        };
+
         window.STEAMCORD_startVideoRelay = async (userId) => {
             try {
                 const WP = Vencord.Webpack;
@@ -219,12 +242,11 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 // qu'il faut WATCH pour s'abonner ; (b) CAMÉRA = pas de stream, Discord
                 // rend déjà la cam du participant dans la tuile vocale → on capte
                 // directement (pas de STREAM_WATCH, pas de streamKey).
-                const s = (ASS.getAllActiveStreamsForChannel(chId) || []).find(x => (x.ownerId || x.userId) === userId);
+                const entry = window.__sc_streamsForChannel(chId).find(e => (e.s.ownerId || e.s.userId) === userId);
+                const s = entry && entry.s;
                 let streamKey = null;
                 if (s) {
-                    streamKey = s.guildId
-                        ? `guild:${s.guildId}:${s.channelId}:${s.ownerId}`
-                        : `call:${s.channelId}:${s.ownerId}`;
+                    streamKey = entry.key;
                     // Regarder le stream (s'abonner) — SEULEMENT si pas déjà viewer, car
                     // re-dispatcher STREAM_WATCH re-render le tile et tue la piste captée.
                     const myId = WP.findStore("UserStore").getCurrentUser()?.id;
@@ -1064,13 +1086,10 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     try {
                         if (!window.STEAMCORD_WS || window.STEAMCORD_WS.readyState !== 1) return;
                         const SCS = Vencord.Webpack.findStore("SelectedChannelStore");
-                        const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
                         const vcid = SCS?.getVoiceChannelId?.() ?? null;
                         const now = new Set();
                         if (vcid) {
-                            for (const s of (ASS?.getAllActiveStreamsForChannel?.(vcid) || [])) {
-                                const owner = s.ownerId || s.userId;
-                                const key = s.guildId ? `guild:${s.guildId}:${s.channelId}:${owner}` : `call:${s.channelId}:${owner}`;
+                            for (const { key } of window.__sc_streamsForChannel(vcid)) {
                                 now.add(key);
                                 steamcordStreamMisses.delete(key);
                                 if (!steamcordStreamKeys.has(key))

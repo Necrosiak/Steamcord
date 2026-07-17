@@ -3,6 +3,20 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.14.4 — 2026-07-17
+
+### Fixed
+- **Streams from other people never showed up in group DMs and server
+  voice channels, and a share that was closed and re-opened stayed
+  invisible until you left and rejoined the call** (#8): the plugin only
+  polled Discord's *active* stream registry, which is populated in 1:1
+  calls but only contains your own stream — or one you are already
+  watching — in group and guild channels, and misses re-created streams.
+  Stream detection (both the LIVE badge/Watch button and the watch
+  action itself) now also reads the gateway-fed *application* stream
+  registry, which tracks every stream in the channel, so streams appear
+  in every call type and re-opened shares are picked up automatically.
+
 ## 1.14.3 — 2026-07-17
 
 ### Fixed
