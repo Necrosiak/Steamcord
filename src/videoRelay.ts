@@ -58,6 +58,14 @@ export function initVideoRelay() {
 }
 
 export function watchVideo(userId: string) {
+  // Un seul stream regardé à la fois (issue #8). Le relais capture les <video>
+  // du DOM globalement (impossible d'associer un élément à un stream précis) →
+  // deux streams regardés simultanément se recopient (bug « miroir » : le 2e
+  // affiche le 1er). En plus, le QAM est étroit : un seul stream affiché est
+  // plus lisible. On arrête donc tout autre stream avant d'ouvrir celui-ci.
+  for (const other of Array.from(watching)) {
+    if (other !== userId) stopVideo(other);
+  }
   watching.add(userId);
   notify();
   call("watch_video", userId).catch(() => {});

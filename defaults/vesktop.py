@@ -437,8 +437,30 @@ async def launch():
         cmd = ["flatpak", "run", VESKTOP_APP]
     else:
         cmd = [_native_bin()]
+
+    # Extinction rapide (issue #7) : `flatpak run` enregistre Vesktop dans SON
+    # PROPRE scope systemd (app-flatpak-dev.vencord.Vesktop-*.scope), HORS du
+    # cgroup de notre unité (bwrap s'en échappe, cf. le flatpak-kill plus haut).
+    # À l'arrêt système ce scope reçoit SIGTERM, qu'Electron/bwrap ignore →
+    # systemd attend le TimeoutStopSec par défaut (~90 s) avant le SIGKILL vu
+    # dans les logs de David → l'extinction PEND (rétroéclairage faible, ventilo
+    # qui tourne longtemps). Fix : un ExecStop qui tue activement l'app (flatpak
+    # kill / pkill) — le scope se vide et s'arrête aussitôt — + un TimeoutStopSec
+    # court en filet. L'ExecStop hérite de l'Environment (--setenv) de l'unité,
+    # donc flatpak kill atteint bien l'instance via le bus de session.
+    stop_props = ["--property=TimeoutStopSec=8", "--property=KillMode=mixed"]
+    if b == "flatpak":
+        _fp = shutil.which("flatpak")
+        if _fp:
+            stop_props.append(f"--property=ExecStop={_fp} kill {VESKTOP_APP}")
+    else:
+        _pk = shutil.which("pkill")
+        if _pk:
+            stop_props.append(f"--property=ExecStop={_pk} -f {_PROC_PATTERN}")
+
     await create_subprocess_exec(
         "systemd-run", "--user", "--collect", f"--unit={VESKTOP_UNIT}",
+        *stop_props,
         *setenv,
         *cmd,
         "--remote-debugging-port=9223",

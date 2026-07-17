@@ -3,6 +3,36 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.14.5 — 2026-07-17
+
+### Fixed
+- **Watching a second stream mirrored the first one** (#8): with several
+  people streaming, watching one stream and then another showed the first
+  stream in both tiles (and, with screen + camera, the camera sometimes
+  came through black). The relay captures the rendered `<video>` elements
+  by size, with no reliable way to tell which element belongs to which
+  stream, so two streams watched at once cross-captured. Only one stream
+  is watched at a time now — the previous one is closed before the next
+  opens — which also keeps the narrow Quick Access panel readable.
+- **A re-opened share could come through black on the first watch** (#8):
+  when someone closes and re-opens their share, Discord re-subscribes you
+  automatically, but the relay could latch onto a not-yet-painting frame.
+  A re-created stream you are already relaying now restarts the relay so
+  it re-captures a live frame. (If it still comes through black, stop and
+  watch again.)
+- **The machine appeared to hang on shutdown while Steamcord was
+  installed** (#7): Vesktop runs in its own flatpak systemd scope, outside
+  the plugin's control group, and it ignored the shutdown SIGTERM — so the
+  system waited the full default stop timeout (~90s) before force-killing
+  it, leaving the machine with a dim backlight and the fan running before
+  it powered off. The Vesktop unit now terminates Vesktop immediately when
+  it stops and caps its stop timeout, so shutdown is prompt again.
+
+### Added
+- **Fullscreen toggle for a watched stream** (#8): a ⛶ button expands the
+  relayed video to fill the Quick Access panel, with a ✕ to exit — handy
+  on the small in-game panel.
+
 ## 1.14.4 — 2026-07-17
 
 ### Fixed

@@ -238,6 +238,22 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const ASS = WP.findStore("ApplicationStreamingStore");
                 const SCS = WP.findStore("SelectedChannelStore");
                 const chId = SCS.getVoiceChannelId();
+
+                // Exclusivité : UN SEUL relais vidéo à la fois (issue #8, bug « miroir »).
+                // grabAll() capture les <video> globalement, sans association
+                // élément→stream → deux streams regardés en même temps se recopient.
+                // On ferme donc tout autre relais ET on cesse de regarder son stream
+                // pour que, au moment du grab, SEUL le tile ciblé soit rendu.
+                {
+                    const closeOther = WP.findByCode('"STREAM_CLOSE",streamKey');
+                    for (const [uid, e] of Object.entries(window.STEAMCORD_VIDEO)) {
+                        if (uid === userId) continue;
+                        try { e.pc && e.pc.close(); } catch {}
+                        if (e.keepalive) clearInterval(e.keepalive);
+                        try { if (closeOther && e.streamKey) closeOther(e.streamKey); } catch {}
+                        delete window.STEAMCORD_VIDEO[uid];
+                    }
+                }
                 // Deux cas : (a) GO LIVE = un stream actif (ApplicationStreamingStore)
                 // qu'il faut WATCH pour s'abonner ; (b) CAMÉRA = pas de stream, Discord
                 // rend déjà la cam du participant dans la tuile vocale → on capte
@@ -1089,11 +1105,21 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         const vcid = SCS?.getVoiceChannelId?.() ?? null;
                         const now = new Set();
                         if (vcid) {
-                            for (const { key } of window.__sc_streamsForChannel(vcid)) {
+                            for (const { key, s } of window.__sc_streamsForChannel(vcid)) {
                                 now.add(key);
                                 steamcordStreamMisses.delete(key);
-                                if (!steamcordStreamKeys.has(key))
+                                if (!steamcordStreamKeys.has(key)) {
                                     window.STEAMCORD_WS.send(JSON.stringify({ type: "STREAM_START", streamKey: key }));
+                                    // Stream (re)créé : si on relaie déjà son propriétaire
+                                    // (l'ami a fermé puis rouvert son partage, Discord nous
+                                    // re-abonne tout seul), la piste rattrapée par le
+                                    // keepalive est souvent NOIRE (pas encore de keyframe) et
+                                    // n'est jamais 'ended' → elle reste noire (issue #8). On
+                                    // relance proprement le relais : re-watch + capture fraîche.
+                                    const owner = s && (s.ownerId || s.userId);
+                                    if (owner && window.STEAMCORD_VIDEO[owner])
+                                        setTimeout(() => { try { window.STEAMCORD_startVideoRelay(owner); } catch (_) {} }, 1500);
+                                }
                             }
                         }
                         // STOP débouncé : le store rend parfois TRANSITOIREMENT vide

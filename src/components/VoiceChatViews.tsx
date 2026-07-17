@@ -46,6 +46,49 @@ function MultiVideoTiles({ stream }: { stream: MediaStream }) {
   return <>{tracks.map((trk) => <SingleTrackTile key={trk.id} track={trk} />)}</>;
 }
 
+// Plein écran : la (les) tuile(s) vidéo occupent tout le panneau QAM par-dessus le
+// reste (le QAM est étroit ; suggestion #8 de David). Bouton ✕ pour refermer.
+function FullscreenVideo({ stream, onClose }: { stream: MediaStream; onClose: () => void }) {
+  const [closeFocused, setCloseFocused] = useState(false);
+  const tracks = stream.getVideoTracks();
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999, background: "#000",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
+    }}>
+      <div style={{
+        flex: 1, width: "100%",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
+        overflow: "hidden",
+      }}>
+        {tracks.map((trk) => (
+          <video
+            key={trk.id}
+            ref={(el) => { if (el) { const ms = new MediaStream([trk]); if (el.srcObject !== ms) { el.srcObject = ms; (el as any).play?.().catch(() => {}); } } }}
+            autoPlay muted playsInline
+            style={{ maxWidth: "100%", maxHeight: `${100 / tracks.length}%`, objectFit: "contain", display: "block" }}
+          />
+        ))}
+      </div>
+      <Btn
+        onClick={onClose}
+        onFocus={() => setCloseFocused(true)}
+        onBlur={() => setCloseFocused(false)}
+        onGamepadFocus={() => setCloseFocused(true)}
+        onGamepadBlur={() => setCloseFocused(false)}
+        style={{
+          margin: "0 0 10px", padding: "6px 18px", minHeight: 0, fontSize: 12, fontWeight: 600,
+          borderRadius: 6, color: "#fff",
+          background: closeFocused ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.1)",
+          ...focusHalo(ACCENT, closeFocused),
+        }}
+      >
+        {`✕ ${t("video_exit_fullscreen")}`}
+      </Btn>
+    </div>
+  );
+}
+
 const SliderFieldAny = SliderField as any;
 const Btn = DialogButton as any;
 
@@ -172,6 +215,9 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
   // Halo de focus des boutons (texte blanc + anneau, pas d'inversion de couleur).
   const [muteFocused, setMuteFocused] = useState<boolean>(false);
   const [videoFocused, setVideoFocused] = useState<boolean>(false);
+  const [fsFocused, setFsFocused] = useState<boolean>(false);
+  // Plein écran de la tuile vidéo (suggestion de David : le QAM est étroit).
+  const [fullscreen, setFullscreen] = useState<boolean>(false);
 
   const onVolumeChange = async (val: number) => {
     setVolume(val);
@@ -311,7 +357,28 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           >
             {watching ? t("video_stop") : `${user?.is_live ? "🖥️" : "📷"} ${t("video_watch")}`}
           </Btn>
-          {watching && remoteVideo && <MultiVideoTiles stream={remoteVideo} />}
+          {watching && remoteVideo && (
+            <>
+              <MultiVideoTiles stream={remoteVideo} />
+              <Btn
+                onClick={() => setFullscreen(true)}
+                onFocus={() => setFsFocused(true)}
+                onBlur={() => setFsFocused(false)}
+                onGamepadFocus={() => setFsFocused(true)}
+                onGamepadBlur={() => setFsFocused(false)}
+                style={{
+                  width: "100%", margin: "4px 0 0", padding: "4px 0", minHeight: 0, fontSize: 10, fontWeight: 600,
+                  borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  color: "#fff",
+                  background: fsFocused ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.08)",
+                  ...focusHalo(ACCENT, fsFocused),
+                }}
+              >
+                {`⛶ ${t("video_fullscreen")}`}
+              </Btn>
+              {fullscreen && <FullscreenVideo stream={remoteVideo} onClose={() => setFullscreen(false)} />}
+            </>
+          )}
           {watching && !remoteVideo && (
             <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("video_connecting")}</div>
           )}
