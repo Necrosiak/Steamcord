@@ -81,7 +81,10 @@ const SP = PanelSection || ((p: any) => <div>{p.children}</div>);
 const SR = PanelSectionRow || ((p: any) => <div>{p.children}</div>);
 
 const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: string; qr_scanned?: boolean; captcha_needed?: boolean }) => {
-  if (captcha_needed) { call("show_discord_login").catch(() => {}); }
+  // Deux méthodes de login SEULEMENT : QR (ci-dessous) ou Vesktop en mode
+  // Bureau. AUCUN identifiant ne transite par le plugin — pas de page de login
+  // interne (l'ancien bouton « plein écran » pilotait une BrowserView Steam de
+  // l'archi pré-Vesktop qui n'existe plus → il ne faisait rien, issue #6).
   return (
     <div style={{ display: "flex", flexDirection: "column", padding: "8px 15px" }}>
       <h2 style={{ marginBottom: 4 }}>{t("not_connected")}</h2>
@@ -106,22 +109,16 @@ const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: stri
         <p style={{ fontSize: 12, opacity: 0.6 }}>{t("qr_loading")}</p>
       )}
       {captcha_needed && (
-        <p style={{ fontSize: 12, color: "#ffcc44", margin: "4px 0" }}>
+        // Le login QR a buté sur un CAPTCHA : on ne peut pas le résoudre en
+        // gamemode (pas de page de login dans le plugin) → renvoyer vers Vesktop.
+        <p style={{ fontSize: 12, color: "#ffcc44", margin: "8px 0 0", lineHeight: 1.4 }}>
           {t("captcha_needed")}
         </p>
       )}
-      <div style={{ marginTop: 12 }}>
-        <DialogButton onClick={async () => { await call("show_discord_login"); }} style={{ fontSize: 13 }}>
-          {t("login_fullscreen")}
-        </DialogButton>
-        <p style={{ fontSize: 10, opacity: 0.5, margin: "4px 2px 0", lineHeight: 1.35 }}>
-          {t("login_fullscreen_explain")}
+      <div style={{ marginTop: 12, padding: "8px 10px", background: "rgba(255,255,255,0.05)", borderRadius: 8 }}>
+        <p style={{ fontSize: 11, opacity: 0.75, margin: 0, lineHeight: 1.45 }}>
+          {t("login_vesktop_hint")}
         </p>
-      </div>
-      <div style={{ marginTop: 8 }}>
-        <DialogButton onClick={async () => { await call("hide_discord_login"); }} style={{ fontSize: 12 }}>
-          {t("close_discord")}
-        </DialogButton>
       </div>
     </div>
   );

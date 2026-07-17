@@ -572,24 +572,6 @@ class Plugin:
         return cls.evt_handler.build_state_dict()
 
     @classmethod
-    async def show_discord_login(cls):
-        await cls.shared_js_tab.ensure_open()
-        await cls.shared_js_tab.evaluate("""
-            window.DISCORD_TAB.m_browserView.SetBounds(0, 0, 1280, 800);
-            window.DISCORD_TAB.m_browserView.SetVisible(true);
-        """)
-        cls.evt_handler._login_tab_visible = True
-
-    @classmethod
-    async def hide_discord_login(cls):
-        await cls.shared_js_tab.ensure_open()
-        await cls.shared_js_tab.evaluate("""
-            window.DISCORD_TAB.m_browserView.SetVisible(false);
-            window.DISCORD_TAB.m_browserView.SetBounds(0, 0, window.DISCORD_TAB.WIDTH, window.DISCORD_TAB.HEIGHT);
-        """)
-        cls.evt_handler._login_tab_visible = False
-
-    @classmethod
     async def login_with_token(cls, token: str):
         from tab_utils.cdp import get_tab
         tab = await get_tab("discord")

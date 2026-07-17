@@ -191,7 +191,6 @@ class EventHandler:
         self.logged_in = True
         self._qr_scanned = False
         self.remote_auth.stop()
-        self._login_tab_visible = False
         user_data = data.get("user") if isinstance(data, dict) else None
         if not user_data or not user_data.get("id"):
             return

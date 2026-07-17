@@ -3,6 +3,26 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.14.3 — 2026-07-17
+
+### Fixed
+- **The "Discord login (fullscreen)" button did nothing** (#6): it was a
+  leftover from the pre-Vesktop architecture, where Discord ran inside
+  Steam's own browser view (`window.DISCORD_TAB`). Since the move to
+  Vesktop that view no longer exists, so the button — and the automatic
+  fullscreen fallback when the QR login hits a CAPTCHA — failed silently
+  for everyone.
+
+### Changed
+- **Login is now QR code or Vesktop only, by design.** No login page is
+  hosted inside the plugin and no credentials ever pass through it. The
+  dead fullscreen-login button and its CAPTCHA fallback are removed; the
+  "not connected" panel now shows the QR code plus a clear hint: if you
+  can't scan it, open Vesktop once in Desktop Mode and sign in there —
+  Steamcord reuses that session. The CAPTCHA message points to the same
+  Vesktop path instead of a page that no longer opens. Translated across
+  all 9 languages.
+
 ## 1.14.2 — 2026-07-17
 
 ### Fixed
