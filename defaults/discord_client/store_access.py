@@ -141,6 +141,9 @@ class StoreAccess:
     async def get_local_mute(self, user_id):
         return await self._store_access_request("$get_local_mute", id=user_id)
 
+    async def get_user_volume(self, user_id, context="default"):
+        return await self._store_access_request("$get_user_volume", id=user_id, context=context)
+
     async def toggle_local_mute(self, user_id):
         return await self._store_access_request("$toggle_local_mute", id=user_id)
     async def set_local_mute(self, user_id, muted):

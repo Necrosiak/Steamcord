@@ -633,6 +633,15 @@ class Plugin:
         await cls.evt_handler.send_client({"type": "$set_user_volume", "id": user_id, "volume": volume, "context": context})
 
     @classmethod
+    async def get_user_volume(cls, user_id, context="default"):
+        # Vérité moteur (MediaEngineStore.getLocalVolume) : le QAM relit le
+        # volume au montage au lieu de retomber sur 100 % (issue #5). Un vieux
+        # client déjà en page ne connaît pas $get_user_volume → toute réponse
+        # non numérique retombe sur 100 (le défaut visuel d'avant).
+        r = await cls.evt_handler.api.get_user_volume(user_id, context)
+        return r if isinstance(r, (int, float)) and not isinstance(r, bool) else 100
+
+    @classmethod
     async def set_discord_status(cls, status):
         # status: "online" | "idle" | "dnd" | "invisible"
         await cls.evt_handler.send_client({"type": "$set_status", "status": status})

@@ -449,6 +449,14 @@ async def launch():
         # Login token persists, so we no longer need the window visible for the QR —
         # start it minimized so it runs invisibly in the background.
         "--start-minimized",
+        # Issue #5 : sur les GPU avec décodeur vidéo matériel (Steam Deck/VCN…),
+        # le décodage VAAPI d'Electron sort des frames VERTES pour les streams
+        # entrants (bug Chromium/VAAPI connu) → visionnage Go Live/cam
+        # inutilisable. On force le décodage LOGICIEL — c'est déjà le chemin
+        # (validé) de la BC-250, dont le GPU n'a pas de VCN. L'ENCODAGE (envoi
+        # de son propre partage) n'est pas touché.
+        "--disable-accelerated-video-decode",
+        "--disable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
         stdout=DEVNULL, stderr=DEVNULL, env=env,
     )
     for i in range(60):

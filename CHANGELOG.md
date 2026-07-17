@@ -3,6 +3,35 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.14.2 — 2026-07-17
+
+### Fixed
+- **Watching a friend's Go Live / camera showed a green picture on devices
+  with a hardware video decoder** (#5, e.g. Steam Deck): Electron's VAAPI
+  decode path outputs green frames for incoming WebRTC video on some
+  GPU/driver combos, and the relayed stream inherited them. Vesktop is now
+  launched with hardware video *decode* disabled (software decode, the same
+  path already proven on GPUs without a decoder); sending your own share is
+  unaffected.
+- **The screen never turned off after a voice call** (#3, follow-up): the
+  v1.14.1 fix suspended the media engine's `AudioContext`, but the real
+  wake-lock holders survive a call: WebRTC audio sinks (`<audio>` elements
+  fed by a `MediaStream`) keep "playing" silence and microphone capture
+  tracks stay live, so Chromium keeps its audio output stream open forever
+  (the lingering "Chromium" entry in Steam's volume mixer). A post-call
+  janitor now pauses leftover WebRTC sinks, stops orphaned capture tracks
+  and suspends every page `AudioContext` ~5 s after leaving a call —
+  verified end-to-end in sandbox (leaked sink reproduced, PipeWire streams
+  all released after hangup). Discord recreates everything on the next call.
+- **The "Watch" button could vanish while the friend was still streaming**
+  (#5): Discord's streaming store transiently reports no active streams
+  (quality renegotiation, reconnection hiccups) and a single empty poll was
+  enough to declare the stream dead. A stream must now be missing for 3
+  consecutive polls (~6 s) before the button is removed.
+- **Voice/stream volume sliders reset to 100% when reopening the panel**
+  (#5, UI only — the actual volume was preserved): the sliders now read the
+  engine's persisted volume when they mount instead of assuming 100%.
+
 ## 1.14.1 — 2026-07-16
 
 ### Fixed

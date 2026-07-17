@@ -155,6 +155,20 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
 
   // Volume du STREAM (audio du Go Live) — indépendant du volume de la voix (micro).
   const [streamVol, setStreamVol] = useState<number>(100);
+
+  // Volumes : relire la vérité moteur au montage — sinon les sliders retombaient
+  // à 100 % à chaque réouverture du QAM alors que le moteur gardait p. ex. 150 %
+  // (issue #5). Le volume ne change que via ces sliders → une lecture suffit.
+  useEffect(() => {
+    let alive = true;
+    call<[string, string], number>("get_user_volume", user.id, "default")
+      .then((v) => { if (alive && typeof v === "number") setVolume(Math.round(v)); })
+      .catch(() => {});
+    call<[string, string], number>("get_user_volume", user.id, "stream")
+      .then((v) => { if (alive && typeof v === "number") setStreamVol(Math.round(v)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [user.id]);
   // Halo de focus des boutons (texte blanc + anneau, pas d'inversion de couleur).
   const [muteFocused, setMuteFocused] = useState<boolean>(false);
   const [videoFocused, setVideoFocused] = useState<boolean>(false);

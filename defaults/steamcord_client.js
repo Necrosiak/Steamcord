@@ -532,6 +532,14 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // context "default" = voix, "stream" = audio du Go Live (volumes indépendants).
                                     FluxDispatcher.dispatch({ type: "AUDIO_SET_LOCAL_VOLUME", userId: data.id, volume: data.volume, context: data.context || "default" });
                                     return;
+                                case "$get_user_volume": {
+                                    // Vérité moteur pour les sliders du QAM : sans relecture au
+                                    // montage ils retombaient à 100 % à chaque réouverture alors
+                                    // que le moteur gardait p. ex. 150 % (issue #5).
+                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    result = MES?.getLocalVolume ? MES.getLocalVolume(data.id, data.context || "default") : 100;
+                                    break;
+                                }
                                 case "$get_local_mute": {
                                     // Mute LOCAL (côté client seulement : on ne les entend plus, eux ne le savent pas).
                                     const MES = Vencord.Webpack.findStore("MediaEngineStore");
@@ -1051,6 +1059,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 // connexion serait manqué. On diffe l'ensemble des streams actifs et on
                 // émet STREAM_START/STOP synthétiques sur changement (clé = call/guild:…:ownerId).
                 let steamcordStreamKeys = new Set();
+                const steamcordStreamMisses = new Map(); // key -> polls consécutifs où le stream manque
                 setInterval(() => {
                     try {
                         if (!window.STEAMCORD_WS || window.STEAMCORD_WS.readyState !== 1) return;
@@ -1063,13 +1072,27 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 const owner = s.ownerId || s.userId;
                                 const key = s.guildId ? `guild:${s.guildId}:${s.channelId}:${owner}` : `call:${s.channelId}:${owner}`;
                                 now.add(key);
+                                steamcordStreamMisses.delete(key);
                                 if (!steamcordStreamKeys.has(key))
                                     window.STEAMCORD_WS.send(JSON.stringify({ type: "STREAM_START", streamKey: key }));
                             }
                         }
-                        for (const key of steamcordStreamKeys)
-                            if (!now.has(key))
+                        // STOP débouncé : le store rend parfois TRANSITOIREMENT vide
+                        // (renégociation de qualité, hoquet de reconnexion) → le bouton
+                        // « Voir » disparaissait alors que l'ami streamait toujours
+                        // (issue #5). Un stream doit manquer 3 polls consécutifs (~6 s)
+                        // avant qu'on émette STREAM_STOP.
+                        for (const key of steamcordStreamKeys) {
+                            if (now.has(key)) continue;
+                            const miss = (steamcordStreamMisses.get(key) || 0) + 1;
+                            if (miss >= 3) {
+                                steamcordStreamMisses.delete(key);
                                 window.STEAMCORD_WS.send(JSON.stringify({ type: "STREAM_STOP", streamKey: key }));
+                            } else {
+                                steamcordStreamMisses.set(key, miss);
+                                now.add(key); // considéré actif tant que le débounce court
+                            }
+                        }
                         steamcordStreamKeys = now;
                     } catch (_) {}
                 }, 2000);
@@ -1110,25 +1133,99 @@ window.Vencord.Plugins.plugins.Steamcord = {
             }, 100)
         })();
 
-        // Keep Discord's MediaEngine AudioContext alive ONLY while in a voice
-        // call on THIS device (SelectedChannelStore.getVoiceChannelId, same
-        // source of truth as the voice poller). Outside calls the context is
-        // actively suspended: a permanently-running AudioContext makes Chromium
-        // hold an audio wake-lock that keeps the screen from turning off
-        // (issue #3). Rejoining a call resumes it within ~1.5s.
+        // ── Wake-lock audio (issue #3) ──────────────────────────────────────
+        // Le mixeur Steam du Deck montre un flux de LECTURE « Chromium » qui
+        // SURVIT à l'appel : des sinks WebRTC (<audio>/<video> à srcObject)
+        // restent « playing » et des pistes micro restent live après avoir
+        // quitté le vocal → Chromium garde sa sortie audio ouverte → l'écran ne
+        // s'éteint jamais. Suspendre le SEUL audioContext du MediaEngine
+        // (v1.14.1) ne suffisait pas : sur la BC-250 il n'existe même pas en
+        // appel — les vrais porteurs du wake-lock sont les sinks/pistes. On
+        // traque donc tout ce que la page crée pour pouvoir le libérer.
+        window.__STEAMCORD_ACS = window.__STEAMCORD_ACS || [];
+        window.__STEAMCORD_GUM_STREAMS = window.__STEAMCORD_GUM_STREAMS || [];
+        (function installAudioTrackers() {
+            if (window.__STEAMCORD_AUDIO_TRACKERS) return;
+            window.__STEAMCORD_AUDIO_TRACKERS = true;
+            for (const name of ["AudioContext", "webkitAudioContext"]) {
+                const Orig = window[name];
+                if (!Orig) continue;
+                const Wrapped = function (...args) {
+                    const inst = new Orig(...args);
+                    window.__STEAMCORD_ACS.push(inst);
+                    return inst;
+                };
+                Wrapped.prototype = Orig.prototype;
+                window[name] = Wrapped;
+            }
+            // Wrapper PASSE-PLAT (≠ override micro CEF plus haut : on ne remplace
+            // pas la capture, on mémorise juste les streams rendus pour pouvoir
+            // stopper les pistes orphelines hors appel). Vesktop only : sous CEF
+            // installMicOverride ré-écrase getUserMedia toutes les 2 s.
+            if (window.STEAMCORD_IS_VESKTOP) {
+                try {
+                    const md = navigator.mediaDevices;
+                    const origGUM = md.getUserMedia.bind(md);
+                    Object.defineProperty(md, "getUserMedia", {
+                        configurable: true,
+                        value: function (constraints) {
+                            const p = origGUM(constraints);
+                            p.then((s) => { window.__STEAMCORD_GUM_STREAMS.push(s); }).catch(() => {});
+                            return p;
+                        },
+                    });
+                } catch (_) {}
+            }
+        })();
+
+        // Hors appel (SelectedChannelStore.getVoiceChannelId, même source de
+        // vérité que le poller vocal) : suspendre en continu les AudioContexts,
+        // et UNE passe de nettoyage profond ~5 s après la fin d'appel
+        // (edge-triggered : un test micro lancé plus tard dans les réglages
+        // n'est pas impacté). Rejoindre un appel re-resume en ~1,5 s ; Discord
+        // recrée sinks et pistes à chaque connexion vocale.
         (function keepAudioAlive() {
+            let wasInCall = false;
+            let cleanupAt = 0;
             setInterval(() => {
                 try {
                     const me = Vencord.Webpack.findStore?.("MediaEngineStore")?.getMediaEngine?.();
-                    const ctx = me?.audioContext;
-                    if (!ctx) return;
+                    const engineCtx = me?.audioContext;
                     const inCall = !!Vencord.Webpack.findStore?.("SelectedChannelStore")?.getVoiceChannelId?.();
-                    if (inCall && ctx.state === "suspended") {
-                        ctx.resume();
-                        console.log("[Steamcord] Resumed MediaEngine AudioContext (in call)");
-                    } else if (!inCall && ctx.state === "running") {
-                        ctx.suspend();
-                        console.log("[Steamcord] Suspended MediaEngine AudioContext (idle, frees the audio wake-lock)");
+                    if (inCall) {
+                        wasInCall = true;
+                        cleanupAt = 0;
+                        if (engineCtx && engineCtx.state === "suspended") {
+                            engineCtx.resume();
+                            console.log("[Steamcord] Resumed MediaEngine AudioContext (in call)");
+                        }
+                        return;
+                    }
+                    window.__STEAMCORD_ACS = window.__STEAMCORD_ACS.filter((c) => c.state !== "closed");
+                    const ctxs = engineCtx ? [engineCtx, ...window.__STEAMCORD_ACS] : [...window.__STEAMCORD_ACS];
+                    for (const ctx of ctxs) {
+                        if (ctx.state === "running") {
+                            try { ctx.suspend(); console.log("[Steamcord] Suspended AudioContext (idle, frees the audio wake-lock)"); } catch (_) {}
+                        }
+                    }
+                    if (wasInCall) { wasInCall = false; cleanupAt = Date.now() + 5000; }
+                    if (cleanupAt && Date.now() >= cleanupAt) {
+                        cleanupAt = 0;
+                        let sinks = 0, mics = 0;
+                        for (const el of document.querySelectorAll("audio, video")) {
+                            // Seulement les sinks WebRTC (srcObject) — jamais un média
+                            // « normal » (sons de notification, aperçus…).
+                            if (el.srcObject && !el.paused) {
+                                try { el.pause(); el.srcObject = null; sinks++; } catch (_) {}
+                            }
+                        }
+                        for (const stream of window.__STEAMCORD_GUM_STREAMS.splice(0)) {
+                            for (const t of stream.getTracks()) {
+                                if (t.readyState === "live") { try { t.stop(); mics++; } catch (_) {} }
+                            }
+                        }
+                        if (sinks || mics)
+                            console.log("[Steamcord] post-call audio cleanup: " + sinks + " sink(s), " + mics + " capture track(s) released");
                     }
                 } catch(_) {}
             }, 1500);
