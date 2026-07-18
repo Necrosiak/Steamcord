@@ -216,6 +216,46 @@ window.Vencord.Plugins.plugins.Steamcord = {
         // salon de serveur/groupe et les re-partages, invisibles côté active tant
         // qu'on ne les regarde pas). Dédupliqué par clé, l'entrée active (porteuse
         // de state) gagne.
+        // Pistes vidéo ENTRANTES d'un utilisateur, lues sur le moteur média (issue #8).
+        // Helper global : sert au relais, et se sonde en direct via CDP pendant un
+        // vrai appel — c'est comme ça que l'association ci-dessous a été établie.
+        window.__sc_videoTracksFor = (userId) => {
+            const out = [];
+            const seen = new Set();
+            let eng = null;
+            try { eng = Vencord.Webpack.findStore("MediaEngineStore").getMediaEngine(); } catch (e) { return out; }
+            if (!eng || !eng.connections) return out;
+            // `c.pc` sur le build actuel, mais les noms sont minifiés et changent d'une
+            // version de Discord à l'autre → on reconnaît l'objet à son interface.
+            const findPc = (c) => {
+                if (c.pc && typeof c.pc.getReceivers === "function") return c.pc;
+                for (const k of Object.keys(c)) {
+                    const v = c[k];
+                    if (v && typeof v === "object" && typeof v.getReceivers === "function") return v;
+                }
+                return null;
+            };
+            for (const c of [...eng.connections]) {
+                const pc = findPc(c);
+                if (!pc) continue;
+                const isScreen = c.context === "stream" && c.streamUserId === userId;
+                const isVoice = c.context === "default";
+                if (!isScreen && !isVoice) continue;
+                for (const r of pc.getReceivers()) {
+                    const t = r.track;
+                    // Les transceivers pré-alloués sont là mais muted : les écarter.
+                    if (!t || t.kind !== "video" || t.muted || t.readyState !== "live") continue;
+                    if (seen.has(t.id)) continue;
+                    if (isScreen) { seen.add(t.id); out.push({ t, kind: "screen" }); continue; }
+                    const owner = (c.trackUserIds || {})[t.id];
+                    if (owner === userId) { seen.add(t.id); out.push({ t, kind: "camera" }); }
+                }
+            }
+            // Ordre déterministe (écran d'abord), plus aucun tri par taille.
+            out.sort((a, b) => (a.kind === "screen" ? 0 : 1) - (b.kind === "screen" ? 0 : 1));
+            return out;
+        };
+
         window.__sc_streamsForChannel = (chId) => {
             const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
             if (!ASS || !chId) return [];
@@ -224,7 +264,12 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 return s.guildId ? `guild:${s.guildId}:${s.channelId}:${owner}` : `call:${s.channelId}:${owner}`;
             };
             const out = new Map();
-            for (const s of (ASS.getAllActiveStreamsForChannel?.(chId) || [])) out.set(keyOf(s), s);
+            // Le registre « actif » GARDE une entrée state:"ENDED" pour un stream
+            // qu'on regardait et que son proprio a coupé (observé en live, QAM
+            // gardait la tuile) : un stream terminé n'est pas un stream.
+            for (const s of (ASS.getAllActiveStreamsForChannel?.(chId) || [])) {
+                if (s.state !== "ENDED") out.set(keyOf(s), s);
+            }
             for (const s of (ASS.getAllApplicationStreamsForChannel?.(chId) || [])) {
                 const k = keyOf(s);
                 if (!out.has(k)) out.set(k, s);
@@ -239,21 +284,6 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const SCS = WP.findStore("SelectedChannelStore");
                 const chId = SCS.getVoiceChannelId();
 
-                // Exclusivité : UN SEUL relais vidéo à la fois (issue #8, bug « miroir »).
-                // grabAll() capture les <video> globalement, sans association
-                // élément→stream → deux streams regardés en même temps se recopient.
-                // On ferme donc tout autre relais ET on cesse de regarder son stream
-                // pour que, au moment du grab, SEUL le tile ciblé soit rendu.
-                {
-                    const closeOther = WP.findByCode('"STREAM_CLOSE",streamKey');
-                    for (const [uid, e] of Object.entries(window.STEAMCORD_VIDEO)) {
-                        if (uid === userId) continue;
-                        try { e.pc && e.pc.close(); } catch {}
-                        if (e.keepalive) clearInterval(e.keepalive);
-                        try { if (closeOther && e.streamKey) closeOther(e.streamKey); } catch {}
-                        delete window.STEAMCORD_VIDEO[uid];
-                    }
-                }
                 // Deux cas : (a) GO LIVE = un stream actif (ApplicationStreamingStore)
                 // qu'il faut WATCH pour s'abonner ; (b) CAMÉRA = pas de stream, Discord
                 // rend déjà la cam du participant dans la tuile vocale → on capte
@@ -275,32 +305,54 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     console.log("[Steamcord] video: pas de stream → cas CAMÉRA pour " + userId);
                 }
 
-                // CAPTURER via captureStream() : la piste capturée suit le RENDU de
-                // l'élément. Quand Discord swappe/re-render le tile, la piste capturée
-                // passe "ended" → un keepalive la remplace (replaceTrack) sans renégocier.
-                // Capter JUSQU'À 2 vidéos live (une même personne peut partager
-                // ÉCRAN + CAMÉRA en même temps = 2 pistes). Triées par taille
-                // décroissante (l'écran est généralement plus grand que la cam).
-                const grabAll = (max) => {
-                    const cands = Array.from(document.querySelectorAll("video"))
-                        .filter(e => e.srcObject && e.srcObject.getVideoTracks().length
-                            && !e.srcObject.getVideoTracks()[0].muted && e.videoWidth > 0)
-                        .sort((a, b) => (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight));
-                    const out = [];
-                    const seen = new Set();
-                    for (const el of cands) {
-                        try {
-                            const ct = el.captureStream().getVideoTracks()[0];
-                            if (ct && ct.readyState === "live" && !seen.has(ct.id)) { seen.add(ct.id); out.push(ct); }
-                        } catch (e) { /* élément cross-origin (avatar/banner) → suivant */ }
-                        if (out.length >= max) break;
-                    }
-                    return out;
-                };
-                // Laisser le(s) tile(s) se (re)monter avant de capturer des pistes stables.
-                await new Promise(r => setTimeout(r, 1200));
-                let tracks = [];
-                for (let i = 0; i < 60 && tracks.length === 0; i++) { tracks = grabAll(2); if (!tracks.length) await new Promise(r => setTimeout(r, 100)); }
+                // SOURCE DES PISTES : le moteur média, PAS le DOM (issue #8).
+                //
+                // L'ancienne version capturait les <video> rendus (captureStream) en les
+                // triant par TAILLE, faute de savoir quel élément appartenait à quel flux.
+                // Deux problèmes, tous deux observés en vrai sur un appel :
+                //   1. deux vidéos rendues = recopie (le fameux « miroir »), et l'ordre
+                //      par taille est une devinette qui se trompe (une caméra de
+                //      téléphone peut être plus grande qu'un partage d'écran) ;
+                //   2. surtout, Discord NE REND QUE CE QU'IL AFFICHE : avec caméra ET
+                //      partage actifs (selfVideo + selfStream à true), le DOM ne
+                //      contenait qu'UN SEUL <video>. Un flux non affiché est donc
+                //      impossible à relayer — aucun tri ne pouvait corriger ça.
+                //
+                // On lit donc les pistes entrantes directement sur les RTCPeerConnection
+                // du moteur média, ce qui ne dépend plus du rendu. Association vérifiée
+                // en live (voir issue #8) :
+                //   • partage d'écran de X = piste sur la connexion context "stream"
+                //     dont streamUserId === X ;
+                //   • caméra de X = piste sur la connexion "default" (le vocal), le
+                //     propriétaire venant de connection.trackUserIds (trackId → userId).
+                // Les transceivers pré-alloués sont muted → on ne garde que live+unmuted.
+                //
+                // ⚠️ NE PAS se fier à participantOnScreen.userVideo pour distinguer
+                // caméra/écran : c'est un attribut du PARTICIPANT (« cette personne a sa
+                // caméra allumée »), pas de l'élément — vérifié en live, la même piste
+                // passe de true à false quand la personne coupe sa caméra.
+                const engineTracks = () => window.__sc_videoTracksFor(userId);
+                // Attendre TOUTES les pistes ATTENDUES, pas la première venue : au
+                // (re-)watch d'un Go Live la caméra est déjà là alors que l'écran
+                // n'arrive qu'après l'aller-retour STREAM_WATCH → sortir à la 1re
+                // piste = offre caméra seule, l'écran arrivé ensuite n'est jamais
+                // ajouté (pas de renégociation). Bug trouvé par le user au 1er test
+                // QAM (couper puis remettre cam+écran → plus que la caméra).
+                const expected = new Set();
+                if (s) expected.add("screen");
+                try {
+                    const vs = Object.values(WP.findStore("VoiceStateStore").getVoiceStatesForChannel(chId) || {});
+                    if (vs.some(v => v.userId === userId && v.selfVideo)) expected.add("camera");
+                } catch (e) { /* store indispo → on prend ce qui vient */ }
+                let found = [];
+                for (let i = 0; i < 80; i++) {
+                    found = engineTracks();
+                    const kinds = new Set(found.map(x => x.kind));
+                    if (found.length && [...expected].every(k => kinds.has(k))) break;
+                    await new Promise(r => setTimeout(r, 100));
+                }
+                const tracks = found.map(x => x.t);
+                if (found.length) console.log("[Steamcord] video: " + found.map(x => x.kind).join("+") + " pour " + userId + " (attendu: " + [...expected].join("+") + ")");
                 if (!tracks.length) { console.warn("[Steamcord] video: piste introuvable pour " + userId); return; }
 
                 // Fermer un éventuel relais précédent pour ce user avant d'en recréer un.
@@ -310,19 +362,59 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const pc = new RTCPeerConnection(null);
                 const senders = tracks.map(t => pc.addTrack(t));
 
-                // Keepalive : si une piste capturée meurt (re-render Discord), re-capturer
-                // les éléments live et remplacer les pistes des senders — flux continu.
+                // Keepalive : une piste du moteur meurt quand la personne coupe puis
+                // relance son partage (nouvelle piste, nouvel id) → on remplace sans
+                // renégocier. Contrairement à l'ancienne capture DOM, un simple
+                // re-render de Discord ne tue plus la piste : ce filet ne sert donc
+                // plus qu'aux vraies coupures.
+                // Le remplacement se fait PAR SORTE (écran→écran, caméra→caméra),
+                // JAMAIS par index : au retour d'un partage la seule piste fraîche
+                // peut être la caméra, et un mapping par index la collait sur le
+                // sender de l'ÉCRAN (miroir réinventé — trouvé au 1er test QAM).
+                // Si l'ensemble des SORTES change (caméra allumée en cours de route,
+                // écran revenu alors que son sender a été abandonné), l'offre est
+                // figée (pas de renégociation) → on RECONSTRUIT le relais entier.
+                const kinds = found.map(x => x.kind);
+                let staleMisses = 0;
+                const restart = (why) => {
+                    clearInterval(keepalive);
+                    const cur = window.STEAMCORD_VIDEO[userId];
+                    if (cur && cur.pc === pc) {
+                        console.log("[Steamcord] video: reconstruction du relais (" + why + ") pour " + userId);
+                        window.STEAMCORD_startVideoRelay(userId);
+                    }
+                };
                 const keepalive = setInterval(() => {
                     try {
                         if (pc.connectionState === "closed") { clearInterval(keepalive); return; }
-                        const dead = senders.some(s => !s.track || s.track.readyState === "ended");
-                        if (!dead) return;
-                        const fresh = grabAll(senders.length);
-                        senders.forEach((s, i) => {
-                            if ((!s.track || s.track.readyState === "ended") && fresh[i]) {
-                                s.replaceTrack(fresh[i]); console.log("[Steamcord] video: piste " + i + " remplacée (keepalive) pour " + userId);
+                        const fresh = engineTracks();
+                        // nouvelle sorte de piste qu'aucun sender ne porte → rebuild.
+                        if (fresh.some(f => !kinds.includes(f.kind))) { restart("nouvelle piste " + fresh.map(x => x.kind).join("+")); return; }
+                        // « morte » = finie OU MUETTE : quand la personne coupe SA
+                        // caméra, la piste reçue ne meurt pas, elle passe muted pour
+                        // toujours (observé en live : sender "live" figé). Le délai de
+                        // 8 s absorbe les mutes transitoires (réseau, keyframe).
+                        const gone = (tk) => !tk || tk.readyState === "ended" || tk.muted;
+                        const deadIdx = senders.map((sn, i) => gone(sn.track) ? i : -1).filter(i => i >= 0);
+                        if (!deadIdx.length) { staleMisses = 0; return; }
+                        const used = new Set(senders.filter(sn => !gone(sn.track)).map(sn => sn.track.id));
+                        let replaced = 0;
+                        for (const i of deadIdx) {
+                            const f = fresh.find(x => x.kind === kinds[i] && !used.has(x.t.id));
+                            if (f) { used.add(f.t.id); senders[i].replaceTrack(f.t); replaced++; console.log("[Steamcord] video: piste " + kinds[i] + " remplacée (keepalive) pour " + userId); }
+                        }
+                        // sender mort sans remplaçant de sa sorte pendant ~8 s :
+                        // • s'il RESTE des pistes (partage coupé, caméra gardée) →
+                        //   rebuild sans la sorte disparue (la tuile morte s'en va) ;
+                        // • s'il ne reste RIEN (tout coupé) → arrêt PROPRE du relais
+                        //   (pc + STREAM_CLOSE + entrée), sinon il tournait pour
+                        //   toujours avec une image figée (observé en live).
+                        if (replaced < deadIdx.length) {
+                            if (++staleMisses >= 8) {
+                                if (fresh.length) restart("piste " + kinds[deadIdx[0]] + " disparue");
+                                else { clearInterval(keepalive); window.STEAMCORD_stopVideoRelay(userId); }
                             }
-                        });
+                        } else { staleMisses = 0; }
                     } catch (e) { /* ignore */ }
                 }, 1000);
                 window.STEAMCORD_VIDEO[userId] = { pc, streamKey, keepalive };
@@ -335,7 +427,15 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     pc.addEventListener("icegatheringstatechange", cb);
                     setTimeout(res, 2000);
                 });
-                window.STEAMCORD_WS.send(JSON.stringify({ type: "$VIDEO_WEBRTC", userId, offer: pc.localDescription }));
+                // meta : dit au QAM quelle ligne m= est l'ÉCRAN et laquelle est la
+                // CAMÉRA (corrélation par mid, stable dans le SDP). Sans ça le front
+                // affiche des tuiles anonymes — et ne peut pas proposer « plein écran
+                // sur l'écran » vs « sur la caméra » (retour David, issue #8).
+                const kindByTrackId = Object.fromEntries(found.map(x => [x.t.id, x.kind]));
+                const meta = pc.getTransceivers()
+                    .filter(tr => tr.sender && tr.sender.track)
+                    .map(tr => ({ mid: tr.mid, kind: kindByTrackId[tr.sender.track.id] || "video" }));
+                window.STEAMCORD_WS.send(JSON.stringify({ type: "$VIDEO_WEBRTC", userId, offer: pc.localDescription, meta }));
                 console.log("[Steamcord] video: offer envoyée pour " + userId);
             } catch (e) { console.error("[Steamcord] video relay start failed", e); }
         };

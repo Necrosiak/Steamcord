@@ -1004,6 +1004,18 @@ export default definePlugin(() => {
           avatar: payload.icon,
           dm: true,
         });
+      } else if (payload.kind === "stream_start" || payload.kind === "camera_start") {
+        // Quelqu'un du vocal a lancé un partage d'écran / sa caméra (issue #8,
+        // demande user) : body = son pseudo (backend), corps localisé ici.
+        notify({
+          title: "",
+          body: payload.kind === "stream_start"
+            ? `🖥️ ${t("notif_stream_started")}`
+            : `📷 ${t("notif_camera_started")}`,
+          sender: payload.body || "Discord",
+          avatar: payload.icon,
+          dm: true,
+        });
       } else {
         // Message : title = pseudo de l'expéditeur (+ contexte « (#chan, Serveur) »
         // pour un chan), icon = son avatar Discord, kind = dm|group du backend.

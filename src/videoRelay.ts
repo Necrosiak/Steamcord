@@ -5,7 +5,11 @@
 import { call, addEventListener } from "@decky/api";
 
 type Listener = () => void;
+export type TrackKind = "screen" | "camera" | "video";
 const streams = new Map<string, MediaStream>();
+// kind de chaque piste, par userId puis par track.id — renseigné à l'arrivée de
+// la piste via la meta (mid → kind) envoyée par le client avec l'offre.
+const trackKinds = new Map<string, Map<string, TrackKind>>();
 const pcs = new Map<string, RTCPeerConnection>();
 const watching = new Set<string>();
 const listeners = new Set<Listener>();
@@ -24,12 +28,22 @@ export function initVideoRelay() {
       try {
         let pc = pcs.get(userId);
         if (pc) pc.close();
+        // Nouvelle offre = nouvel ensemble de pistes : repartir d'un stream vide,
+        // sinon les pistes de l'ancienne connexion (mortes) s'accumulent.
+        streams.delete(userId);
+        trackKinds.delete(userId);
         pc = new RTCPeerConnection();
         pcs.set(userId, pc);
+        const kindByMid = new Map<string, TrackKind>(
+          Array.isArray(data.meta) ? data.meta.map((m: any) => [String(m.mid), m.kind]) : [],
+        );
         pc.ontrack = (ev) => {
           const ms = streams.get(userId) || new MediaStream();
           ms.addTrack(ev.track);
           streams.set(userId, ms);
+          const kinds = trackKinds.get(userId) || new Map<string, TrackKind>();
+          kinds.set(ev.track.id, kindByMid.get(String(ev.transceiver?.mid)) || "video");
+          trackKinds.set(userId, kinds);
           notify();
         };
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -77,10 +91,15 @@ export function stopVideo(userId: string) {
   if (pc) { pc.close(); pcs.delete(userId); }
   const ms = streams.get(userId);
   if (ms) { ms.getTracks().forEach((t) => t.stop()); streams.delete(userId); }
+  trackKinds.delete(userId);
   notify();
   call("unwatch_video", userId).catch(() => {});
 }
 
 export const isWatching = (userId: string) => watching.has(userId);
 export const getStream = (userId: string) => streams.get(userId) || null;
+// kind d'une piste reçue ("screen" | "camera"), "video" si la meta manquait
+// (vieux client pas encore à jour sous un front neuf).
+export const getTrackKind = (userId: string, trackId: string): TrackKind =>
+  trackKinds.get(userId)?.get(trackId) || "video";
 export function subscribe(l: Listener) { listeners.add(l); return () => { listeners.delete(l); }; }

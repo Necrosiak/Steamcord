@@ -289,7 +289,12 @@ class EventHandler:
                 continue
 
             if channel_id == self.vc_channel_id:
-                if user_id not in self.vc_members:
+                # `existed` AVANT la création : un membre qui ARRIVE caméra allumée
+                # (ou le resync) ne doit pas déclencher le toast « a allumé sa
+                # caméra » — seule la vraie TRANSITION off→on d'un membre déjà
+                # présent compte.
+                existed = user_id in self.vc_members
+                if not existed:
                     user = User({"id": user_id, "username": "", "discriminator": None, "avatar": ""})
                     await user.populate(self.api)
                     self.vc_members[user_id] = user
@@ -301,6 +306,8 @@ class EventHandler:
                 new_mute = _flag("mute", "selfMute", "self_mute")
                 new_deaf = _flag("deaf", "selfDeaf", "self_deaf")
                 new_video = _flag("video", "selfVideo", "self_video")
+                if existed and new_video and not u.is_video:
+                    self._notify_video_event(u, "camera_start")
                 u.is_muted = new_mute
                 u.is_deafened = new_deaf
                 u.is_video = new_video
@@ -385,6 +392,9 @@ class EventHandler:
             payload["offer"] = data["offer"]
         if "ice" in data:
             payload["ice"] = data["ice"]
+        # meta: [{mid, kind}] — lets the QAM label each track (screen vs camera).
+        if "meta" in data:
+            payload["meta"] = data["meta"]
         await emit("video_webrtc", payload)
 
     async def _speaking(self, data):
@@ -427,16 +437,35 @@ class EventHandler:
             if captcha:
                 self._captcha_needed = True
 
+    def _notify_video_event(self, user, kind):
+        # Toast SteamOS quand quelqu'un du vocal lance un partage/sa caméra : sans
+        # ça, QAM fermé, on ne savait jamais qu'une vidéo avait démarré (Discord
+        # ne notifie pas ces events lui-même, c'est de l'UI in-app). Le frontend
+        # localise le corps via kind ; body = pseudo (persona du toast).
+        icon = user.avatar or ""
+        if icon and not icon.startswith("http"):
+            icon = f"https://cdn.discordapp.com/avatars/{user.id}/{icon}.png?size=64"
+        self.notification = {"title": "", "body": user.name or "",
+                             "kind": kind, "icon": icon}
+        self.notification_event.set()
+
     async def _stream_start(self, data):
         # Reflect Go Live state in the QAM. Discord emits STREAM_START for any
         # participant; the streamer is the last segment of the stream key
         # (call:channelId:ownerId / guild:guildId:channelId:ownerId).
         stream_key = data.get("streamKey", "") or ""
         owner_id = stream_key.split(":")[-1] if stream_key else None
+        # `already` d'ABORD : le poll du client ré-émet des STREAM_START
+        # synthétiques au resync — ne notifier que le VRAI démarrage.
+        already = owner_id in self.streaming_users if owner_id else True
         if owner_id:
             self.streaming_users.add(owner_id)
         if (self.me.id and self.me.id in stream_key) or not stream_key:
             self.me.is_live = True
+        elif owner_id and not already:
+            member = self.vc_members.get(owner_id)
+            if member:
+                self._notify_video_event(member, "stream_start")
 
     async def _stream_stop(self, data):
         stream_key = data.get("streamKey", "") or ""

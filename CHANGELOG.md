@@ -3,6 +3,63 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.14.6 — 2026-07-18
+
+### Fixed
+- **Incoming video rewritten: mirrored cameras, ghost tiles and black
+  streams** (#8): the relay used to capture the `<video>` elements Discord
+  had rendered, sorted by size — with no way to tell which element belonged
+  to which stream, and no way at all to capture a stream Discord had
+  decided not to render (with camera + screen share active, only one of
+  the two exists in the DOM; live-debugged on a real call). Incoming video
+  is now read straight from Discord's media engine (`RTCPeerConnection`
+  receivers), where every track is tied to its owner and its type: the
+  screen share is the track on the `stream` connection of that user, the
+  camera comes from the voice connection's track-owner table. No more
+  guessing — camera-only mirroring, "first watch shows only the camera",
+  and the ghost/black tiles that survived re-joining a call should all be
+  gone, and camera + screen share can finally be watched together.
+- **Tiles are labeled** (#8): each incoming video tile now says what it is
+  (🖥️ screen / 📷 camera) — the offer carries a per-track label so the
+  panel no longer shows anonymous tiles.
+
+### Added
+- **Toast when someone goes live**: starting a screen share or turning a
+  camera on in your voice channel now shows a SteamOS notification with
+  the person's name and avatar — before, with the panel closed, you never
+  knew a video had started (Discord itself doesn't notify these events).
+  Only real transitions notify: joining a call where someone is already
+  streaming stays silent.
+
+### Changed
+- **Fullscreen reworked** (#8, suggested by David): the fullscreen view is
+  now a real Steam modal rendered above the whole screen (the previous
+  in-panel overlay could not escape the Quick Access sidebar), one video
+  at a time — each tile has its own ⛶ button (choose the screen *or* the
+  camera) — and the controller's **B** button closes it.
+- **"v4l2loopback is installed but not loaded" that no command could fix**
+  (#9): the module can already be loaded by something else — on Bazzite
+  `/usr/lib/modprobe.d/20-akmods.conf` loads it as the OBS Virtual Camera,
+  without the `video_nr=42` device Steamcord needs. `modprobe` is a no-op
+  when the module is already loaded: it exits 0, prints nothing, and
+  ignores the parameters. The screen share hint therefore handed out a
+  command that silently did nothing, however many times you ran it.
+  Steamcord now tells that case apart from a module that is simply not
+  loaded, and unloads it first.
+- **Screen share stopped working again after every reboot**: nothing ever
+  persisted the module configuration, so `/dev/video42` was gone on the
+  next boot and the hint came back. The fix now writes
+  `/etc/modprobe.d/99-steamcord-v4l2loopback.conf` and
+  `/etc/modules-load.d/steamcord-v4l2loopback.conf`.
+
+### Changed
+- The screen share hint is delivered as a chat-style toast, which is too
+  small for a multi-line shell block and cannot be copied from in game
+  mode. Steamcord now drops a ready-to-run `~/steamcord-fix-v4l2.sh` and
+  the toast just shows `bash ~/steamcord-fix-v4l2.sh`. The script is safe
+  to re-run, and reports what is still holding the module if the unload
+  fails.
+
 ## 1.14.5 — 2026-07-17
 
 ### Fixed

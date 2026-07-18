@@ -2,8 +2,8 @@ import { call } from "@decky/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { t } from "../i18n";
-import { SliderField, DialogButton } from "@decky/ui";
-import { watchVideo, stopVideo, isWatching, getStream, subscribe } from "../videoRelay";
+import { SliderField, DialogButton, ModalRoot, showModal } from "@decky/ui";
+import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
 import { focusHalo, ACCENT, DANGER } from "./Styled";
 
@@ -34,58 +34,87 @@ function VideoTile({ stream }: { stream: MediaStream }) {
   );
 }
 
+// Libellé humain d'une piste selon son kind (transmis par le client dans la meta
+// de l'offre : écran vs caméra — issue #8, on n'affiche plus de tuiles anonymes).
+const trackLabel = (kind: string) =>
+  kind === "screen" ? `🖥️ ${t("video_kind_screen")}` : kind === "camera" ? `📷 ${t("video_kind_camera")}` : "🎬";
+
 // Une tuile par PISTE vidéo : un participant peut diffuser ÉCRAN + CAMÉRA en même
 // temps (2 pistes dans le même MediaStream) → on les affiche séparément (un <video>
-// ne joue qu'une piste). Stream stable par piste pour ne pas re-brancher à chaque rendu.
-function SingleTrackTile({ track }: { track: MediaStreamTrack }) {
+// ne joue qu'une piste), chacune avec son libellé et SON bouton plein écran
+// (retour David #8 : « choose between the screen and camera to fullscreen, not
+// both »). Stream stable par piste pour ne pas re-brancher à chaque rendu.
+function SingleTrackTile({ userId, track, onFullscreen }:
+  { userId: string; track: MediaStreamTrack; onFullscreen: () => void }) {
   const ms = useMemo(() => new MediaStream([track]), [track]);
-  return <VideoTile stream={ms} />;
-}
-function MultiVideoTiles({ stream }: { stream: MediaStream }) {
-  const tracks = stream.getVideoTracks();
-  return <>{tracks.map((trk) => <SingleTrackTile key={trk.id} track={trk} />)}</>;
-}
-
-// Plein écran : la (les) tuile(s) vidéo occupent tout le panneau QAM par-dessus le
-// reste (le QAM est étroit ; suggestion #8 de David). Bouton ✕ pour refermer.
-function FullscreenVideo({ stream, onClose }: { stream: MediaStream; onClose: () => void }) {
-  const [closeFocused, setCloseFocused] = useState(false);
-  const tracks = stream.getVideoTracks();
+  const [fsFocused, setFsFocused] = useState(false);
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 9999, background: "#000",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
-    }}>
-      <div style={{
-        flex: 1, width: "100%",
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
-        overflow: "hidden",
-      }}>
-        {tracks.map((trk) => (
-          <video
-            key={trk.id}
-            ref={(el) => { if (el) { const ms = new MediaStream([trk]); if (el.srcObject !== ms) { el.srcObject = ms; (el as any).play?.().catch(() => {}); } } }}
-            autoPlay muted playsInline
-            style={{ maxWidth: "100%", maxHeight: `${100 / tracks.length}%`, objectFit: "contain", display: "block" }}
-          />
-        ))}
-      </div>
+    <div>
+      <VideoTile stream={ms} />
       <Btn
-        onClick={onClose}
-        onFocus={() => setCloseFocused(true)}
-        onBlur={() => setCloseFocused(false)}
-        onGamepadFocus={() => setCloseFocused(true)}
-        onGamepadBlur={() => setCloseFocused(false)}
+        onClick={onFullscreen}
+        onFocus={() => setFsFocused(true)}
+        onBlur={() => setFsFocused(false)}
+        onGamepadFocus={() => setFsFocused(true)}
+        onGamepadBlur={() => setFsFocused(false)}
         style={{
-          margin: "0 0 10px", padding: "6px 18px", minHeight: 0, fontSize: 12, fontWeight: 600,
-          borderRadius: 6, color: "#fff",
-          background: closeFocused ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.1)",
-          ...focusHalo(ACCENT, closeFocused),
+          width: "100%", margin: "2px 0 0", padding: "4px 0", minHeight: 0, fontSize: 10, fontWeight: 600,
+          borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          color: "#fff",
+          background: fsFocused ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.08)",
+          ...focusHalo(ACCENT, fsFocused),
         }}
       >
-        {`✕ ${t("video_exit_fullscreen")}`}
+        {`⛶ ${trackLabel(getTrackKind(userId, track.id))}`}
       </Btn>
     </div>
+  );
+}
+function MultiVideoTiles({ userId, stream, onFullscreen }:
+  { userId: string; stream: MediaStream; onFullscreen: (trackId: string) => void }) {
+  const tracks = stream.getVideoTracks();
+  return (
+    <>
+      {tracks.map((trk) => (
+        <SingleTrackTile key={trk.id} userId={userId} track={trk} onFullscreen={() => onFullscreen(trk.id)} />
+      ))}
+    </>
+  );
+}
+
+const ModalRootAny = ModalRoot as any;
+
+// Plein écran : UNE SEULE piste (choisie par sa tuile), dans une VRAIE modale
+// Steam (showModal/ModalRoot — même mécanisme que les menus SkullKey). Un
+// overlay position:fixed ne sort JAMAIS du panneau QAM : gamescope ne composite
+// que la bande de droite (vérifié par capture CEF vs écran réel — la page se
+// croyait plein écran, le user voyait une tranche). La modale, elle, est rendue
+// par Steam par-dessus tout l'écran, et le bouton B la ferme nativement
+// (onCancel) — exactement la maquette « window popup » de David (#8).
+function FullscreenVideoModal({ track, label, closeModal }:
+  { track: MediaStreamTrack; label: string; closeModal?: () => void }) {
+  const ms = useMemo(() => new MediaStream([track]), [track]);
+  // La piste meurt (partage coupé pendant le plein écran) → on se referme au
+  // lieu de laisser une image figée.
+  useEffect(() => {
+    const iv = setInterval(() => { if (track.readyState === "ended") closeModal?.(); }, 1000);
+    return () => clearInterval(iv);
+  }, [track]);
+  const ref = useCallback((el: HTMLVideoElement | null) => {
+    if (el && el.srcObject !== ms) { el.srcObject = ms; (el as any).play?.().catch(() => {}); }
+  }, [ms]);
+  return (
+    <ModalRootAny closeModal={closeModal} onCancel={() => closeModal?.()} bAllowFullSize>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
+        <video
+          ref={ref}
+          autoPlay muted playsInline
+          style={{ width: "100%", maxHeight: "72vh", objectFit: "contain", background: "#000", borderRadius: 6, display: "block" }}
+        />
+        <div style={{ fontSize: 11, opacity: 0.6 }}>{`${t("video_exit_fullscreen")} (B)`}</div>
+      </div>
+    </ModalRootAny>
   );
 }
 
@@ -174,6 +203,12 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
   const [localMuted, setLocalMuted] = useState<boolean>(false);
   // Vidéo relayée (Go Live/cam) de ce participant, affichée dans son bloc.
   const { stream: remoteVideo, watching } = useRemoteVideo(user.id);
+  // La personne a tout coupé (plus ni Go Live ni caméra) pendant qu'on regardait
+  // → arrêter le relais et jeter les tuiles, sinon elles restaient figées dans
+  // le QAM (observé au test user). Re-cliquer Voir relancera tout proprement.
+  useEffect(() => {
+    if (watching && !user?.is_live && !user?.is_video) stopVideo(user.id);
+  }, [watching, user?.is_live, user?.is_video, user.id]);
 
   const speaking = user?.is_speaking;
   const muted = user?.is_muted;
@@ -215,9 +250,6 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
   // Halo de focus des boutons (texte blanc + anneau, pas d'inversion de couleur).
   const [muteFocused, setMuteFocused] = useState<boolean>(false);
   const [videoFocused, setVideoFocused] = useState<boolean>(false);
-  const [fsFocused, setFsFocused] = useState<boolean>(false);
-  // Plein écran de la tuile vidéo (suggestion de David : le QAM est étroit).
-  const [fullscreen, setFullscreen] = useState<boolean>(false);
 
   const onVolumeChange = async (val: number) => {
     setVolume(val);
@@ -358,26 +390,16 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
             {watching ? t("video_stop") : `${user?.is_live ? "🖥️" : "📷"} ${t("video_watch")}`}
           </Btn>
           {watching && remoteVideo && (
-            <>
-              <MultiVideoTiles stream={remoteVideo} />
-              <Btn
-                onClick={() => setFullscreen(true)}
-                onFocus={() => setFsFocused(true)}
-                onBlur={() => setFsFocused(false)}
-                onGamepadFocus={() => setFsFocused(true)}
-                onGamepadBlur={() => setFsFocused(false)}
-                style={{
-                  width: "100%", margin: "4px 0 0", padding: "4px 0", minHeight: 0, fontSize: 10, fontWeight: 600,
-                  borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                  color: "#fff",
-                  background: fsFocused ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.08)",
-                  ...focusHalo(ACCENT, fsFocused),
-                }}
-              >
-                {`⛶ ${t("video_fullscreen")}`}
-              </Btn>
-              {fullscreen && <FullscreenVideo stream={remoteVideo} onClose={() => setFullscreen(false)} />}
-            </>
+            <MultiVideoTiles
+              userId={user.id}
+              stream={remoteVideo}
+              onFullscreen={(tid) => {
+                const trk = remoteVideo.getVideoTracks().find((x) => x.id === tid);
+                if (trk) showModal(
+                  <FullscreenVideoModal track={trk} label={trackLabel(getTrackKind(user.id, trk.id))} />,
+                );
+              }}
+            />
           )}
           {watching && !remoteVideo && (
             <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("video_connecting")}</div>
