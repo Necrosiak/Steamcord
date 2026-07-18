@@ -19,6 +19,42 @@ if (!window.STEAMCORD_IS_VESKTOP) try {
     };
 } catch(_) {}
 
+// ── Auto-validation de la modale Vesktop de partage d'écran ─────────────────
+// Le Go Live NATIF (getDisplayMedia → setDisplayMediaRequestHandler de Vesktop)
+// ouvre la modale qualité/audio de Vesktop DANS la fenêtre Discord cachée :
+// personne ne peut la cliquer → le handler main-process attendrait à jamais et
+// le partage resterait bloqué. On la valide automatiquement : 1) audio système
+// via venmic (équivalent du choix « Entire System » de la modale), 2) clic sur
+// « Go Live ». Observateur PERMANENT (pas lié à $golive) : la modale peut
+// apparaître pour tout démarrage de stream. Qualité préréglée 1080p60 via
+// VesktopState si l'utilisateur n'a jamais rien choisi (la patch screenShareFixes
+// de Vesktop applique ces contraintes sur la piste vidéo).
+if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
+    try {
+        const st = JSON.parse(localStorage.getItem("VesktopState") || "{}");
+        if (!st.screenshareQuality) {
+            st.screenshareQuality = { resolution: "1080", frameRate: "60" };
+            localStorage.setItem("VesktopState", JSON.stringify(st));
+        }
+    } catch (_) {}
+    window.STEAMCORD_PICKER_WATCHER = setInterval(async () => {
+        try {
+            const footer = document.querySelector(".vcd-screen-picker-footer");
+            if (!footer || footer.dataset.scAuto) return;
+            const btn = Array.from(footer.querySelectorAll("button"))
+                .find(b => !b.disabled && /go live/i.test(b.textContent || ""));
+            if (!btn) return;
+            footer.dataset.scAuto = "1";
+            // venmic AVANT le clic : le device "vencord-screen-share" doit exister
+            // quand screenShareFixes attache l'audio au stream. Échec toléré
+            // (venmic absent/pipewire KO) → partage vidéo seule.
+            try { await window.VesktopNative?.virtmic?.startSystem?.([]); } catch (_) {}
+            btn.click();
+            console.log("[Steamcord] modale Vesktop de partage auto-validée (audio système via venmic)");
+        } catch (_) {}
+    }, 500);
+}
+
 window.Vencord.Plugins.plugins.Steamcord = {
     name: "Steamcord",
     description: "Plugin required for Steamcord to work",
@@ -740,8 +776,10 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // L'ancienne API (modules m.startStream/m.stopStream) a DISPARU de
                                     // Discord. On utilise les action creators actuels via findByCode
                                     // (robuste aux changements d'ID de module) : STREAM_START / STREAM_STOP.
-                                    // getDisplayMedia est surchargé (webrtc_client.js → capture GStreamer
-                                    // plein écran) → pas de picker.
+                                    // getDisplayMedia (webrtc_client.js) : portail NATIF d'abord — en
+                                    // mode jeu c'est notre portal_shim.py qui sert le node gamescope,
+                                    // la modale Vesktop est auto-validée (watcher ci-dessus) — puis
+                                    // repli sur le relais GStreamer local. Aucun picker visible.
                                     const WP = Vencord.Webpack;
                                     try {
                                         if (data.stop) {

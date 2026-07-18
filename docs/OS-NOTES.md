@@ -25,10 +25,24 @@ So on a distro without flatpak, either install flatpak
 (`sudo pacman -S flatpak`, `sudo apt install flatpak`, …) or the native
 vesktop package.
 
-## Screen-share camera (Game Mode)
+## Screen share in Game Mode (native Go Live)
 
-gamescope has no screen-cast portal, so Steamcord streams the screen through
-a **virtual camera**: the `v4l2loopback` kernel module must exist and be
+gamescope has no screen-cast portal, so Steamcord ships its own: the backend
+runs `portal_shim.py`, a tiny `org.freedesktop.portal.ScreenCast` service that
+auto-approves capture requests with the gamescope PipeWire node (the one Steam
+Game Recording uses). The regular **Go Live** button therefore works natively
+in Game Mode — full resolution, game audio via venmic, no kernel module, no
+rootfs writes (survives SteamOS A/B updates). It needs nothing beyond what
+every gamescope-capable distro already has: PipeWire, D-Bus and `pw-dump`.
+
+In Desktop Mode the shim steps aside automatically (releases the portal name)
+so the desktop's own portal keeps handling screen shares. If no portal answers
+at all, Steamcord falls back to the local GStreamer WebRTC relay, and the
+virtual-camera button below remains as a last-resort manual path.
+
+## Screen-share camera (Game Mode, legacy fallback)
+
+The **virtual camera** path: the `v4l2loopback` kernel module must exist and be
 loaded with the right options.
 
 Package:

@@ -320,6 +320,29 @@ class Plugin:
         )
         create_task(stream_watcher(cls.webrtc_server.stdout))
         create_task(stream_watcher(cls.webrtc_server.stderr, True))
+        # Portail ScreenCast pour gamescope (portal_shim.py) : rend le Go Live
+        # NATIF fonctionnel en mode jeu (getDisplayMedia → notre portail → node
+        # PipeWire gamescope), sans caméra virtuelle ni relais WebRTC local.
+        # Tourne sous le python SYSTÈME (pas de gi requis — dbus_next est
+        # vendoré dans py_modules, passé via PYTHONPATH).
+        try:
+            killer = await create_subprocess_exec("pkill", "-f", "portal_shim.py",
+                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
+            await killer.wait()
+        except Exception:
+            pass
+        _shim = Path(DECKY_PLUGIN_DIR) / "portal_shim.py"
+        if not _shim.exists():
+            _shim = Path(DECKY_PLUGIN_DIR) / "defaults" / "portal_shim.py"
+        shim_env = {
+            **vesktop._user_env(),
+            "PYTHONPATH": str(Path(DECKY_PLUGIN_DIR) / "py_modules"),
+        }
+        cls.portal_shim = await create_subprocess_exec(
+            sys_python(), str(_shim), env=shim_env, stdout=PIPE, stderr=PIPE,
+        )
+        create_task(stream_watcher(cls.portal_shim.stdout, prefix="[portal]"))
+        create_task(stream_watcher(cls.portal_shim.stderr, True, prefix="[portal]"))
         create_task(cls._remote_auth_watcher())
         create_task(cls._audio_keepalive())
         create_task(cls._autoupdate_check())
@@ -1447,6 +1470,10 @@ class Plugin:
         if hasattr(cls, "webrtc_server"):
             cls.webrtc_server.kill()
             await cls.webrtc_server.wait()
+
+        if hasattr(cls, "portal_shim"):
+            cls.portal_shim.kill()
+            await cls.portal_shim.wait()
 
         if hasattr(cls, "runner"):
             await cls.runner.shutdown()

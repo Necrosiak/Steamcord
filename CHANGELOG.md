@@ -3,6 +3,28 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## Unreleased
+
+### Added
+- **Native Go Live in Gaming Mode — no more virtual camera.** gamescope has
+  no screen-cast portal, which is why Go Live black-screened in game mode and
+  the v4l2loopback camera workaround existed. The plugin now ships its own
+  portal: `portal_shim.py` owns `org.freedesktop.portal.Desktop` on the user
+  bus (only while a gamescope session exists — it steps aside in Desktop Mode)
+  and answers Chromium's ScreenCast handshake with the gamescope PipeWire
+  node, the same one Steam Game Recording captures. The regular Go Live
+  button now streams the real screen at native resolution through Chromium's
+  own capture path (no VP8 double-encode, no kernel module, no rootfs writes
+  — safe across SteamOS A/B updates). Game audio is attached via venmic
+  ("Entire System"), and Vesktop's invisible share-settings modal is
+  auto-confirmed (1080p60 preset). `getDisplayMedia` now tries the native
+  portal first and falls back to the local GStreamer WebRTC relay; the
+  virtual-camera button remains as a manual last resort. Vesktop is launched
+  with `XDG_SESSION_TYPE=wayland` under gamescope so Chromium picks the
+  PipeWire capturer. A stale desktop-session `xdg-desktop-portal` holding the
+  portal name in game mode is stopped (it re-activates on demand back in
+  Desktop Mode). New vendored dep: `dbus_next` (pure Python, py_modules).
+
 ## 1.14.6 — 2026-07-18
 
 ### Fixed

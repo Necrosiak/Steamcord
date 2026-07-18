@@ -422,6 +422,20 @@ async def launch():
     ]
     if xauth:
         setenv.append(f"--setenv=XAUTHORITY={xauth}")
+    # Session gamescope (mode jeu) : forcer XDG_SESSION_TYPE=wayland pour que le
+    # WebRTC de Chromium prenne le chemin portail/PipeWire (IsRunningUnderWayland
+    # exige XDG_SESSION_TYPE=wayland ET WAYLAND_DISPLAY). C'est ce qui route le
+    # getDisplayMedia natif vers notre portal_shim.py → Go Live RÉEL en mode jeu.
+    # Le rendu, lui, retombe sur X11 comme avant (WAYLAND_DISPLAY pointe dans le
+    # vide sous gamescope pur — cf. _any_display). Pas de --setenv hors gamescope :
+    # sur un bureau X11 classique, forcer "wayland" casserait la capture X11 native.
+    try:
+        gamescope = any(p.name.startswith("gamescope-") and p.is_socket()
+                        for p in Path(runtime_dir).iterdir())
+    except Exception:
+        gamescope = False
+    if gamescope:
+        setenv.append("--setenv=XDG_SESSION_TYPE=wayland")
 
     _ensure_profile(account)
     _record_account(account)
