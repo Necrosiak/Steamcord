@@ -105,6 +105,10 @@ Feature requests and "it works!" reports on unusual setups are just as valuable.
 - [@jessebofill](https://github.com/jessebofill) — Steam menu patching code
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — the native Discord client Steamcord drives
 
+### Code contributors
+
+- [@azizzidi](https://github.com/azizzidi) — **native Go Live in Gaming Mode** via the gamescope ScreenCast portal shim ([#10](https://github.com/Necrosiak/Steamcord/pull/10), landed in v1.15.0)
+
 ### Community bug hunters
 
 People who reported, diagnosed or helped fix bugs — thank you!

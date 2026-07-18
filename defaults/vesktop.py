@@ -429,13 +429,36 @@ async def launch():
     # Le rendu, lui, retombe sur X11 comme avant (WAYLAND_DISPLAY pointe dans le
     # vide sous gamescope pur — cf. _any_display). Pas de --setenv hors gamescope :
     # sur un bureau X11 classique, forcer "wayland" casserait la capture X11 native.
-    try:
-        gamescope = any(p.name.startswith("gamescope-") and p.is_socket()
-                        for p in Path(runtime_dir).iterdir())
-    except Exception:
-        gamescope = False
+    # KWin testé en PREMIER (même logique que main.py:get_share_env) : les
+    # sockets gamescope-* PERSISTENT dans XDG_RUNTIME_DIR après une session
+    # gamemode, et un gamescope imbriqué par-jeu peut tourner sous KWin
+    # (= bureau quand même) — le test socket seul força(it) wayland à tort
+    # au bureau.
+    def _proc_running(*names):
+        try:
+            for p in Path("/proc").iterdir():
+                if not p.name.isdigit():
+                    continue
+                try:
+                    if (p / "comm").read_text().strip() in names:
+                        return True
+                except OSError:
+                    continue
+        except Exception:
+            pass
+        return False
+    gamescope = (not _proc_running("kwin_wayland", "kwin_x11")
+                 and _proc_running("gamescope", "gamescope-wl"))
+    extra_flags = []
     if gamescope:
         setenv.append("--setenv=XDG_SESSION_TYPE=wayland")
+        # XDG_SESSION_TYPE=wayland fait choisir « wayland » à l'ozone AUTO
+        # d'Electron → il tente WAYLAND_DISPLAY=wayland-0 (inexistant sous
+        # gamescope pur, le socket est gamescope-0) et ne retombe PAS sur X11 :
+        # aucune fenêtre, CDP jamais ouvert (vu en live 18/07). On épingle donc
+        # le RENDU sur X11 (XWayland gamescope) ; la sélection du capturer
+        # WebRTC (portail) lit les variables d'ENV, pas la plateforme ozone.
+        extra_flags.append("--ozone-platform=x11")
 
     _ensure_profile(account)
     _record_account(account)
@@ -493,6 +516,7 @@ async def launch():
         # de son propre partage) n'est pas touché.
         "--disable-accelerated-video-decode",
         "--disable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
+        *extra_flags,
         stdout=DEVNULL, stderr=DEVNULL, env=env,
     )
     for i in range(60):

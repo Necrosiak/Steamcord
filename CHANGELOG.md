@@ -3,7 +3,7 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
-## Unreleased
+## 1.15.0 — 2026-07-18
 
 ### Added
 - **Native Go Live in Gaming Mode — no more virtual camera.** gamescope has
@@ -23,7 +23,51 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
   with `XDG_SESSION_TYPE=wayland` under gamescope so Chromium picks the
   PipeWire capturer. A stale desktop-session `xdg-desktop-portal` holding the
   portal name in game mode is stopped (it re-activates on demand back in
-  Desktop Mode). New vendored dep: `dbus_next` (pure Python, py_modules).
+  Desktop Mode). New vendored dep: `dbus_next` (pure Python, py_modules,
+  MIT — license shipped alongside).
+  Contributed by @azizzidi (#10) — thank you! Validated end-to-end on a
+  BC-250 with the hardening below.
+
+### Changed (hardening of the native Go Live, on top of #10)
+- **The portal only serves Steamcord's own Vesktop.** A screen-cast portal
+  that auto-approves without a consent dialog must not hand the screen to
+  arbitrary processes: the shim now verifies the D-Bus caller (resolving the
+  flatpak `xdg-dbus-proxy` through its systemd scope) before creating a
+  session, and the PipeWire fd is only handed to verified sessions.
+- **Reliable game-mode detection**: gamescope sockets persist in
+  `XDG_RUNTIME_DIR` after a game-mode session, so socket probing alone would
+  have hijacked the portal name back on the desktop and broken KDE screen
+  sharing. Detection now checks for a running KWin first (same logic the
+  share-button picker already used), in both the shim and the Vesktop
+  launcher.
+- **Electron is pinned to X11 rendering under gamescope**
+  (`--ozone-platform=x11`): with `XDG_SESSION_TYPE=wayland` alone, Electron
+  tried to render on a non-existent Wayland socket and never opened a window
+  (WebRTC's capturer selection reads the environment, not the rendering
+  platform, so the portal path still engages).
+- **Unimplemented portal interfaces get proper D-Bus error replies** (and
+  `Properties.GetAll` an empty dict) instead of no answer at all — otherwise
+  every app probing `Settings`/`FileChooser` in game mode hung until timeout.
+- **The share-settings modal is only auto-confirmed for shares Steamcord
+  itself initiated** — a share started manually in the Vesktop window keeps
+  its quality/audio dialog untouched.
+
+### Fixed
+- **Cameras going black while switching between videos** (#8): Discord's
+  voice server only sends the video of participants whose tile is
+  rendered by Discord's own UI — every mounted `<video>` tile holds an
+  "active sink" refcount per stream, and when it drops to zero the client
+  tells the server to stop that user's video (that's the black 16:9
+  rectangle that neither stop/re-watch nor toggling helped; screen shares
+  use a separate quality manager and were never affected, and 1:1 calls
+  take a special path — which is why a single stream always worked).
+  The relay now registers itself as an active video sink for the camera
+  it is relaying, exactly like a rendered Discord tile would, and keeps
+  re-asserting it while the relay is alive: switching between two
+  cameras, watching camera + screen while the share is restarted, and
+  coming back to a previously-watched camera should all keep the picture
+  live. Reported by @DavidNotProgamer with meticulous multi-account
+  testing — thanks again.
 
 ## 1.14.6 — 2026-07-18
 

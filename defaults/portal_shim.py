@@ -77,14 +77,31 @@ def _runtime_dir():
     return os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 
 
-def in_game_mode():
-    """True si une session gamescope existe (socket gamescope-* du compositeur).
-    Même détection que vesktop.py:_any_display."""
+def _proc_running(*names):
+    """True si un process dont le comm est dans `names` tourne (scan /proc)."""
     try:
-        return any(p.name.startswith("gamescope-") and p.is_socket()
-                   for p in Path(_runtime_dir()).iterdir())
+        for p in Path("/proc").iterdir():
+            if not p.name.isdigit():
+                continue
+            try:
+                if (p / "comm").read_text().strip() in names:
+                    return True
+            except OSError:
+                continue
     except Exception:
+        pass
+    return False
+
+
+def in_game_mode():
+    """True si la session ACTIVE est gamescope. KWin testé en PREMIER : les
+    sockets gamescope-* persistent dans XDG_RUNTIME_DIR après une session
+    gamemode, et un gamescope imbriqué par-jeu peut tourner sous KWin (= bureau
+    quand même) — même logique que main.py:get_share_env. Se tromper ici =
+    voler le nom portail au bureau et casser le partage d'écran du DE."""
+    if _proc_running("kwin_wayland", "kwin_x11"):
         return False
+    return _proc_running("gamescope", "gamescope-wl")
 
 
 # ── gamescope PipeWire node ──────────────────────────────────────────────────
@@ -199,6 +216,19 @@ class PortalShim:
                     return Message.new_method_return(msg, "", [])
             if msg.interface == REQUEST_IFACE and msg.member == "Close":
                 return Message.new_method_return(msg, "", [])
+            # Interfaces portail NON implémentées (Settings, FileChooser…) :
+            # répondre une VRAIE erreur D-Bus tout de suite. Sinon le handler
+            # par défaut de dbus_next lève UNKNOWN_OBJECT sans répondre →
+            # l'appelant attend son timeout (25 s) et le journal se remplit de
+            # tracebacks (vu en live : sondes Settings en boucle dès la prise
+            # du nom). Les interfaces org.freedesktop.DBus.* (Peer, Introspect,
+            # Properties) restent aux handlers par défaut / à _props.
+            if (str(msg.path).startswith("/org/freedesktop/portal/")
+                    and not (msg.interface or "").startswith(
+                        "org.freedesktop.DBus")):
+                return Message.new_error(
+                    msg, "org.freedesktop.DBus.Error.UnknownMethod",
+                    f"{msg.interface} not implemented by Steamcord shim")
         except Exception as e:
             log.error(f"{msg.member} KO: {e!r}")
             return Message.new_error(
@@ -210,11 +240,51 @@ class PortalShim:
             iface, prop = msg.body
             if iface == SCREENCAST_IFACE and prop in SC_PROPS:
                 return Message.new_method_return(msg, "v", [SC_PROPS[prop]])
-        elif msg.member == "GetAll":
+            return Message.new_error(
+                msg, "org.freedesktop.DBus.Error.InvalidArgs",
+                f"no property {prop!r} on {iface!r}")
+        if msg.member == "GetAll":
             (iface,) = msg.body
             if iface == SCREENCAST_IFACE:
                 return Message.new_method_return(msg, "a{sv}", [SC_PROPS])
-        return None
+            # Interfaces non implémentées (Settings…) : dict vide = réponse
+            # honnête, pas de timeout ni de retry agressif côté appelant.
+            return Message.new_method_return(msg, "a{sv}", [{}])
+        # Set & co : refus propre plutôt que le handler par défaut qui lève.
+        return Message.new_error(
+            msg, "org.freedesktop.DBus.Error.NotSupported",
+            f"Properties.{msg.member} not supported by Steamcord shim")
+
+    async def _sender_is_vesktop(self, sender):
+        """Le portail auto-approuve sans dialogue → on ne sert QUE notre Vesktop.
+        Sans ce garde-fou, n'importe quel process du bus de session pourrait
+        capturer l'écran en silence pendant le mode jeu (le dialogue de
+        consentement du portail existe précisément pour empêcher ça)."""
+        try:
+            reply = await self.bus.call(Message(
+                destination="org.freedesktop.DBus",
+                path="/org/freedesktop/DBus",
+                interface="org.freedesktop.DBus",
+                member="GetConnectionUnixProcessID",
+                signature="s", body=[sender]))
+            pid = int(reply.body[0])
+            cmd = (Path(f"/proc/{pid}/cmdline").read_bytes()
+                   .replace(b"\0", b" ").decode(errors="replace").lower())
+            if any(k in cmd for k in ("vesktop", "vencord", "electron",
+                                      "discord")):
+                return True
+            # Flatpak : la connexion D-Bus vue par le bus est celle du
+            # xdg-dbus-proxy de l'instance (cmdline anonyme) — MAIS il vit dans
+            # le scope systemd de l'app (app-flatpak-dev.vencord.Vesktop-*.scope,
+            # vérifié en live 18/07 : le refus du proxy cassait le Go Live natif).
+            cg = Path(f"/proc/{pid}/cgroup").read_text(errors="replace").lower()
+            if any(k in cg for k in ("vesktop", "vencord", "steamcord")):
+                return True
+            log.warning(f"sender {sender} refusé (pid={pid}, "
+                        f"cmdline={cmd[:120]!r}, cgroup={cg.strip()[-90:]!r})")
+        except Exception as e:
+            log.warning(f"vérif sender {sender} KO ({e!r}) — refus par prudence")
+        return False
 
     def _m_CreateSession(self, msg):
         (options,) = msg.body
@@ -222,11 +292,20 @@ class PortalShim:
         st = _opt(options, "session_handle_token", "s") or "s"
         session_path = (f"/org/freedesktop/portal/desktop/session/"
                         f"{_sender_token(sender)}/{st}")
-        self.sessions[session_path] = {"fds": []}
         req = self._request_path(sender, options)
-        log.info(f"CreateSession → {session_path}")
-        self._respond_later(sender, req, 0,
-                            {"session_handle": Variant("s", session_path)})
+
+        # La session n'existe (et Response(0) ne part) qu'une fois le sender
+        # vérifié — Start et OpenPipeWireRemote exigent une session connue,
+        # donc un appelant non vérifié n'obtient ni node ni fd.
+        async def _vet():
+            if await self._sender_is_vesktop(sender):
+                self.sessions[session_path] = {"fds": []}
+                log.info(f"CreateSession → {session_path}")
+                self._respond_later(sender, req, 0,
+                                    {"session_handle": Variant("s", session_path)})
+            else:
+                self._respond_later(sender, req, 2, {})
+        asyncio.ensure_future(_vet())
         return Message.new_method_return(msg, "o", [req])
 
     def _m_SelectSources(self, msg):
@@ -267,6 +346,12 @@ class PortalShim:
 
     def _m_OpenPipeWireRemote(self, msg):
         session = msg.body[0]
+        # Session inconnue = sender jamais vérifié (cf. _sender_is_vesktop) :
+        # pas de fd PipeWire pour lui.
+        if session not in self.sessions:
+            return Message.new_error(
+                msg, "org.freedesktop.portal.Error.Failed",
+                "unknown session")
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             remote = os.environ.get("PIPEWIRE_REMOTE", "pipewire-0")
@@ -279,10 +364,7 @@ class PortalShim:
         fd = sock.detach()
         # Le noyau duplique le fd à l'envoi (SCM_RIGHTS) ; on garde le nôtre
         # jusqu'à la fermeture de la session pour ne pas couper un envoi en vol.
-        if session in self.sessions:
-            self.sessions[session]["fds"].append(fd)
-        else:
-            self.loop.call_later(30, lambda: _safe_close(fd))
+        self.sessions[session]["fds"].append(fd)
         log.info(f"OpenPipeWireRemote → fd pipewire (session {session})")
         return Message.new_method_return(msg, "h", [0], unix_fds=[fd])
 

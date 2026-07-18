@@ -39,6 +39,12 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
     } catch (_) {}
     window.STEAMCORD_PICKER_WATCHER = setInterval(async () => {
         try {
+            // GATE : on n'auto-valide QUE les partages initiés par Steamcord
+            // ($golive du QAM — flag posé par le handler). Un partage lancé À LA
+            // MAIN dans la fenêtre Vesktop (mode bureau) garde sa modale : sans
+            // ce gate, le clic auto validait le choix de l'utilisateur en 500 ms
+            // (audio système imposé, qualité non choisie).
+            if (!window.STEAMCORD_GOLIVE_ACTIVE) return;
             const footer = document.querySelector(".vcd-screen-picker-footer");
             if (!footer || footer.dataset.scAuto) return;
             const btn = Array.from(footer.querySelectorAll("button"))
@@ -292,6 +298,55 @@ window.Vencord.Plugins.plugins.Steamcord = {
             return out;
         };
 
+        // Discord ne fait suivre que la vidéo des participants que SON UI affiche :
+        // chaque tuile <video> tient un refcount de « sink actif » par streamId, et
+        // à zéro le RTCMediaSinkWantsManager marque le user offscreen (LRU de 3 +
+        // timeout) puis envoie wants=0 au serveur vocal → la piste caméra reçue
+        // passe muted pour de bon → tuile noire (retours David #8 : bascule
+        // cam1→cam2, cam+écran relancé ; l'appel 1:1 a un chemin spécial, d'où
+        // « avec un seul flux tout marche »). Les Go Live passent par le
+        // GoLiveQualityManager qui ne coupe jamais → seules les CAMÉRAS sont
+        // touchées. Le relais se déclare donc lui-même comme sink actif (nom
+        // "steamcord", à côté de celui de l'UI) pour le streamId de la caméra du
+        // user relayé — l'exact équivalent d'une tuile montée.
+        window.__sc_heldSinks = window.__sc_heldSinks || {}; // userId -> Set(streamId)
+        window.__sc_cameraStreamId = (userId) => {
+            try {
+                const rc = Vencord.Webpack.findStore("RTCConnectionStore").getRTCConnection?.();
+                return rc?._localMediaSinkWantsManager?.streamIds?.[userId] ?? null;
+            } catch (e) { return null; }
+        };
+        window.__sc_holdSinks = (userId) => {
+            const held = window.__sc_heldSinks[userId] || new Set();
+            const want = new Set();
+            const sid = window.__sc_cameraStreamId(userId);
+            if (sid != null) want.add(sid);
+            let eng = null;
+            try { eng = Vencord.Webpack.findStore("MediaEngineStore").getMediaEngine(); } catch (e) { return; }
+            if (!eng || !eng.connections) return;
+            for (const c of [...eng.connections]) {
+                if (typeof c.setHasActiveVideoOutputSink !== "function") continue;
+                // Ré-affirmé à chaque tick : une connexion recréée (reconnexion,
+                // re-partage) repart avec un registre de sinks vide.
+                for (const s of want) { try { c.setHasActiveVideoOutputSink(s, true, "steamcord"); } catch (e) {} }
+                // Caméra coupée/rallumée = nouveau streamId : lâcher l'ancien.
+                for (const s of held) { if (!want.has(s)) { try { c.setHasActiveVideoOutputSink(s, false, "steamcord"); } catch (e) {} } }
+            }
+            window.__sc_heldSinks[userId] = want;
+        };
+        window.__sc_releaseSinks = (userId) => {
+            const held = window.__sc_heldSinks[userId];
+            delete window.__sc_heldSinks[userId];
+            if (!held || !held.size) return;
+            try {
+                const eng = Vencord.Webpack.findStore("MediaEngineStore").getMediaEngine();
+                for (const c of [...(eng && eng.connections || [])]) {
+                    if (typeof c.setHasActiveVideoOutputSink !== "function") continue;
+                    for (const s of held) { try { c.setHasActiveVideoOutputSink(s, false, "steamcord"); } catch (e) {} }
+                }
+            } catch (e) {}
+        };
+
         window.__sc_streamsForChannel = (chId) => {
             const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
             if (!ASS || !chId) return [];
@@ -380,6 +435,11 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     const vs = Object.values(WP.findStore("VoiceStateStore").getVoiceStatesForChannel(chId) || {});
                     if (vs.some(v => v.userId === userId && v.selfVideo)) expected.add("camera");
                 } catch (e) { /* store indispo → on prend ce qui vient */ }
+                // Tenir le sink AVANT d'attendre les pistes : une caméra déjà
+                // coupée par wants=0 (tuile noire) existe mais est MUTED, donc
+                // invisible pour engineTracks — la souscription doit repartir
+                // d'abord pour que la piste se ranime pendant l'attente.
+                window.__sc_holdSinks(userId);
                 let found = [];
                 for (let i = 0; i < 80; i++) {
                     found = engineTracks();
@@ -389,7 +449,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 }
                 const tracks = found.map(x => x.t);
                 if (found.length) console.log("[Steamcord] video: " + found.map(x => x.kind).join("+") + " pour " + userId + " (attendu: " + [...expected].join("+") + ")");
-                if (!tracks.length) { console.warn("[Steamcord] video: piste introuvable pour " + userId); return; }
+                if (!tracks.length) { console.warn("[Steamcord] video: piste introuvable pour " + userId); window.__sc_releaseSinks(userId); return; }
 
                 // Fermer un éventuel relais précédent pour ce user avant d'en recréer un.
                 const prev = window.STEAMCORD_VIDEO[userId];
@@ -423,6 +483,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const keepalive = setInterval(() => {
                     try {
                         if (pc.connectionState === "closed") { clearInterval(keepalive); return; }
+                        // Souscription caméra ré-affirmée en continu (connexion
+                        // recréée, caméra rallumée = nouveau streamId…).
+                        window.__sc_holdSinks(userId);
                         const fresh = engineTracks();
                         // nouvelle sorte de piste qu'aucun sender ne porte → rebuild.
                         if (fresh.some(f => !kinds.includes(f.kind))) { restart("nouvelle piste " + fresh.map(x => x.kind).join("+")); return; }
@@ -473,13 +536,18 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     .map(tr => ({ mid: tr.mid, kind: kindByTrackId[tr.sender.track.id] || "video" }));
                 window.STEAMCORD_WS.send(JSON.stringify({ type: "$VIDEO_WEBRTC", userId, offer: pc.localDescription, meta }));
                 console.log("[Steamcord] video: offer envoyée pour " + userId);
-            } catch (e) { console.error("[Steamcord] video relay start failed", e); }
+            } catch (e) {
+                console.error("[Steamcord] video relay start failed", e);
+                // Pas de relais monté → personne ne libérera les sinks tenus plus haut.
+                if (!window.STEAMCORD_VIDEO[userId]) window.__sc_releaseSinks(userId);
+            }
         };
 
         window.STEAMCORD_stopVideoRelay = (userId) => {
             try {
                 const entry = window.STEAMCORD_VIDEO[userId];
                 if (!entry) return;
+                window.__sc_releaseSinks(userId);
                 if (entry.keepalive) clearInterval(entry.keepalive);
                 if (entry.pc) entry.pc.close();
                 const close = Vencord.Webpack.findByCode('"STREAM_CLOSE",streamKey');
@@ -783,6 +851,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const WP = Vencord.Webpack;
                                     try {
                                         if (data.stop) {
+                                            window.STEAMCORD_GOLIVE_ACTIVE = false;
                                             const ASS = WP.findStore("ApplicationStreamingStore");
                                             const s = ASS?.getCurrentUserActiveStream?.();
                                             const stopFn = WP.findByCode('"STREAM_STOP"');
@@ -794,6 +863,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             }
                                             console.log("[Steamcord] Go Live STOP envoyé");
                                         } else {
+                                            // Autorise l'auto-validation de la modale Vesktop (watcher
+                                            // en tête de fichier) pour CE partage initié par Steamcord.
+                                            window.STEAMCORD_GOLIVE_ACTIVE = true;
                                             const startFn = WP.findByCode('"STREAM_START",streamType');
                                             if (startFn) startFn(golive_guild_id, golive_channel_id, {});
                                             else console.warn("[Steamcord] Go Live: action STREAM_START introuvable");
