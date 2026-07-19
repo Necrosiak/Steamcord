@@ -269,6 +269,9 @@ const UserStatusButton = ({ me }: { me: any }) => {
         style={{
           display: "flex", alignItems: "center", gap: 8, width: "100%",
           padding: "4px 8px", margin: 0, minHeight: 0, boxSizing: "border-box",
+          // Blanc forcé : le focus natif du DialogButton passe le texte en
+          // sombre alors qu'on garde un fond foncé → pseudo illisible.
+          color: "#fff",
           background: focused === "name" ? "rgba(88,101,242,0.6)" : "rgba(255,255,255,0.06)",
           ...focusHalo(ACCENT, focused === "name"),
         }}
@@ -454,9 +457,10 @@ const UpdaterSection = () => {
   );
 };
 
-// Environnement d'affichage : "desktop" (KWin = Bureau/Big Picture, Go Live
-// marche), "gamescope" (console, seul « mode jeu » marche), "unknown" (on
-// affiche les deux boutons plutôt que d'en priver l'utilisateur).
+// Environnement d'affichage : "desktop" (KWin = Bureau/Big Picture) vs
+// "gamescope" (console). Depuis v1.15.0 Go Live marche partout (portail KWin
+// ou portal_shim) → ne sert plus qu'à décider si le fallback « mode jeu »
+// (v4l2) est proposé en plus ("unknown" → oui, par sécurité).
 function useShareEnv(): "desktop" | "gamescope" | "unknown" {
   const [env, setEnv] = useState<"desktop" | "gamescope" | "unknown">("unknown");
   useEffect(() => {
@@ -520,12 +524,16 @@ const Content = () => {
     }
     // La connexion à Discord peut prendre ~1 min → spinner Steam animé pour
     // montrer que ça travaille (un titre statique ressemble à un plantage).
+    // ⚠️ Le SteamSpinner rend ~110pt quel que soit son conteneur (centré, il
+    // DÉBORDE d'une boîte plus petite — dans 48px il recouvrait le titre,
+    // capture 19/07). Boîte à sa taille naturelle + overflow hidden, titre
+    // DESSOUS, à bonne distance.
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", minHeight: "60vh" }}>
-        <h2 style={{ margin: "0" }}>{t("initializing")}</h2>
-        <div style={{ width: "48px", height: "48px" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "16px", minHeight: "60vh" }}>
+        <div style={{ width: "110px", height: "110px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <SteamSpinner background="transparent" />
         </div>
+        <h2 style={{ margin: "0", fontSize: "15px", opacity: 0.85 }}>{t("initializing")}</h2>
       </div>
     );
   } else if (!state?.logged_in) {
@@ -600,14 +608,13 @@ const Content = () => {
               <>
                 <VoiceChatChannel />
                 <VoiceChatMembers />
-                {/* Un seul bouton de partage selon l'environnement : Go Live
-                    (portail) en Bureau/Big Picture, « mode jeu » (v4l2) en
-                    console gamescope. Env inconnu → les deux, par sécurité. */}
-                {shareEnv !== "gamescope" && (
-                  <div style={{ marginTop: 8 }}>
-                    <GoLiveButton />
-                  </div>
-                )}
+                {/* Go Live marche PARTOUT depuis v1.15.0 : portail KWin en
+                    Bureau/Big Picture, portal_shim (node gamescope) en console
+                    → toujours affiché. « Mode jeu » (v4l2) reste le fallback
+                    console pour les OS où le shim échouerait. */}
+                <div style={{ marginTop: 8 }}>
+                  <GoLiveButton />
+                </div>
                 {shareEnv !== "desktop" && (
                   <div style={{ marginTop: 8 }}>
                     <ScreenCameraButton />

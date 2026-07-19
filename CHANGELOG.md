@@ -3,6 +3,83 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.15.1 — 2026-07-19
+
+### Added
+- **Live preview for native Go Live.** While streaming through the portal, the
+  voice view now shows a small self-preview tile (a snapshot refreshed every
+  ~2 s, captured from the same gamescope PipeWire node Chromium streams), so
+  you can see what your viewers see — same idea as the existing virtual-camera
+  preview.
+- **Update notification even with auto-update off.** If a newer release
+  exists and auto-update is disabled, a toast now tells you it's available
+  (install from the Quick Access Menu); before, you were never notified.
+
+### Changed
+- The game-mode share button is now labeled "Share screen (virtual camera)"
+  instead of "(game mode)" — since v1.15.0 native Go Live is the primary path
+  in Gaming Mode and this button is the fallback. The label is also translated
+  in all 9 languages now (it used to fall back to English outside EN/FR).
+
+### Fixed
+- **Stream volume on your own row did nothing and reset to 18 %.** Discord's
+  engine ignores the per-user stream volume for your own id (you never hear
+  your own stream), so the slider silently failed and fell back to the
+  engine's stream default (amplitude 18) on every QAM reopen. Your row now
+  shows a real **broadcast volume** slider instead: it scales the venmic
+  capture source (PipeWire), i.e. what your viewers actually hear.
+- **Volume sliders now use Discord's perceptual scale.** The engine stores
+  amplitudes while the Discord UI shows perceptual percentages; the QAM
+  sliders now convert both ways (same curve as Discord), so percentages match
+  the Discord app — another stream's default now reads ~54 % instead of a
+  mysterious "18 %".
+- **Plugin stuck on "Initializing…" after a fast Vesktop restart.** The
+  watchdog only probed Vesktop's CDP endpoint; a quick `systemctl restart`
+  brings the new endpoint up before the next probe, so the dead tab was never
+  detected and the client never re-injected. The watchdog now probes the
+  actual tab (trivial evaluate with a timeout) and recovers within seconds.
+- The initializing screen no longer draws the title across the Steam spinner
+  (the spinner renders ~110pt regardless of its container and overflowed its
+  48px box); the spinner is now properly contained with the title below it.
+- **Voice channel no longer duplicates system audio during Go Live on
+  mic-less machines.** Without a real microphone the default source is the
+  output monitor, so the voice channel silently broadcast everything the
+  machine played (game audio, UI sounds, an echo of other participants) on
+  top of the stream's own soundshare — and the stream volume slider had no
+  effect on it. While streaming without a real microphone, the voice capture
+  is now pointed at a silent sink and restored afterwards; a real microphone
+  is left untouched.
+- A Go Live stop arriving while the screen acquisition was still in flight
+  could leave Vesktop's (invisible) share dialog unanswered, wedging every
+  later `getDisplayMedia` in Electron's main process until Vesktop restarted.
+  The stop now lets the acquisition finish and releases the source; a second
+  Go Live during acquisition is ignored.
+- **Go Live black screen after the July 2026 Discord update.** Discord's new
+  bundle (hot-loaded by Vesktop on restart) changed the Go Live startup
+  contract: dispatching `STREAM_START` alone no longer captures anything — the
+  stream goes ACTIVE with no video track attached, so viewers see black. The
+  QAM Go Live now reproduces Discord's own browser flow: acquire the screen
+  through the media engine's desktop-source pool (which routes through our
+  ScreenCast portal in Gaming Mode) and pass the source id to `STREAM_START`.
+- The self-camera "rescue" path no longer looks up a Discord internal
+  (`toggleSelfVideo`) that no longer exists; it retries the real media action
+  instead, and the diagnostic verdict now reads the actual engine state.
+- **Server, DM and text-chat lists now fill the panel down to the bottom.**
+  They were capped at a hardcoded height sized for 800p, leaving a large
+  empty gap below on higher resolutions; they now size themselves to the
+  panel at any resolution.
+- A failed automatic update no longer toasts "update installed" and restarts
+  the plugin loader for nothing — it now reports the actual error.
+- **The Go Live button now shows up in Gaming Mode.** v1.15.0 shipped native
+  Go Live for gamescope, but the Quick Access Menu still hid the button there
+  — a leftover gate from when Go Live could only work under KWin. The button
+  is now always available while in voice; the virtual-camera ("game mode
+  share") button remains as the gamescope fallback. Reported by
+  @DavidNotProgamer right after the v1.15.0 release (#8).
+- On stock SteamOS, the screen-share error toast now points to Go Live
+  (which needs no kernel module) instead of dead-ending on v4l2loopback
+  being unavailable. (all 9 languages)
+
 ## 1.15.0 — 2026-07-18
 
 ### Added

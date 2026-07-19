@@ -3,9 +3,56 @@
 // scale on gamepad focus, one accent color per section. Keeping every
 // Steamcord control on this kit makes the three plugins read as one family.
 import { DialogButton } from "@decky/ui";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 const Btn = DialogButton as any;
+
+// Hauteur d'une liste scrollable qui remplit le QAM JUSQU'EN BAS SANS déborder,
+// quelle que soit la machine : mesurée depuis la position réelle du conteneur
+// (getBoundingClientRect) — un maxHeight en dur (280px historique) laissait un
+// grand vide sous les listes. ⚠️ PIÈGE MESURÉ AU CDP (19/07) : le code des
+// plugins Decky tourne dans le SharedJSContext dont la fenêtre fait 1×1 px —
+// le `window` global est INUTILISABLE pour mesurer le QAM. Le DOM du panneau,
+// lui, vit dans la fenêtre QuickAccess (766 pt de haut sur cette machine,
+// unités logiques dpr≈1.28 — indépendant de la résolution physique) → on
+// mesure TOUT via la fenêtre du document de l'élément (ownerDocument.
+// defaultView). `bottom` : la légende manette (A/B) est HORS de la fenêtre
+// QuickAccess (vérifié : scrollHeight == innerHeight == 766) → une petite
+// marge de respiration suffit.
+export function useFillHeight(min = 180, bottom = 12) {
+  const [height, setHeight] = useState<number>(min);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const win = el.ownerDocument?.defaultView || window;
+    let timer: any = null;
+    const compute = () => {
+      // Auto-nettoyage : les vues du QAM montent/démontent souvent, et un ref
+      // callback ne repasse pas forcément par null — listener + interval se
+      // retirent tout seuls dès que l'élément a quitté le DOM.
+      if (!el.isConnected) {
+        win.removeEventListener("resize", compute);
+        if (timer) { clearInterval(timer); timer = null; }
+        return;
+      }
+      const top = el.getBoundingClientRect().top;
+      const avail = Math.floor(win.innerHeight - top - bottom);
+      // Garde anti-débordement/anti-bogue : pendant une frame de layout ou
+      // l'animation d'ouverture, top peut être 0/négatif (hauteur énorme) et
+      // la fenêtre peut être minuscule (hauteur négative) → on n'écrit que des
+      // mesures plausibles et on retentera au prochain tick.
+      if (top <= 0 || avail <= 0) return;
+      setHeight(avail > min ? avail : min);
+    };
+    // Au montage le QAM anime encore son ouverture → plusieurs passes, puis
+    // re-mesure périodique : si le contenu AU-DESSUS de la liste change de
+    // hauteur (bannière d'erreur, boutons contextuels), la liste se recale.
+    setTimeout(compute, 0);
+    setTimeout(compute, 300);
+    timer = setInterval(compute, 1500);
+    win.addEventListener("resize", compute);
+  }, []);
+  return { ref, height };
+}
 
 // Discord blurple — Steamcord's primary accent.
 export const ACCENT = "#5865f2";

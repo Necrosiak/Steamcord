@@ -160,13 +160,20 @@ async def watchdog(tab: Tab):
     while True:
         # `tab.websocket.closed` stays False on a half-broken CDP transport (the
         # "Cannot write to closing transport" case seen when Vesktop dies but the
-        # socket lingers in a closing state). So ALSO probe Vesktop's CDP endpoint:
-        # if it stops answering, treat the tab as dead and fall through to recovery
-        # (re-initialize() relaunches Vesktop and re-injects the client).
+        # socket lingers in a closing state). And probing the CDP endpoint
+        # (vesktop.is_up) n'attrape PAS un restart RAPIDE de Vesktop : le nouveau
+        # process ré-expose :9223 avant la sonde suivante → is_up() reste True
+        # alors que NOTRE onglet est mort → jamais ré-injecté → QAM bloqué sur
+        # « Initialisation… » (vécu 19/07 après un systemctl restart). On sonde
+        # donc l'ONGLET lui-même : un evaluate trivial avec timeout — s'il ne
+        # répond plus, l'onglet est mort quel que soit l'état de l'endpoint.
+        from asyncio import wait_for
         while not tab.websocket.closed:
             await sleep(3)
-            if not await vesktop.is_up():
-                logger.info("Vesktop CDP stopped responding — treating Discord tab as dead.")
+            try:
+                await wait_for(tab.evaluate("1"), 5)
+            except Exception:
+                logger.info("Discord tab stopped answering (Vesktop restarted or CDP bounced) — treating it as dead.")
                 break
 
         logger.info("Discord tab websocket is no longer open. Trying to reconnect...")
@@ -461,22 +468,40 @@ class Plugin:
 
     @classmethod
     async def _autoupdate_check(cls):
-        # Non-blocking release check at boot. If enabled and a newer release
-        # exists, download + unpack over the plugin dir and restart the loader.
+        # Non-blocking release check at boot. If a newer release exists:
+        # auto-update ON  → download + unpack over the plugin dir + restart loader;
+        # auto-update OFF → just toast that an update is available (before, the
+        # user was never told anything and had to open the QAM to find out).
         try:
-            if not updater.is_autoupdate_enabled():
-                return
             info = await updater.check()
             if not info.get("update_available"):
+                return
+            if not updater.is_autoupdate_enabled():
+                logger.info(
+                    f"[updater] {info['latest']} available (have {info['current']}); "
+                    "autoupdate off — notifying only"
+                )
+                # Toasts en ANGLAIS : même règle que le script v4l2 — ils partent
+                # chez tous les users, quelle que soit la langue du QAM.
+                await cls._toast(
+                    "Steamcord",
+                    f"Update {info['latest']} available — install it from the Quick Access Menu",
+                )
                 return
             logger.info(
                 f"[updater] {info['latest']} available (have {info['current']}); auto-applying"
             )
-            await cls._toast("Steamcord", f"Mise à jour {info['latest']} — installation…")
-            if await updater.apply(info["url"]):
-                await cls._toast("Steamcord", "Mise à jour installée — rechargement…")
+            await cls._toast("Steamcord", f"Updating to {info['latest']}…")
+            # apply() renvoie un dict {"ok": bool, "error"?} — un simple `if` était
+            # toujours vrai (dict non vide), donc un échec toastait « installée » et
+            # redémarrait le loader pour rien.
+            res = await updater.apply(info["url"])
+            if res.get("ok"):
+                await cls._toast("Steamcord", "Update installed — reloading…")
                 await sleep(2)
                 updater.restart_loader()
+            else:
+                await cls._toast("Steamcord", f"Update failed: {res.get('error', '?')}")
         except Exception as e:
             logger.warning(f"[updater] auto-check error: {e}")
 
@@ -492,7 +517,7 @@ class Plugin:
     async def apply_update(cls, url):
         res = await updater.apply(url)
         if res.get("ok"):
-            await cls._toast("Steamcord", "Mise à jour installée — rechargement…")
+            await cls._toast("Steamcord", "Update installed — reloading…")
             await sleep(1)
             updater.restart_loader()
         return res
@@ -747,7 +772,11 @@ class Plugin:
         import vesktop
         while True:
             try:
-                g = await create_subprocess_exec("pgrep", "-x", "gamescope", stdout=DEVNULL, stderr=DEVNULL)
+                # -x avec les deux noms : le comm du compositeur est `gamescope-wl`
+                # sur Bazzite (gamescope tout court sur SteamOS) — avec le seul
+                # `gamescope`, ce log disait False alors qu'on était en mode jeu.
+                g = await create_subprocess_exec("pgrep", "-x", "gamescope(-wl)?",
+                                                 stdout=DEVNULL, stderr=DEVNULL)
                 in_game = (await g.wait()) == 0
                 vids = []
                 try:
@@ -783,6 +812,34 @@ class Plugin:
         p = await create_subprocess_exec("pactl", *pre, *args, stdout=PIPE, stderr=DEVNULL, env=vesktop._user_env())
         out, _ = await p.communicate()
         return out.decode()
+
+    @classmethod
+    async def get_stream_volume(cls):
+        # Volume BROADCAST du Go Live = volume de la source virtuelle venmic
+        # (vencord-screen-share, null-audio-sink avec channelVolumes) : atténue
+        # ce que les SPECTATEURS entendent. Régler son propre volume « stream »
+        # côté Discord est IGNORÉ par le moteur (on n'entend pas son propre
+        # live) — c'était le slider fantôme qui retombait à 18 %.
+        from json import loads
+        try:
+            for s in loads(await cls._pactl("list", "sources", want_json=True) or "[]"):
+                if s.get("name") == "vencord-screen-share":
+                    for v in (s.get("volume") or {}).values():
+                        pct = str(v.get("value_percent", "")).rstrip("%")
+                        if pct.isdigit():
+                            return int(pct)
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    async def set_stream_volume(cls, volume):
+        try:
+            v = max(0, min(100, int(volume)))
+            await cls._pactl("set-source-volume", "vencord-screen-share", f"{v}%")
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def _dev_label(d):
@@ -948,13 +1005,70 @@ class Plugin:
         except Exception as e:
             logger.warning(f"Screen-share deps auto-install failed: {e!r}")
 
+    # ── Micro pendant le Go Live : silence si aucun vrai micro ────────────────
+    # Sans micro branché, la source par défaut est le MONITOR de la sortie
+    # (BC-250 : hdmi-stereo.monitor) → le canal VOIX diffuse tout le son système
+    # (jeu, bips/artefacts HDMI, écho des voix des autres), EN DOUBLE du
+    # soundshare venmic du stream, et le volume du live n'y peut rien (constaté
+    # 19/07). Pendant un Go Live sans vrai micro : capture voix de Vesktop
+    # basculée sur le monitor d'un null-sink muet → seul le stream porte l'audio
+    # (contrôlable par son volume). Un vrai micro branché = on ne touche à rien.
+    _golive_silence_restore = None   # source à restaurer au stop (None = inactif)
+
+    @classmethod
+    async def _golive_mic_silence(cls, enable):
+        from json import loads
+        try:
+            if enable:
+                if cls._ga_active or cls._golive_silence_restore is not None:
+                    return  # partage "son du jeu" actif (il gère la source) ou déjà posé
+                src = (await cls._pactl("get-default-source")).strip()
+                if not src.endswith(".monitor") or "steamcord_" in src:
+                    return  # vrai micro (ou déjà un de nos montages) → ne rien toucher
+                out = (await cls._pactl(
+                    "load-module", "module-null-sink", "sink_name=steamcord_silence",
+                    "sink_properties=device.description=Steamcord-Silence")).strip()
+                if not out.isdigit():
+                    raise Exception(f"load-module: {out!r}")
+                cls._golive_silence_restore = src
+                await cls._pactl("set-default-source", "steamcord_silence.monitor")
+                # Basculer aussi les captures voix DÉJÀ ouvertes de Vesktop qui
+                # pompent l'ancien monitor (le RecordStream venmic vise
+                # vencord-screen-share, pas le monitor → naturellement épargné).
+                for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
+                    if cls._is_vesktop_stream(so):
+                        await cls._pactl("move-source-output", str(so.get("index")),
+                                         "steamcord_silence.monitor")
+                logger.info(f"[golive] pas de vrai micro ({src}) → capture voix "
+                            "silencieuse pendant le stream")
+            else:
+                if cls._golive_silence_restore is None:
+                    return
+                src = cls._golive_silence_restore
+                cls._golive_silence_restore = None
+                await cls._pactl("set-default-source", src)
+                for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
+                    if cls._is_vesktop_stream(so):
+                        await cls._pactl("move-source-output", str(so.get("index")), src)
+                # unload via la purge par nom (steamcord_silence) — idempotent,
+                # couvre aussi le cas restart plugin_loader (module survivant).
+                for line in (await cls._pactl("list", "modules", "short")).splitlines():
+                    parts = line.split("\t")
+                    if len(parts) >= 3 and "steamcord_silence" in parts[2]:
+                        await cls._pactl("unload-module", parts[0])
+                logger.info("[golive] capture voix restaurée")
+        except Exception as e:
+            logger.warning(f"[golive] mic-silence({enable}): {e!r}")
+
     @classmethod
     async def go_live(cls):
+        await cls._golive_mic_silence(True)
         await cls.evt_handler.send_client({"type": "$golive", "stop": False})
 
     @classmethod
     async def stop_go_live(cls):
         await cls.evt_handler.send_client({"type": "$golive", "stop": True})
+        await cls._golive_mic_silence(False)
 
     # ── Partage d'écran via CAMÉRA virtuelle (contournement gamescope) ──────────
     # gamescope n'a pas de portail → Go Live (getDisplayMedia) = écran noir. À la
@@ -1222,6 +1336,67 @@ class Plugin:
             jpg = ""
         return {"running": running, "jpg": jpg}
 
+    # ── Aperçu du Go Live NATIF ──────────────────────────────────────────────
+    # Quand le partage passe par le portail (portal_shim), la capture vit DANS
+    # le Chromium de Vesktop → le QAM n'a aucune poignée sur le flux. Ce feeder
+    # léger (gst_preview.py) capture le node gamescope → JPEG/2s, uniquement
+    # tant que la tuile d'aperçu est montée (start au montage, stop au démontage).
+    @classmethod
+    async def start_golive_preview(cls):
+        import os
+        from pathlib import Path as _P
+        proc = getattr(cls, "golive_preview", None)
+        if proc is not None and proc.returncode is None:
+            return {"ok": True}
+        try:
+            import vesktop
+            killer = await create_subprocess_exec("pkill", "-f", "gst_preview.py",
+                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
+            await killer.wait()
+        except Exception:
+            pass
+        script = _P(DECKY_PLUGIN_DIR) / "gst_preview.py"
+        if not script.exists():
+            script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_preview.py"
+        cls.golive_preview = await create_subprocess_exec(
+            sys_python(), str(script),
+            env=getattr(cls, "_gst_env", None) or dict(os.environ),
+            stdout=PIPE, stderr=PIPE,
+        )
+        create_task(stream_watcher(cls.golive_preview.stdout, prefix="[gstprev]"))
+        create_task(stream_watcher(cls.golive_preview.stderr, True, prefix="[gstprev]"))
+        return {"ok": True}
+
+    @classmethod
+    async def stop_golive_preview(cls):
+        proc = getattr(cls, "golive_preview", None)
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
+        cls.golive_preview = None
+        return True
+
+    @classmethod
+    async def get_golive_preview(cls):
+        """Aperçu Go Live natif : état du feeder + dernier JPEG (gst_preview.py)."""
+        import base64
+        import os
+        import time as _t
+        proc = getattr(cls, "golive_preview", None)
+        running = proc is not None and proc.returncode is None
+        jpg = ""
+        path = "/tmp/steamcord-golive-preview.jpg"
+        try:
+            if running and os.path.exists(path) and _t.time() - os.path.getmtime(path) < 6:
+                with open(path, "rb") as f:
+                    jpg = base64.b64encode(f.read()).decode()
+        except Exception:
+            jpg = ""
+        return {"running": running, "jpg": jpg}
+
     @classmethod
     async def get_vesktop_backend(cls):
         # stand-alone : dit au QAM si un moyen de faire tourner Vesktop existe
@@ -1467,6 +1642,12 @@ class Plugin:
 
     @classmethod
     async def _unload(cls):
+        # Restaurer la capture voix si un Go Live sans micro était en cours
+        # (sinon la source par défaut resterait le null-sink silencieux).
+        try:
+            await cls._golive_mic_silence(False)
+        except Exception:
+            pass
         if hasattr(cls, "webrtc_server"):
             cls.webrtc_server.kill()
             await cls.webrtc_server.wait()
@@ -1474,6 +1655,11 @@ class Plugin:
         if hasattr(cls, "portal_shim"):
             cls.portal_shim.kill()
             await cls.portal_shim.wait()
+
+        proc = getattr(cls, "golive_preview", None)
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.wait()
 
         if hasattr(cls, "runner"):
             await cls.runner.shutdown()

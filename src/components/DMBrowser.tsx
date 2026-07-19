@@ -2,6 +2,7 @@ import { DialogButton } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
+import { useFillHeight } from "./Styled";
 
 interface DMRecipient { id: string; username: string; avatar: string | null; }
 interface DMChannel {
@@ -94,6 +95,7 @@ function DMRow({ ch }: { ch: DMChannel }) {
 }
 
 export function DMBrowser() {
+  const fill = useFillHeight();
   const [channels, setChannels] = useState<DMChannel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +137,7 @@ export function DMBrowser() {
       ) : channels.length === 0 ? (
         <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("no_dms")}</div>
       ) : (
-        <div style={{ maxHeight: 280, overflowY: "auto" }}>
+        <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
           {channels.map(ch => <DMRow key={ch.id} ch={ch} />)}
         </div>
       )}

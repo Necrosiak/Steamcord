@@ -215,28 +215,35 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 } catch (e) { log("setVideoEnabled REJETÉ " + e); }
                 // 4) VERDICT : seul l'état gateway self_video prouve que les autres
                 // reçoivent la vidéo (l'engine peut dire oui sans que rien parte).
-                // Si toujours off à 2,5s, on tente l'action du bouton caméra de
-                // Discord (toggleSelfVideo) en secours, puis re-verdict.
+                // Si toujours off à 2,5s, secours = re-appeler setVideoEnabled(true)
+                // (le module d'actions média), puis re-verdict. L'ancien secours
+                // cherchait `toggleSelfVideo` : sondé au CDP le 2026-07-19, ce
+                // module n'existe plus dans le webpack Discord (ni byProps ni
+                // byCode) — le log disait « introuvable » à chaque fois. Côté
+                // engine, l'API est isVideoEnabled()/getVideoToggleState()
+                // (isSelfVideoEnabled n'a jamais existé → undefined).
                 const verdict = (label) => {
                     try {
                         const meId = WP.findStore?.("UserStore")?.getCurrentUser?.()?.id;
                         const vc2 = WP.findStore?.("SelectedChannelStore")?.getVoiceChannelId?.();
                         const states = WP.findStore?.("VoiceStateStore")?.getVoiceStatesForChannel?.(vc2) || {};
                         const st = meId ? states[meId] : null;
-                        const engOn = WP.findStore?.("MediaEngineStore")?.isSelfVideoEnabled?.();
+                        const MES = WP.findStore?.("MediaEngineStore");
+                        const engOn = MES?.isVideoEnabled?.();
                         const on = st ? !!st.selfVideo : null;
-                        log(label + " selfVideo(gateway)=" + on + " selfVideo(engine)=" + engOn);
+                        log(label + " selfVideo(gateway)=" + on + " video(engine)=" + engOn
+                            + " toggleState=" + MES?.getVideoToggleState?.());
                         return on;
                     } catch (e) { log(label + " err " + e); return null; }
                 };
                 setTimeout(() => {
                     if (verdict("VERDICT@2.5s:") === true) return;
                     try {
-                        const tv = WP.findByProps?.("toggleSelfVideo");
-                        if (tv?.toggleSelfVideo) {
-                            log("secours: toggleSelfVideo() (module: " + Object.keys(tv).slice(0, 12).join(",") + ")");
-                            Promise.resolve(tv.toggleSelfVideo()).catch((e) => log("toggleSelfVideo REJETÉ " + e));
-                        } else log("toggleSelfVideo introuvable");
+                        const va2 = WP.findByProps?.("setVideoEnabled");
+                        if (va2?.setVideoEnabled) {
+                            log("secours: re-setVideoEnabled(true)");
+                            Promise.resolve(va2.setVideoEnabled(true)).catch((e) => log("secours setVideoEnabled REJETÉ " + e));
+                        } else log("secours: setVideoEnabled introuvable");
                     } catch (e) { log("secours err " + e); }
                     setTimeout(() => verdict("VERDICT@5s:"), 2500);
                 }, 2500);
@@ -770,16 +777,25 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 case "$screenshot":
                                     result = await sendAttachmentToChannel(data.channel_id, data.attachment_b64, "screenshot.jpg");
                                     break;
-                                case "$set_user_volume":
+                                case "$set_user_volume": {
                                     // context "default" = voix, "stream" = audio du Go Live (volumes indépendants).
-                                    FluxDispatcher.dispatch({ type: "AUDIO_SET_LOCAL_VOLUME", userId: data.id, volume: data.volume, context: data.context || "default" });
+                                    // Le moteur stocke une AMPLITUDE ; l'UI Discord affiche un volume
+                                    // PERCEPTUEL (conversion du module webpack 792251). Le QAM parle
+                                    // perceptuel pour coller aux % Discord — sans ça le défaut stream
+                                    // (amplitude 18 = 54 % perçus) s'affichait « 18 % ».
+                                    const p = Number(data.volume) || 0;
+                                    const amp = p === 0 ? 0 : (p < 100 ? Math.pow(p / 100, 2.8) : Math.pow(10, (p / 100 - 1) * 6 / 20)) * 100;
+                                    FluxDispatcher.dispatch({ type: "AUDIO_SET_LOCAL_VOLUME", userId: data.id, volume: amp, context: data.context || "default" });
                                     return;
+                                }
                                 case "$get_user_volume": {
                                     // Vérité moteur pour les sliders du QAM : sans relecture au
                                     // montage ils retombaient à 100 % à chaque réouverture alors
-                                    // que le moteur gardait p. ex. 150 % (issue #5).
+                                    // que le moteur gardait p. ex. 150 % (issue #5). Amplitude
+                                    // moteur → perceptuel (voir $set_user_volume).
                                     const MES = Vencord.Webpack.findStore("MediaEngineStore");
-                                    result = MES?.getLocalVolume ? MES.getLocalVolume(data.id, data.context || "default") : 100;
+                                    const a = MES?.getLocalVolume ? MES.getLocalVolume(data.id, data.context || "default") : 100;
+                                    result = a === 0 ? 0 : (a < 100 ? Math.pow(a / 100, 1 / 2.8) : (20 * Math.log10(a / 100) / 6 + 1)) * 100;
                                     break;
                                 }
                                 case "$get_local_mute": {
@@ -851,7 +867,18 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const WP = Vencord.Webpack;
                                     try {
                                         if (data.stop) {
-                                            window.STEAMCORD_GOLIVE_ACTIVE = false;
+                                            // ⚠️ NE PAS éteindre STEAMCORD_GOLIVE_ACTIVE si une acquisition
+                                            // est en vol : la modale Vesktop (invisible en gamemode) ne
+                                            // serait jamais auto-cliquée → son callback main-process ne
+                                            // répond jamais → TOUS les getDisplayMedia suivants pendent
+                                            // (wedge Electron vécu le 19/07, seul un restart Vesktop le
+                                            // libère). On laisse l'acquisition se terminer ; le chemin
+                                            // START verra le drapeau stop et libérera la source.
+                                            if (window.STEAMCORD_GOLIVE_PENDING) {
+                                                window.STEAMCORD_GOLIVE_STOP_REQUESTED = true;
+                                            } else {
+                                                window.STEAMCORD_GOLIVE_ACTIVE = false;
+                                            }
                                             const ASS = WP.findStore("ApplicationStreamingStore");
                                             const s = ASS?.getCurrentUserActiveStream?.();
                                             const stopFn = WP.findByCode('"STREAM_STOP"');
@@ -867,9 +894,57 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             // en tête de fichier) pour CE partage initié par Steamcord.
                                             window.STEAMCORD_GOLIVE_ACTIVE = true;
                                             const startFn = WP.findByCode('"STREAM_START",streamType');
-                                            if (startFn) startFn(golive_guild_id, golive_channel_id, {});
-                                            else console.warn("[Steamcord] Go Live: action STREAM_START introuvable");
-                                            console.log("[Steamcord] Go Live START envoyé (écran entier), found=" + !!startFn);
+                                            if (!startFn) {
+                                                window.STEAMCORD_GOLIVE_ACTIVE = false;
+                                                console.warn("[Steamcord] Go Live: action STREAM_START introuvable");
+                                                return;
+                                            }
+                                            // Bundle Discord ≥ 19/07/2026 : STREAM_START seul ne lance plus
+                                            // AUCUNE capture — l'ApplicationSwitchingManager exige pid OU
+                                            // sourceId (sinon warn « invalid start_stream ») et plus personne
+                                            // n'acquiert la source → stream ACTIVE avec 0 sender vidéo =
+                                            // écran noir chez les spectateurs (diagnostiqué au CDP : stats
+                                            // outbound-rtp vides). On reproduit le flux navigateur de Discord
+                                            // lui-même : eng.getDesktopSource() (= getDisplayMedia via le
+                                            // DesktopInputPool → notre portail en gamemode, modale Vesktop
+                                            // auto-validée) PUIS STREAM_START avec l'id du pool (le label de
+                                            // la piste — souvent "" via le portail, clé de pool valide).
+                                            // Prouvé au CDP 19/07 : sender attaché, ~55 fps encodés.
+                                            // Garde anti-chevauchement : un 2e $golive pendant qu'une
+                                            // acquisition est en vol (double-clic, backend+bouton) créerait
+                                            // une 2e modale/2e session portail et peut coincer Electron.
+                                            if (window.STEAMCORD_GOLIVE_PENDING) {
+                                                console.log("[Steamcord] Go Live: acquisition déjà en cours, ignoré");
+                                                return;
+                                            }
+                                            const eng = WP.findStore("MediaEngineStore")?.getMediaEngine?.();
+                                            if (eng?.getDesktopSource) {
+                                                window.STEAMCORD_GOLIVE_PENDING = true;
+                                                window.STEAMCORD_GOLIVE_STOP_REQUESTED = false;
+                                                try {
+                                                    const srcId = await eng.getDesktopSource({ width: 1920, height: 1080 }, true);
+                                                    if (window.STEAMCORD_GOLIVE_STOP_REQUESTED) {
+                                                        // Stop arrivé pendant l'acquisition : on libère la
+                                                        // source fraîchement acquise au lieu de démarrer.
+                                                        window.STEAMCORD_GOLIVE_ACTIVE = false;
+                                                        try { eng.desktopInputPool?.get?.(srcId)?.destroy?.(); } catch (_) {}
+                                                        console.log("[Steamcord] Go Live: annulé pendant l'acquisition, source libérée");
+                                                    } else {
+                                                        startFn(golive_guild_id, golive_channel_id, { pid: null, sourceId: srcId, sourceName: null });
+                                                        console.log("[Steamcord] Go Live START envoyé (source pool: " + JSON.stringify(srcId) + ")");
+                                                    }
+                                                } catch (e) {
+                                                    window.STEAMCORD_GOLIVE_ACTIVE = false;
+                                                    console.error("[Steamcord] Go Live: acquisition écran échouée:", e);
+                                                } finally {
+                                                    window.STEAMCORD_GOLIVE_PENDING = false;
+                                                    window.STEAMCORD_GOLIVE_STOP_REQUESTED = false;
+                                                }
+                                            } else {
+                                                // Vieux bundle sans pool exposé : l'ancien chemin suffisait.
+                                                startFn(golive_guild_id, golive_channel_id, {});
+                                                console.log("[Steamcord] Go Live START envoyé (flux legacy)");
+                                            }
                                         }
                                     } catch (e) {
                                         console.error("[Steamcord] Go Live échec:", e);

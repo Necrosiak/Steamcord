@@ -2,6 +2,7 @@ import { DialogButton } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
+import { useFillHeight } from "./Styled";
 
 interface ChannelMember { id: string; avatar: string | null; }
 interface VoiceChannel { id: string; name: string; members: ChannelMember[]; }
@@ -32,6 +33,7 @@ function MemberAvatars({ members }: { members: ChannelMember[] }) {
 }
 
 export function ChannelBrowser() {
+  const fill = useFillHeight();
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [joining, setJoining] = useState<string | null>(null);
@@ -63,7 +65,7 @@ export function ChannelBrowser() {
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
         <Btn onClick={refresh} style={{ padding: "2px 8px", fontSize: 10, minHeight: 0 }}>↻</Btn>
       </div>
-      <div style={{ maxHeight: 280, overflowY: "auto" }}>
+      <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
         {guilds.map(guild => {
           const totalActive = guild.channels.reduce((n, c) => n + (c.members?.length ?? 0), 0);
           return (

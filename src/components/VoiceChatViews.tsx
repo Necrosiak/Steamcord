@@ -178,6 +178,38 @@ function SelfPreviewTile() {
   return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
 }
 
+// Aperçu LOCAL de mon Go Live NATIF (portail). La capture vit dans le Chromium
+// de Vesktop → aucun flux accessible d'ici : le backend lance gst_preview.py
+// (node gamescope → JPEG/2s) tant que cette tuile est montée, et on polle
+// l'instantané comme pour l'aperçu mode jeu.
+function GoLivePreviewTile() {
+  const [snap, setSnap] = useState("");
+  useEffect(() => {
+    let alive = true;
+    call("start_golive_preview").catch(() => {});
+    const poll = setInterval(async () => {
+      try {
+        const r = await call<[], { running: boolean; jpg: string }>("get_golive_preview");
+        if (alive && r.jpg) setSnap(r.jpg);
+      } catch (_) { /* backend pas prêt : on retentera */ }
+    }, 2000);
+    return () => {
+      alive = false;
+      clearInterval(poll);
+      call("stop_golive_preview").catch(() => {});
+    };
+  }, []);
+  if (snap) {
+    return (
+      <img
+        src={"data:image/jpeg;base64," + snap}
+        style={{ width: "100%", borderRadius: 6, marginTop: 6, display: "block" }}
+      />
+    );
+  }
+  return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
+}
+
 // Réagit aux changements d'état du partage d'écran (on/off).
 function useScreenCam() {
   const [, force] = useState(0);
@@ -261,6 +293,26 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
     await call("set_user_volume", user.id, val, "stream");
   };
 
+  // Volume BROADCAST de MON Go Live = ce que les SPECTATEURS entendent, réglé
+  // côté PipeWire (source venmic vencord-screen-share). Indispensable car le
+  // moteur Discord IGNORE le volume « stream » sur son propre id (on n'entend
+  // pas son propre live) : l'ancien slider self ne faisait rien et retombait
+  // au défaut moteur (18 d'amplitude) à chaque réouverture du QAM.
+  const [bcastVol, setBcastVol] = useState<number>(100);
+  useEffect(() => {
+    if (!(isSelf && user?.is_live)) return;
+    let alive = true;
+    call<[], number | null>("get_stream_volume")
+      .then((v) => { if (alive && typeof v === "number") setBcastVol(Math.min(100, Math.round(v))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isSelf, user?.is_live]);
+
+  const onBcastVolumeChange = async (val: number) => {
+    setBcastVol(val);
+    await call("set_stream_volume", val);
+  };
+
   const toggleLocalMute = async () => {
     // SET idempotent (≠ toggle aveugle) : on fixe l'état VOULU. Optimiste pour la
     // réactivité ; le poll ci-dessus réconcilie ensuite avec le moteur (jamais de
@@ -320,6 +372,14 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           <SelfPreviewTile />
         </div>
       )}
+      {/* Aperçu de MON Go Live natif (portail) — même idée, snapshots backend.
+          Pas quand le partage mode jeu tourne : SelfPreviewTile s'en charge. */}
+      {isSelf && !screenCamOn && user?.is_live && (
+        <div style={{ padding: "2px 8px 0" }}>
+          <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}>🖥️ {t("self_preview_label")}</div>
+          <GoLivePreviewTile />
+        </div>
+      )}
 
       {/* Volume VOIX (à quel point TU l'entends) — barre PLEINE LARGEUR. */}
       <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
@@ -355,15 +415,30 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
         </div>
       )}
 
-      {/* Volume STREAM (audio du Go Live) — barre SÉPARÉE pleine largeur, seulement
-          si l'utilisateur partage (le son micro et le son du stream sont distincts). */}
-      {user?.is_live && (
+      {/* Volume STREAM (audio du Go Live d'un AUTRE) — barre SÉPARÉE pleine
+          largeur (le son micro et le son du stream sont distincts). Jamais sur
+          sa propre ligne : Discord ignore ce volume pour son propre id. */}
+      {user?.is_live && !isSelf && (
         <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
           <SliderFieldAny
             label={`🖥️ ${t("video_stream")} ${streamVol}%`}
             value={streamVol}
             min={0} max={200} step={5}
             onChange={onStreamVolumeChange}
+            bottomSeparator="none"
+          />
+        </div>
+      )}
+
+      {/* MA ligne en live : volume BROADCAST (ce que les spectateurs entendent).
+          Max 100 % : le signal venmic est déjà à pleine échelle, au-delà ça sature. */}
+      {user?.is_live && isSelf && (
+        <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
+          <SliderFieldAny
+            label={`🖥️ ${t("broadcast_volume")} ${bcastVol}%`}
+            value={bcastVol}
+            min={0} max={100} step={5}
+            onChange={onBcastVolumeChange}
             bottomSeparator="none"
           />
         </div>

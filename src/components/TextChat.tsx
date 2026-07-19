@@ -2,6 +2,7 @@ import { DialogButton, Focusable, TextField } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
+import { useFillHeight } from "./Styled";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -99,6 +100,10 @@ function DMAvatar({ ch }: { ch: DMChannel }) {
 // Messagerie texte. `source` = "servers" (serveurs → salons texte) ou "dms"
 // (conversations privées en texte). Les deux partagent la même vue de messages.
 export function TextChat({ source }: { source: "servers" | "dms" }) {
+  // Deux instances : la liste de messages garde de la place sous elle pour le
+  // champ de saisie + bouton Envoyer (~110px) en plus de la marge commune.
+  const fillList = useFillHeight();
+  const fillMsgs = useFillHeight(200, 124);
   const [guilds, setGuilds] = useState<Guild[] | null>(null);
   const [dms, setDms] = useState<DMChannel[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -177,7 +182,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
           <span>←</span><span style={{ flex: 1, textAlign: "left" }}>{channel.dm ? channel.name : `#${channel.name}`}</span>
         </Btn>
 
-        <div id={MSG_LIST_ID} style={{ maxHeight: 200, overflowY: "auto", marginBottom: 6, paddingRight: 2 }}>
+        <div id={MSG_LIST_ID} ref={fillMsgs.ref} style={{ maxHeight: fillMsgs.height, overflowY: "auto", marginBottom: 6, paddingRight: 2 }}>
           {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 12 }}>{t("loading_messages")}</div>}
           {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_messages")}</div>}
           {messages?.map((m) => {
@@ -256,7 +261,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         {dms === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading")}</div>}
         {dms && dms.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_dms")}</div>}
         {dms && dms.length > 0 && (
-          <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 4 }}>
+          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "auto", marginTop: 4 }}>
             {dms.map((ch) => (
               <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "5px 8px", marginBottom: 3 }}>
                 <DMAvatar ch={ch} />
@@ -276,7 +281,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
       {guilds === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading_servers")}</div>}
       {guilds && guilds.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_channels")}</div>}
       {guilds && guilds.length > 0 && (
-        <div style={{ maxHeight: 280, overflowY: "auto", marginTop: 4 }}>
+        <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "auto", marginTop: 4 }}>
           {guilds.map((guild) => (
             <div key={guild.id} style={{ marginBottom: 3 }}>
               <Btn
