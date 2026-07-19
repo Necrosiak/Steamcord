@@ -184,13 +184,26 @@ function SelfPreviewTile() {
 // l'instantané comme pour l'aperçu mode jeu.
 function GoLivePreviewTile() {
   const [snap, setSnap] = useState("");
+  // Diagnostic honnête (issue #12 : « Starting Preview… » éternel sur SteamOS) :
+  // si le backend dit qu'il ne PEUT PAS capturer (bindings GStreamer absents et
+  // pas de fallback), on affiche le hint structuré {code, cmd} comme le bouton
+  // caméra ; si le feeder est censé tourner mais ne produit jamais (running
+  // false sur 8 polls), on le dit au lieu d'attendre en silence.
+  const [hint, setHint] = useState<{ code?: string; cmd?: string } | null>(null);
+  const [giveUp, setGiveUp] = useState(false);
   useEffect(() => {
     let alive = true;
-    call("start_golive_preview").catch(() => {});
+    let downPolls = 0;
+    call<[], { ok: boolean; code?: string; cmd?: string }>("start_golive_preview")
+      .then((r) => { if (alive && r && r.ok === false) setHint(r); })
+      .catch(() => {});
     const poll = setInterval(async () => {
       try {
         const r = await call<[], { running: boolean; jpg: string }>("get_golive_preview");
-        if (alive && r.jpg) setSnap(r.jpg);
+        if (!alive) return;
+        if (r.jpg) { setSnap(r.jpg); setGiveUp(false); downPolls = 0; return; }
+        downPolls = r.running ? 0 : downPolls + 1;
+        if (downPolls >= 8) setGiveUp(true);
       } catch (_) { /* backend pas prêt : on retentera */ }
     }, 2000);
     return () => {
@@ -205,6 +218,26 @@ function GoLivePreviewTile() {
         src={"data:image/jpeg;base64," + snap}
         style={{ width: "100%", borderRadius: 6, marginTop: 6, display: "block" }}
       />
+    );
+  }
+  if (hint) {
+    const msg = hint.code ? t("hint_" + hint.code) : "";
+    return (
+      <div style={{ fontSize: 10, color: "#ffb74d", padding: "6px 4px", lineHeight: 1.35 }}>
+        {msg && msg !== "hint_" + hint.code ? msg : t("self_preview_failed")}
+        {hint.cmd && (
+          <code style={{ display: "block", marginTop: 4, userSelect: "text", wordBreak: "break-all" }}>
+            {hint.cmd}
+          </code>
+        )}
+      </div>
+    );
+  }
+  if (giveUp) {
+    return (
+      <div style={{ fontSize: 10, color: "#ffb74d", padding: "6px 4px", lineHeight: 1.35 }}>
+        {t("self_preview_failed")}
+      </div>
     );
   }
   return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;

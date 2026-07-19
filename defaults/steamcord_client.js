@@ -45,8 +45,14 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // ce gate, le clic auto validait le choix de l'utilisateur en 500 ms
             // (audio système imposé, qualité non choisie).
             if (!window.STEAMCORD_GOLIVE_ACTIVE) return;
-            const footer = document.querySelector(".vcd-screen-picker-footer");
-            if (!footer || footer.dataset.scAuto) return;
+            // TOUS les footers, pas le premier : à un stop→start rapproché la
+            // modale du partage précédent peut encore être dans le DOM (déjà
+            // auto-cliquée, scAuto=1) — querySelector la retournait ELLE et la
+            // NOUVELLE modale n'était jamais validée → getDisplayMedia pendait
+            // pour toujours et le bouton Go Live restait mort (issue #12).
+            const footer = Array.from(document.querySelectorAll(".vcd-screen-picker-footer"))
+                .find(f => !f.dataset.scAuto);
+            if (!footer) return;
             const btn = Array.from(footer.querySelectorAll("button"))
                 .find(b => !b.disabled && /go live/i.test(b.textContent || ""));
             if (!btn) return;
@@ -371,6 +377,16 @@ window.Vencord.Plugins.plugins.Steamcord = {
             for (const s of (ASS.getAllApplicationStreamsForChannel?.(chId) || [])) {
                 const k = keyOf(s);
                 if (!out.has(k)) out.set(k, s);
+            }
+            // MON stream : getCurrentUserActiveStream est la vérité pour soi —
+            // les listes par-channel le perdent TRANSITOIREMENT à la ré-ouverture
+            // (issue #12 : badge LIVE + aperçu disparaissaient au stop→start
+            // rapproché, le STOP synthétique débouncé partait alors que le
+            // stream re-démarrait). L'union ici stabilise le badge.
+            const own = ASS.getCurrentUserActiveStream?.();
+            if (own && own.channelId === chId && own.state !== "ENDED") {
+                const k = keyOf(own);
+                if (!out.has(k)) out.set(k, own);
             }
             return Array.from(out, ([key, s]) => ({ key, s }));
         };
@@ -888,6 +904,10 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     : `call:${s.channelId}:${s.ownerId}`;
                                                 stopFn(key);
                                             }
+                                            // Horodatage pour le chemin START : une ré-ouverture trop
+                                            // rapide doit laisser le teardown (session portail, source
+                                            // du pool, venmic) se finir avant de ré-acquérir (issue #12).
+                                            window.STEAMCORD_GOLIVE_LAST_STOP = Date.now();
                                             console.log("[Steamcord] Go Live STOP envoyé");
                                         } else {
                                             // Autorise l'auto-validation de la modale Vesktop (watcher
@@ -921,12 +941,57 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             if (eng?.getDesktopSource) {
                                                 window.STEAMCORD_GOLIVE_PENDING = true;
                                                 window.STEAMCORD_GOLIVE_STOP_REQUESTED = false;
+                                                const myGen = (window.STEAMCORD_GOLIVE_GEN = (window.STEAMCORD_GOLIVE_GEN || 0) + 1);
                                                 try {
-                                                    const srcId = await eng.getDesktopSource({ width: 1920, height: 1080 }, true);
+                                                    // Laisser le PARTAGE PRÉCÉDENT finir de se démonter avant
+                                                    // de ré-acquérir (issue #12 : fermer puis rouvrir en <1s
+                                                    // faisait se chevaucher teardown de session portail et
+                                                    // nouvelle acquisition → getDisplayMedia coincé, bouton
+                                                    // mort). On attend que le stream actif ait disparu du
+                                                    // store ET ≥1,2s depuis le STOP, 5s max.
+                                                    const ASS2 = WP.findStore("ApplicationStreamingStore");
+                                                    const t0 = Date.now();
+                                                    while (Date.now() - t0 < 5000) {
+                                                        const busy = ASS2?.getCurrentUserActiveStream?.();
+                                                        const sinceStop = Date.now() - (window.STEAMCORD_GOLIVE_LAST_STOP || 0);
+                                                        if (!busy && sinceStop >= 1200) break;
+                                                        if (window.STEAMCORD_GOLIVE_STOP_REQUESTED) break;
+                                                        await new Promise(r => setTimeout(r, 200));
+                                                    }
                                                     if (window.STEAMCORD_GOLIVE_STOP_REQUESTED) {
-                                                        // Stop arrivé pendant l'acquisition : on libère la
-                                                        // source fraîchement acquise au lieu de démarrer.
                                                         window.STEAMCORD_GOLIVE_ACTIVE = false;
+                                                        console.log("[Steamcord] Go Live: annulé avant l'acquisition");
+                                                        return;
+                                                    }
+                                                    // Watchdog : si l'acquisition pend (modale jamais apparue,
+                                                    // handler main-process muet), on rend la main au lieu de
+                                                    // laisser le bouton mort pour toujours ; si la promesse se
+                                                    // résout tardivement, la garde de génération ci-dessous
+                                                    // libère la source au lieu de démarrer un stream fantôme.
+                                                    const acqPromise = eng.getDesktopSource({ width: 1920, height: 1080 }, true);
+                                                    // Résolution APRÈS timeout : source acquise pour rien →
+                                                    // la libérer (sinon session portail qui fuit à chaque
+                                                    // tentative coincée).
+                                                    let raceSettled = false;
+                                                    acqPromise.then((id) => {
+                                                        if (!raceSettled) return;
+                                                        try { eng.desktopInputPool?.get?.(id)?.destroy?.(); } catch (_) {}
+                                                        console.log("[Steamcord] Go Live: acquisition résolue après timeout, source libérée");
+                                                    }).catch(() => {});
+                                                    let srcId;
+                                                    try {
+                                                        srcId = await Promise.race([
+                                                            acqPromise,
+                                                            new Promise((_, rej) => setTimeout(() => rej(new Error("getDesktopSource timeout (20s)")), 20000)),
+                                                        ]);
+                                                    } finally {
+                                                        raceSettled = true;
+                                                    }
+                                                    if (window.STEAMCORD_GOLIVE_STOP_REQUESTED || myGen !== window.STEAMCORD_GOLIVE_GEN) {
+                                                        // Stop arrivé pendant l'acquisition (ou tentative plus
+                                                        // récente en cours) : on libère la source fraîchement
+                                                        // acquise au lieu de démarrer.
+                                                        if (myGen === window.STEAMCORD_GOLIVE_GEN) window.STEAMCORD_GOLIVE_ACTIVE = false;
                                                         try { eng.desktopInputPool?.get?.(srcId)?.destroy?.(); } catch (_) {}
                                                         console.log("[Steamcord] Go Live: annulé pendant l'acquisition, source libérée");
                                                     } else {
@@ -934,11 +999,13 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                         console.log("[Steamcord] Go Live START envoyé (source pool: " + JSON.stringify(srcId) + ")");
                                                     }
                                                 } catch (e) {
-                                                    window.STEAMCORD_GOLIVE_ACTIVE = false;
+                                                    if (myGen === window.STEAMCORD_GOLIVE_GEN) window.STEAMCORD_GOLIVE_ACTIVE = false;
                                                     console.error("[Steamcord] Go Live: acquisition écran échouée:", e);
                                                 } finally {
-                                                    window.STEAMCORD_GOLIVE_PENDING = false;
-                                                    window.STEAMCORD_GOLIVE_STOP_REQUESTED = false;
+                                                    if (myGen === window.STEAMCORD_GOLIVE_GEN) {
+                                                        window.STEAMCORD_GOLIVE_PENDING = false;
+                                                        window.STEAMCORD_GOLIVE_STOP_REQUESTED = false;
+                                                    }
                                                 }
                                             } else {
                                                 // Vieux bundle sans pool exposé : l'ancien chemin suffisait.
@@ -953,6 +1020,50 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 }
                                 case "$screen_camera": {
                                     await window.STEAMCORD_enableScreenCamera?.(!data.stop);
+                                    return;
+                                }
+                                case "$rpc": {
+                                    // Rich Presence (issue #11) : le QAM envoie le jeu Steam en
+                                    // cours (Router.MainRunningApp) — on le publie comme activité
+                                    // « Playing … » via le même dispatch local que les plugins
+                                    // Vencord (CustomRPC). game=null → activité effacée. Le
+                                    // backend rejoue le dernier état à chaque (re)connexion,
+                                    // started_at ne bouge pas → temps de jeu continu.
+                                    // application_id est REQUIS par la validation du dispatch
+                                    // (vérifié au CDP 19/07 : sans lui, LocalActivityStore reste
+                                    // vide). On le résout dans la base des jeux détectables de
+                                    // Discord (match insensible à la casse — l'exact-match de
+                                    // Deckcord ratait des jeux), cache en mémoire ; introuvable
+                                    // → "0" (l'activité s'affiche quand même, nom brut).
+                                    try {
+                                        let appId = "0";
+                                        if (data.game) {
+                                            try {
+                                                if (!window.__sc_rpcAppIds) {
+                                                    const res = await Vencord.Webpack.Common.RestAPI.get({ url: "/applications/detectable" });
+                                                    const map = new Map();
+                                                    if (res.ok) for (const e of res.body) map.set(String(e.name).toLowerCase(), e.id);
+                                                    window.__sc_rpcAppIds = map;
+                                                }
+                                                appId = window.__sc_rpcAppIds.get(String(data.game).toLowerCase()) || "0";
+                                            } catch (_) { /* hors-ligne/API KO : nom brut */ }
+                                        }
+                                        const activity = data.game ? {
+                                            application_id: appId,
+                                            name: data.game,
+                                            type: 0, // Playing
+                                            flags: 1, // INSTANCE
+                                            timestamps: data.started_at ? { start: data.started_at } : undefined,
+                                        } : null;
+                                        FluxDispatcher.dispatch({
+                                            type: "LOCAL_ACTIVITY_UPDATE",
+                                            socketId: "steamcord-rpc",
+                                            activity,
+                                        });
+                                        console.log("[Steamcord] RPC → " + (data.game ? "Playing " + data.game + " (app " + appId + ")" : "effacé"));
+                                    } catch (e) {
+                                        console.error("[Steamcord] RPC échec:", e);
+                                    }
                                     return;
                                 }
                                 case "$get_dm_channels": {

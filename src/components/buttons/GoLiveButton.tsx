@@ -14,6 +14,11 @@ export function GoLiveButton() {
   // texte sombre → texte illisible/disparu. On force le texte blanc + un simple
   // halo (anneau blanc), fond inchangé.
   const [focused, setFocused] = useState(false);
+  // Cooldown anti double-toggle (issue #12) : fermer puis rouvrir en <1s fait
+  // se chevaucher teardown et nouvelle acquisition (session portail, venmic) —
+  // bouton mort et session coincée chez un utilisateur Deck. 2,5s couvrent le
+  // teardown ; le client a en plus sa propre attente de démontage.
+  const [coolingDown, setCoolingDown] = useState(false);
 
   // Only available while connected to a voice channel
   if (!state?.vc?.channel_name) return null;
@@ -22,7 +27,13 @@ export function GoLiveButton() {
 
   return (
     <Btn
-      onClick={() => call(live ? "stop_go_live" : "go_live")}
+      disabled={coolingDown}
+      onClick={() => {
+        if (coolingDown) return;
+        setCoolingDown(true);
+        setTimeout(() => setCoolingDown(false), 2500);
+        call(live ? "stop_go_live" : "go_live");
+      }}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onGamepadFocus={() => setFocused(true)}
@@ -34,6 +45,7 @@ export function GoLiveButton() {
         fontSize: 12, fontWeight: 600,
         color: "#fff", borderRadius: 6,
         background: live ? DANGER : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
+        opacity: coolingDown ? 0.5 : 1,
         ...focusHalo(live ? DANGER : ACCENT, focused),
       }}
     >

@@ -322,6 +322,76 @@ const UserStatusButton = ({ me }: { me: any }) => {
   );
 };
 
+// ── « En jeu » sous le pseudo ────────────────────────────────────────────────
+// Petite ligne discrète (artwork + nom du jeu en cours) sous le UserStatusButton,
+// affichée UNIQUEMENT si l'option Rich Presence est activée (demande user :
+// même gate que ce que Discord montre). Le QAM se remonte à chaque ouverture →
+// l'état se relit de Router.MainRunningApp ; les changements pendant que le
+// panneau est ouvert arrivent via gameListeners (notifié par setPlaying).
+const gameListeners = new Set<() => void>();
+let rpcEnabledCache: boolean | null = null;
+const setRpcEnabledCache = (v: boolean) => {
+  rpcEnabledCache = v;
+  gameListeners.forEach((f) => { try { f(); } catch {} });
+};
+
+const readRunningGame = (): { name: string; appid: number | null } | null => {
+  const app: any = Router.MainRunningApp;
+  return app ? { name: app.display_name, appid: app.appid ?? null } : null;
+};
+
+// Artwork : assets LOCAUX Steam d'abord (marche aussi hors-ligne et pour les
+// raccourcis non-Steam avec grid perso), repli CDN header pour les jeux du
+// store, rien sinon (les appid de raccourcis non-Steam sont hors du CDN).
+const gameArtUrl = (appid: number | null): string | null => {
+  if (!appid) return null;
+  try {
+    const store: any = (window as any).appStore;
+    const ov = store?.GetAppOverviewByAppID?.(appid);
+    if (ov) {
+      const u = store?.GetLandscapeImageURLForApp?.(ov)
+        || store?.GetIconURLForApp?.(ov);
+      if (u) return u;
+    }
+  } catch {}
+  return appid < 0x80000000
+    ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/header.jpg`
+    : null;
+};
+
+const NowPlayingRow = () => {
+  const [game, setGame] = useState(readRunningGame());
+  const [enabled, setEnabled] = useState<boolean>(rpcEnabledCache ?? false);
+
+  useEffect(() => {
+    const fn = () => { setGame(readRunningGame()); setEnabled(rpcEnabledCache ?? false); };
+    gameListeners.add(fn);
+    call<[], boolean>("get_rpc_enabled")
+      .then((v) => { rpcEnabledCache = !!v; setEnabled(!!v); })
+      .catch(() => {});
+    return () => { gameListeners.delete(fn); };
+  }, []);
+
+  if (!enabled || !game) return null;
+  const art = gameArtUrl(game.appid);
+  return (
+    <SR>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 8px", marginTop: 4, opacity: 0.85 }}>
+        {art ? (
+          <img src={art} height={18}
+            style={{ display: "block", borderRadius: 2, flexShrink: 0 }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        ) : (
+          <span style={{ fontSize: 11 }}>🎮</span>
+        )}
+        <span style={{ fontSize: 11, color: "#ccc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {t("now_playing")} <b style={{ color: "#eee" }}>{game.name}</b>
+        </span>
+      </div>
+    </SR>
+  );
+};
+
 // Réglage Config : toggle de suivi auto du statut Steam → Discord.
 const StatusAutoToggle = () => {
   const [auto, setAutoState] = useState<boolean>(getAutoSync());
@@ -341,6 +411,28 @@ const StatusAutoToggle = () => {
         label={t("follow_steam_status")}
         checked={auto}
         onChange={toggleAuto}
+        bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
+// Réglage Config : afficher (ou non) le jeu en cours en activité Discord
+// (Rich Presence, issue #11). Persisté backend (~/.config/steamcord-rpc.json) ;
+// OFF efface l'activité immédiatement, ON ré-affiche le jeu en cours.
+const RpcToggle = () => {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    call<[], boolean>("get_rpc_enabled").then((v) => setOn(!!v)).catch(() => setOn(true));
+  }, []);
+  if (on === null) return null;
+  return (
+    <SR>
+      <ToggleField
+        label={t("rpc_show_game")}
+        description={t("rpc_show_game_desc")}
+        checked={on}
+        onChange={(v: boolean) => { setOn(v); setRpcEnabledCache(v); call("set_rpc_enabled", v).catch(() => {}); }}
         bottomSeparator="none"
       />
     </SR>
@@ -546,6 +638,7 @@ const Content = () => {
           <SR>
             <UserStatusButton me={state?.me} />
           </SR>
+          <NowPlayingRow />
         </div>
         <hr></hr>
         {/* Contrôles vocaux SOUS le pseudo : mute micro / casque / déconnexion.
@@ -907,6 +1000,7 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎮 {t("config_status")}</div>
       </SR>
       <StatusAutoToggle />
+      <RpcToggle />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🕹️ {t("config_shortcut")}</div>
@@ -1134,6 +1228,8 @@ export default definePlugin(() => {
     // .catch : pendant une re-init Vesktop (bascule Bureau↔gamemode) le backend
     // rejette (discord_reconnecting) → sans catch, rejet non géré dans le QAM.
     call("set_rpc", app !== undefined ? app?.display_name : null).catch(() => {});
+    // Rafraîchit la ligne « En jeu » d'un QAM éventuellement ouvert.
+    gameListeners.forEach((f) => { try { f(); } catch {} });
   };
 
   let lastDisplayIsExternal = false;

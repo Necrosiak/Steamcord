@@ -44,9 +44,12 @@ def _find_screen_node():
     jeu Steam → capturable SANS portail/dialogue). Log tous les nodes vidéo pour
     diagnostic. Renvoie l'id du node (str) ou None (→ pipewiresrc par défaut)."""
     import json
-    from subprocess import getoutput
+    from subprocess import run, PIPE, DEVNULL
     try:
-        data = json.loads(getoutput("pw-dump"))
+        # timeout : un PipeWire qui n'enregistre plus de clients laisse pw-dump
+        # pendu pour toujours (wedge du 19/07) — mieux vaut un fallback propre.
+        data = json.loads(run(["pw-dump"], stdout=PIPE, stderr=DEVNULL,
+                              timeout=5, text=True).stdout)
     except Exception as e:
         log.warning(f"[screen] pw-dump KO: {e!r}")
         return None
@@ -119,7 +122,13 @@ class WebRTCServer:
         self.remote_ws = None
 
     def start_pipeline(self, create_offer=True, audio_pt=96, video_pt=97):
-        default_sink = getoutput("pactl get-default-sink").splitlines()
+        # run+timeout : pactl pend pour toujours si PipeWire est wedgé (19/07).
+        from subprocess import run, PIPE, DEVNULL
+        try:
+            default_sink = run(["pactl", "get-default-sink"], stdout=PIPE,
+                               stderr=DEVNULL, timeout=5, text=True).stdout.splitlines()
+        except Exception:
+            default_sink = []
         audio_monitor = (default_sink[0] + ".monitor") if default_sink and default_sink[0] else "@DEFAULT_MONITOR@"
         log.info(f"Creating pipeline, create_offer={create_offer}, audio_monitor={audio_monitor}")
         node = _find_screen_node()

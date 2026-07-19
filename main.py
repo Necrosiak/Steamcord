@@ -574,6 +574,19 @@ class Plugin:
         logger.info("Received websocket connection!")
         ws = WebSocketResponse(max_msg_size=0)
         await ws.prepare(request)
+        # Re-pousser le Rich Presence (issue #11) au client fraîchement (re)connecté
+        # — petit délai le temps que son écouteur de messages et les stores Flux
+        # soient posés. Fire-and-forget : un échec ne doit pas tuer la connexion.
+        if cls._rpc_game and cls._rpc_pref():
+            async def _replay_rpc():
+                await sleep(2)
+                try:
+                    await cls.evt_handler.send_client(
+                        {"type": "$rpc", "game": cls._rpc_game,
+                         "started_at": cls._rpc_since})
+                except Exception:
+                    pass
+            create_task(_replay_rpc())
         await cls.evt_handler.main(ws)
         return ws
 
@@ -653,10 +666,65 @@ class Plugin:
     async def enable_ptt(cls, enabled):
         await cls.evt_handler.send_client({"type": "$setptt", "enabled": enabled})
 
+    # Rich Presence (issue #11) : mémorisé pour re-pousser à chaque (re)connexion
+    # du client (Vesktop redémarre à la bascule Bureau↔gamemode et une activité
+    # LOCAL_ACTIVITY_UPDATE ne survit pas au reload). started_at ne change que
+    # quand le JEU change → le « temps de jeu écoulé » ne repart pas de zéro à
+    # chaque reconnexion.
+    _rpc_game = None
+    _rpc_since = None
+    # Préférence « afficher le jeu en cours sur Discord » (QAM → Config).
+    # Persistée en JSON comme steamcord-input.json ; None = pas encore chargée.
+    _RPC_CFG = os.path.expanduser("~/.config/steamcord-rpc.json")
+    _rpc_enabled = None
+
+    @classmethod
+    def _rpc_pref(cls):
+        if cls._rpc_enabled is None:
+            from json import load
+            try:
+                with open(cls._RPC_CFG) as f:
+                    cls._rpc_enabled = bool(load(f).get("enabled", True))
+            except Exception:
+                cls._rpc_enabled = True
+        return cls._rpc_enabled
+
+    @classmethod
+    async def get_rpc_enabled(cls):
+        return cls._rpc_pref()
+
+    @classmethod
+    async def set_rpc_enabled(cls, enabled):
+        from json import dump
+        cls._rpc_enabled = bool(enabled)
+        try:
+            os.makedirs(os.path.dirname(cls._RPC_CFG), exist_ok=True)
+            with open(cls._RPC_CFG, "w") as f:
+                dump({"enabled": cls._rpc_enabled}, f)
+        except Exception as e:
+            logger.warning(f"save rpc cfg failed: {e!r}")
+        # Application immédiate : OFF efface l'activité affichée, ON rejoue le
+        # jeu courant (toujours mémorisé, même préférence coupée).
+        try:
+            await cls.evt_handler.send_client(
+                {"type": "$rpc",
+                 "game": cls._rpc_game if cls._rpc_enabled else None,
+                 "started_at": cls._rpc_since if cls._rpc_enabled else None})
+        except Exception:
+            pass
+        return True
+
     @classmethod
     async def set_rpc(cls, game):
         logger.info("Setting RPC")
-        await cls.evt_handler.send_client({"type": "$rpc", "game": game})
+        if game != cls._rpc_game:
+            from time import time as _now
+            cls._rpc_game = game
+            cls._rpc_since = int(_now() * 1000) if game else None
+        if not cls._rpc_pref():
+            return
+        await cls.evt_handler.send_client(
+            {"type": "$rpc", "game": cls._rpc_game, "started_at": cls._rpc_since})
 
     @classmethod
     async def set_user_volume(cls, user_id, volume, context="default"):
@@ -781,7 +849,28 @@ class Plugin:
                 vids = []
                 try:
                     p = await create_subprocess_exec("pw-dump", stdout=PIPE, stderr=DEVNULL, env=vesktop._user_env())
-                    out, _ = await p.communicate()
+                    # Timeout court : cette boucle tourne toutes les 15s, un
+                    # PipeWire wedgé empilerait un pw-dump pendu par tour (6
+                    # observés le 19/07). Le timeout sert aussi de DÉTECTEUR :
+                    # on prévient l'utilisateur une fois (seul remède connu =
+                    # redémarrer la session gamescope, le node écran ne survit
+                    # pas à un restart de pipewire seul).
+                    try:
+                        out, _ = await wait_for(p.communicate(), 5)
+                    except Exception:
+                        try:
+                            p.kill()
+                        except ProcessLookupError:
+                            pass
+                        logger.warning("[screendiag] pw-dump muet après 5s — PipeWire ne répond plus")
+                        if not getattr(cls, "_pw_wedge_toasted", False):
+                            cls._pw_wedge_toasted = True
+                            await cls._toast("Steamcord",
+                                             "Audio system (PipeWire) stopped responding — "
+                                             "restart the console to recover streaming/audio.")
+                        await sleep(15)
+                        continue
+                    cls._pw_wedge_toasted = False
                     for n in loads(out.decode() or "[]"):
                         if not str(n.get("type", "")).endswith("Node"):
                             continue
@@ -810,7 +899,19 @@ class Plugin:
         import vesktop
         pre = ("-f", "json") if want_json else ()
         p = await create_subprocess_exec("pactl", *pre, *args, stdout=PIPE, stderr=DEVNULL, env=vesktop._user_env())
-        out, _ = await p.communicate()
+        # ⚠ pactl pend indéfiniment quand PipeWire n'enregistre plus de clients
+        # (wedge du 19/07) : sans timeout, le _golive_lock resterait pris pour
+        # toujours et plus aucun go_live/stop ne passerait. "" est sûr pour tous
+        # les appelants (strip() / loads(x or "[]")).
+        try:
+            out, _ = await wait_for(p.communicate(), 5)
+        except Exception:
+            try:
+                p.kill()
+            except ProcessLookupError:
+                pass
+            logger.warning(f"pactl {' '.join(args[:2])}: muet après 5s — PipeWire ne répond plus ?")
+            return ""
         return out.decode()
 
     @classmethod
@@ -1060,15 +1161,32 @@ class Plugin:
         except Exception as e:
             logger.warning(f"[golive] mic-silence({enable}): {e!r}")
 
+    # Sérialise start/stop (issue #12) : un stop→start rapproché faisait courir
+    # la restauration pactl de _golive_mic_silence(False) EN MÊME TEMPS que le
+    # montage de (True) → la purge par nom déchargeait le null-sink tout neuf et
+    # la source par défaut pointait dans le vide (plus de capture voix, et selon
+    # l'OS des clients pulse coincés). Un seul verrou = séquences entières,
+    # jamais entrelacées.
+    _golive_seq_lock = None
+
+    @classmethod
+    def _golive_lock(cls):
+        if cls._golive_seq_lock is None:
+            from asyncio import Lock
+            cls._golive_seq_lock = Lock()
+        return cls._golive_seq_lock
+
     @classmethod
     async def go_live(cls):
-        await cls._golive_mic_silence(True)
-        await cls.evt_handler.send_client({"type": "$golive", "stop": False})
+        async with cls._golive_lock():
+            await cls._golive_mic_silence(True)
+            await cls.evt_handler.send_client({"type": "$golive", "stop": False})
 
     @classmethod
     async def stop_go_live(cls):
-        await cls.evt_handler.send_client({"type": "$golive", "stop": True})
-        await cls._golive_mic_silence(False)
+        async with cls._golive_lock():
+            await cls.evt_handler.send_client({"type": "$golive", "stop": True})
+            await cls._golive_mic_silence(False)
 
     # ── Partage d'écran via CAMÉRA virtuelle (contournement gamescope) ──────────
     # gamescope n'a pas de portail → Go Live (getDisplayMedia) = écran noir. À la
@@ -1341,56 +1459,138 @@ class Plugin:
     # le Chromium de Vesktop → le QAM n'a aucune poignée sur le flux. Ce feeder
     # léger (gst_preview.py) capture le node gamescope → JPEG/2s, uniquement
     # tant que la tuile d'aperçu est montée (start au montage, stop au démontage).
+    # Refcount + verrou (issue #12) : au flicker LIVE→pas LIVE→LIVE la tuile se
+    # démonte/remonte en <1s, et le stop du 1er montage pouvait être traité APRÈS
+    # le start du 2e → il tuait le feeder tout neuf et l'aperçu restait mort
+    # (« Starting preview… » éternel). start/stop s'équilibrent ; on ne tue le
+    # feeder que quand plus AUCUNE tuile n'est montée.
+    _preview_seq_lock = None
+    _preview_refs = 0
+    _preview_fallback_task = None
+
+    @classmethod
+    def _preview_lock(cls):
+        if cls._preview_seq_lock is None:
+            from asyncio import Lock
+            cls._preview_seq_lock = Lock()
+        return cls._preview_seq_lock
+
+    @classmethod
+    def _preview_running(cls):
+        proc = getattr(cls, "golive_preview", None)
+        if proc is not None and proc.returncode is None:
+            return True
+        task = cls._preview_fallback_task
+        return task is not None and not task.done()
+
+    @classmethod
+    async def _golive_preview_fallback(cls):
+        """Aperçu SANS GStreamer (SteamOS stock, issue #12 : pas de
+        gst-plugin-pipewire) : gamescopectl screenshot (instantané, natif
+        gamescope) + ffmpeg pour la vignette JPEG. Les deux binaires sont dans
+        l'image SteamOS de base — l'aperçu marche donc sur Deck stock."""
+        import os
+        import vesktop
+        env = vesktop._user_env()
+        raw = "/tmp/steamcord-golive-preview-raw.png"
+        path = "/tmp/steamcord-golive-preview.jpg"
+        try:
+            while True:
+                try:
+                    p = await create_subprocess_exec(
+                        "gamescopectl", "screenshot", raw,
+                        stdout=DEVNULL, stderr=DEVNULL, env=env)
+                    await p.wait()
+                    # gamescopectl rend la main tout de suite ; gamescope écrit
+                    # le fichier juste après → petite marge avant conversion.
+                    await sleep(0.6)
+                    p = await create_subprocess_exec(
+                        "ffmpeg", "-y", "-loglevel", "error", "-i", raw,
+                        "-vf", "scale=640:-2", "-q:v", "7", path + ".tmp",
+                        stdout=DEVNULL, stderr=DEVNULL, env=env)
+                    await p.wait()
+                    if os.path.exists(path + ".tmp"):
+                        os.replace(path + ".tmp", path)
+                except Exception as e:
+                    logger.warning(f"[gstprev] fallback screenshot: {e!r}")
+                await sleep(2)
+        finally:
+            for f in (raw, path, path + ".tmp"):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+
     @classmethod
     async def start_golive_preview(cls):
         import os
+        import shutil as _sh
         from pathlib import Path as _P
-        proc = getattr(cls, "golive_preview", None)
-        if proc is not None and proc.returncode is None:
-            return {"ok": True}
-        try:
-            import vesktop
-            killer = await create_subprocess_exec("pkill", "-f", "gst_preview.py",
-                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
-            await killer.wait()
-        except Exception:
-            pass
-        script = _P(DECKY_PLUGIN_DIR) / "gst_preview.py"
-        if not script.exists():
-            script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_preview.py"
-        cls.golive_preview = await create_subprocess_exec(
-            sys_python(), str(script),
-            env=getattr(cls, "_gst_env", None) or dict(os.environ),
-            stdout=PIPE, stderr=PIPE,
-        )
-        create_task(stream_watcher(cls.golive_preview.stdout, prefix="[gstprev]"))
-        create_task(stream_watcher(cls.golive_preview.stderr, True, prefix="[gstprev]"))
-        return {"ok": True}
+        async with cls._preview_lock():
+            cls._preview_refs += 1
+            if cls._preview_running():
+                return {"ok": True}
+            hint = await cls._gst_python_hint()
+            if hint is None:
+                try:
+                    import vesktop
+                    killer = await create_subprocess_exec("pkill", "-f", "gst_preview.py",
+                                                          stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
+                    await killer.wait()
+                except Exception:
+                    pass
+                script = _P(DECKY_PLUGIN_DIR) / "gst_preview.py"
+                if not script.exists():
+                    script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_preview.py"
+                cls.golive_preview = await create_subprocess_exec(
+                    sys_python(), str(script),
+                    env=getattr(cls, "_gst_env", None) or dict(os.environ),
+                    stdout=PIPE, stderr=PIPE,
+                )
+                create_task(stream_watcher(cls.golive_preview.stdout, prefix="[gstprev]"))
+                create_task(stream_watcher(cls.golive_preview.stderr, True, prefix="[gstprev]"))
+                return {"ok": True}
+            if _sh.which("gamescopectl") and _sh.which("ffmpeg"):
+                logger.info("[gstprev] bindings GStreamer absents → fallback "
+                            "gamescopectl+ffmpeg")
+                cls._preview_fallback_task = create_task(cls._golive_preview_fallback())
+                return {"ok": True}
+            # Rien pour capturer : le front affiche le hint structuré (i18n).
+            logger.warning(f"[gstprev] {hint['hint']}")
+            return {"ok": False, **hint}
 
     @classmethod
     async def stop_golive_preview(cls):
-        proc = getattr(cls, "golive_preview", None)
-        if proc is not None and proc.returncode is None:
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
-        cls.golive_preview = None
-        return True
+        async with cls._preview_lock():
+            cls._preview_refs = max(0, cls._preview_refs - 1)
+            if cls._preview_refs:
+                return True
+            proc = getattr(cls, "golive_preview", None)
+            if proc is not None and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+            cls.golive_preview = None
+            task = cls._preview_fallback_task
+            if task is not None and not task.done():
+                task.cancel()
+            cls._preview_fallback_task = None
+            return True
 
     @classmethod
     async def get_golive_preview(cls):
-        """Aperçu Go Live natif : état du feeder + dernier JPEG (gst_preview.py)."""
+        """Aperçu Go Live natif : état du feeder + dernier JPEG (gst_preview.py
+        ou fallback gamescopectl)."""
         import base64
         import os
         import time as _t
-        proc = getattr(cls, "golive_preview", None)
-        running = proc is not None and proc.returncode is None
+        running = cls._preview_running()
         jpg = ""
         path = "/tmp/steamcord-golive-preview.jpg"
         try:
-            if running and os.path.exists(path) and _t.time() - os.path.getmtime(path) < 6:
+            if running and os.path.exists(path) and _t.time() - os.path.getmtime(path) < 8:
                 with open(path, "rb") as f:
                     jpg = base64.b64encode(f.read()).decode()
         except Exception:

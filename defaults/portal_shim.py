@@ -113,7 +113,20 @@ async def find_screen_node():
         proc = await asyncio.create_subprocess_exec(
             "pw-dump", stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await proc.communicate()
+        # ⚠ SANS timeout, un PipeWire qui n'enregistre plus de clients (vu le
+        # 19/07 après un spam start/stop : 6 pw-dump pendus) bloquait ce await
+        # pour toujours → Start ne répondait jamais → le getDisplayMedia de
+        # Chromium pendait → plus AUCUN Go Live possible (faux « wedge Electron »).
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), 5)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            log.warning("pw-dump muet après 5s — PipeWire ne répond plus "
+                        "(redémarrer la session/console pour récupérer)")
+            return None, None
         data = json.loads(out)
     except Exception as e:
         log.warning(f"pw-dump KO: {e!r}")
@@ -324,9 +337,13 @@ class PortalShim:
 
     async def _start_async(self, sender, session, req):
         # Le node gamescope peut mettre quelques instants à (ré)apparaître
-        # (lancement de jeu) — courte boucle avant d'abandonner.
+        # (lancement de jeu) — courte boucle avant d'abandonner. Budget en
+        # TEMPS et pas en tours : si pw-dump timeoute (5s/appel, PipeWire
+        # wedgé), 10 tours feraient ~55s alors que Chromium abandonne le
+        # portail à 25s — il faut répondre Response(2) AVANT.
         node = size = None
-        for _ in range(10):
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 6:
             node, size = await find_screen_node()
             if node is not None:
                 break

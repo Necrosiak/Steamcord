@@ -3,6 +3,43 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.0 — 2026-07-19
+
+### Added
+- **Discord Rich Presence for the running game** (#11). The QAM already told
+  the backend which game was running, but the client handler for it had been
+  lost in an earlier rewrite, so nothing ever reached Discord. It is now
+  dispatched as a proper local activity, with the game name matched (case-
+  insensitively) against Discord's detectable-applications list so most games
+  get their real artwork and "Playing …" card; the activity is also replayed
+  automatically when the Discord client reconnects, and the elapsed timer
+  survives those reconnections. A new toggle in Config → Status ("Show current
+  game on Discord", on by default) lets you turn the feature off; switching it
+  off clears the activity immediately. While the option is on, the QAM also
+  shows a small "Playing …" line (game artwork + name) under your username.
+
+### Fixed
+- **Rapid stream toggling could break streaming — and the whole console's
+  audio** (#12). Closing and reopening Go Live within a second or two made
+  overlapping acquisitions race each other: the Go Live button died, and the
+  storm of stream setup/teardown could push PipeWire itself into a state
+  where it stops accepting new clients — which on SteamOS shows up as dead
+  Steam/QAM buttons, no sound, and games refusing to launch. Fixes: the Go
+  Live button now has a short cooldown; a new start waits for the previous
+  stream's teardown before acquiring; a watchdog recovers the button if an
+  acquisition hangs; the backend serializes start/stop so audio routing can't
+  race; and every PipeWire query (`pw-dump`, `pactl`) now has a timeout, so a
+  wedged PipeWire degrades into a clear error (plus a toast telling you to
+  restart the console) instead of freezing streaming forever.
+- **Self-preview stuck on "Starting Preview…" on stock SteamOS** (#12). Stock
+  SteamOS ships GStreamer without `gst-plugin-pipewire`, so the preview
+  pipeline silently died. The preview now falls back to a
+  `gamescopectl screenshot` + `ffmpeg` loop (both are stock on SteamOS), and
+  if no method works the tile now says so instead of spinning forever.
+- The LIVE badge and preview tile no longer flicker away during a
+  not-so-fast stream reopen (a debounced synthetic STOP from the previous
+  stream raced the new one).
+
 ## 1.15.1 — 2026-07-19
 
 ### Added

@@ -16,7 +16,7 @@ import sys
 import time
 import json
 import logging
-from subprocess import getoutput
+from subprocess import getoutput, run, PIPE, DEVNULL
 from gi import require_version  # type: ignore
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout,
@@ -65,7 +65,10 @@ def find_screen_node():
     """Node PipeWire de l'écran gamescope (publie l'écran complet en mode jeu).
     Renvoie l'id (str) ou None."""
     try:
-        data = json.loads(getoutput("pw-dump"))
+        # timeout : un PipeWire qui n'enregistre plus de clients laisse pw-dump
+        # pendu pour toujours (wedge du 19/07) — mieux vaut échouer proprement.
+        data = json.loads(run(["pw-dump"], stdout=PIPE, stderr=DEVNULL,
+                              timeout=5, text=True).stdout)
     except Exception as e:
         log.warning(f"pw-dump KO: {e!r}")
         return None
