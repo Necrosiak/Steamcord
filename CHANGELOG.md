@@ -3,6 +3,18 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.5 — 2026-07-20
+
+### Added
+- **Reorder and hide servers** in the server/DM browser (#18). A new toggle
+  reveals ↑/↓ and hide/unhide controls per server (kept out of the way by
+  default); a "show hidden" button lets you bring hidden servers back. The
+  order and hidden set are Steamcord's own local preferences — Discord's
+  native drag-and-drop reorder doesn't actually persist across a client
+  restart, so this is tracked separately and survives reconnecting. New
+  servers you join always show up (appended after your custom order), and
+  leaving a server never leaves a stale/broken entry behind.
+
 ## 1.16.4 — 2026-07-20
 
 ### Added
