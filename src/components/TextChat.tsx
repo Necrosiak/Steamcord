@@ -90,6 +90,72 @@ const shortTime = (ts: string | null) => {
   try { const d = new Date(ts); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
 };
 
+// Un message. `Btn` (DialogButton), PAS un `Focusable` brut : un simple
+// Focusable avec onFocus/onGamepadFocus perd son statut d'arrêt de nav dès
+// qu'un autre vrai composant interactif (lien Btn, image Focusable+onActivate)
+// est présent ailleurs dans la liste — seuls ces derniers restaient atteignables
+// (retour user, régression du 1er essai). DialogButton est le SEUL composant
+// utilisé pour le tracking de focus custom partout ailleurs dans ce fichier/
+// VoiceChatViews (`focusHalo`) : on suit exactement le même pattern ici.
+function MessageRow({ m }: { m: Message }) {
+  const [focused, setFocused] = useState(false);
+  const links = extractLinks(m.content || "");
+  const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
+  return (
+    <Btn
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        display: "block", textAlign: "left", width: "100%", color: "#fff",
+        marginBottom: 7, marginTop: 0, fontSize: 12, lineHeight: 1.3, minHeight: 0,
+        borderRadius: 6, padding: "3px 6px", boxSizing: "border-box",
+        background: focused ? "rgba(88,101,242,0.22)" : "transparent",
+        boxShadow: focused ? "0 0 0 1px rgba(88,101,242,0.7)" : "none",
+        transition: "background .08s ease, box-shadow .08s ease",
+      }}
+    >
+      <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
+      {m.bot && <span style={{ fontSize: 8, background: "#5865f2", color: "#fff", borderRadius: 3, padding: "0 3px", marginLeft: 4 }}>BOT</span>}
+      <span style={{ opacity: 0.4, fontSize: 9, marginLeft: 5 }}>{shortTime(m.ts)}</span>
+      {m.content
+        ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{m.content}</div>
+        : (!hasBody && <div style={{ opacity: 0.4, fontStyle: "italic" }}>—</div>)}
+
+      {/* Miniatures d'images : ne se chargent que lorsque ce salon est
+          ouvert (la vue messages n'est montée qu'à ce moment). Clic →
+          image en grand dans le navigateur du gamemode Steam. */}
+      {m.images?.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
+          {m.images.map((img, i) => (
+            <Focusable
+              key={i}
+              onActivate={() => openUrl(img.url)}
+              onClick={() => openUrl(img.url)}
+              style={{ display: "inline-block", borderRadius: 6, padding: 0, margin: 0 }}
+            >
+              <img
+                src={thumbUrl(img)}
+                style={{ width: 120, height: "auto", maxHeight: 160, display: "block", borderRadius: 6 }}
+              />
+            </Focusable>
+          ))}
+        </div>
+      )}
+
+      {/* Liens cliquables → navigateur gamemode Steam. */}
+      {links.map((u, i) => (
+        <Btn key={`l${i}`} onClick={() => openUrl(u)} style={{ width: "100%", padding: "3px 8px", marginTop: 3, fontSize: 11, display: "flex", gap: 6, alignItems: "center" }}>
+          <span><IcLink /></span><span style={{ flex: 1, textAlign: "left", color: "#00a8fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLink(u)}</span>
+        </Btn>
+      ))}
+
+      {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
+    </Btn>
+  );
+}
+
 // Avatar d'une conversation privée (DM/GroupDM), même logique que DMBrowser.
 function DMAvatar({ ch }: { ch: DMChannel }) {
   if (ch.type === 3 && ch.icon) {
@@ -240,53 +306,15 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
               {loadingOlder ? t("loading_older") : t("load_older")}
             </Btn>
           )}
-          {messages?.map((m) => {
-            const links = extractLinks(m.content || "");
-            const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
-            return (
-              // Focusable même sans lien/image : sans ça, seuls les messages
-              // avec lien ou image sont des arrêts de nav manette/clavier, et
-              // le scroll (qui suit le focus) saute les messages "plats" (#17).
-              <Focusable key={m.id} noFocusRing style={{ display: "block", marginBottom: 7, fontSize: 12, lineHeight: 1.3 }}>
-                <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
-                {m.bot && <span style={{ fontSize: 8, background: "#5865f2", color: "#fff", borderRadius: 3, padding: "0 3px", marginLeft: 4 }}>BOT</span>}
-                <span style={{ opacity: 0.4, fontSize: 9, marginLeft: 5 }}>{shortTime(m.ts)}</span>
-                {m.content
-                  ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{m.content}</div>
-                  : (!hasBody && <div style={{ opacity: 0.4, fontStyle: "italic" }}>—</div>)}
-
-                {/* Miniatures d'images : ne se chargent que lorsque ce salon est
-                    ouvert (la vue messages n'est montée qu'à ce moment). Clic →
-                    image en grand dans le navigateur du gamemode Steam. */}
-                {m.images?.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
-                    {m.images.map((img, i) => (
-                      <Focusable
-                        key={i}
-                        onActivate={() => openUrl(img.url)}
-                        onClick={() => openUrl(img.url)}
-                        style={{ display: "inline-block", borderRadius: 6, padding: 0, margin: 0 }}
-                      >
-                        <img
-                          src={thumbUrl(img)}
-                          style={{ width: 120, height: "auto", maxHeight: 160, display: "block", borderRadius: 6 }}
-                        />
-                      </Focusable>
-                    ))}
-                  </div>
-                )}
-
-                {/* Liens cliquables → navigateur gamemode Steam. */}
-                {links.map((u, i) => (
-                  <Btn key={`l${i}`} onClick={() => openUrl(u)} style={{ width: "100%", padding: "3px 8px", marginTop: 3, fontSize: 11, display: "flex", gap: 6, alignItems: "center" }}>
-                    <span><IcLink /></span><span style={{ flex: 1, textAlign: "left", color: "#00a8fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLink(u)}</span>
-                  </Btn>
-                ))}
-
-                {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
-              </Focusable>
-            );
-          })}
+          {/* flow-children="vertical" indispensable ici : sans lui, un Focusable
+              plat sans DialogButton/SliderField à l'intérieur n'est pas reconnu
+              comme un arrêt de nav par le moteur manette de Steam — seuls les
+              vrais composants interactifs (nos boutons lien, load older) l'étaient,
+              ce qui donnait l'impression que le fix Focusable seul ne suffisait
+              pas (retour user #17 après le 1er correctif). */}
+          <Focusable flow-children="vertical">
+          {messages?.map((m) => <MessageRow key={m.id} m={m} />)}
+          </Focusable>
         </div>
 
         {/* Réponse : champ pleine largeur, bouton Envoyer en dessous (empilé).

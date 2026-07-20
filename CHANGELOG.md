@@ -3,6 +3,19 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.7 — 2026-07-21
+
+### Fixed
+- Plain-text messages (no link, no image) still weren't controller/keyboard
+  nav stops after the v1.16.2 fix (#17) — only links and the "Load older
+  messages" button were reachable with the stick/D-pad. The message list
+  container was missing an explicit vertical flow hint, so a lone `Focusable`
+  per message wasn't picked up as a stop by Steam's gamepad navigation unless
+  something more "interactive" (a real button) was also present. Every
+  message is now wrapped the same way as the rest of the panel's focusable
+  rows, and picks up the same highlight (colored background + outline, text
+  stays readable) when focused instead of vanishing with no visual feedback.
+
 ## 1.16.6 — 2026-07-20
 
 ### Fixed
