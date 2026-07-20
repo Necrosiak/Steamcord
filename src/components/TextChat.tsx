@@ -10,11 +10,19 @@ import { IcLink, IcPaperclip } from "./Icons";
 // une instance distincte par source via `key`).
 let _textPoll: any = null;
 const MSG_LIST_ID = "steamcord-msglist";
+// Doit suivre le `limit=30` côté backend (defaults/steamcord_client.js) : sert
+// juste d'heuristique pour savoir si un lot plein = probablement encore de l'historique.
+const PAGE_SIZE = 30;
+const NEAR_BOTTOM_PX = 80;
 const scrollMsgsBottom = () => {
   setTimeout(() => {
     const el = document.getElementById(MSG_LIST_ID);
     if (el) el.scrollTop = el.scrollHeight;
   }, 50);
+};
+const isNearBottom = () => {
+  const el = document.getElementById(MSG_LIST_ID);
+  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
 };
 
 // Salon/conversation texte actuellement OUVERT — partagé avec UploadScreenshot
@@ -110,6 +118,8 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [channel, setChannel] = useState<{ id: string; name: string; dm: boolean } | null>(null);
   const [messages, setMessages] = useState<Message[] | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,20 +137,60 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     }
   }, [source]);
 
-  const loadMessages = (chId: string) => {
+  // `force` = premier chargement d'un salon (ou juste après un envoi) : on
+  // remplace tout et on scrolle en bas inconditionnellement. Sans `force`
+  // (poll 5 s), on fusionne avec l'historique déjà remonté via loadOlder au
+  // lieu d'écraser — et on ne recolle en bas que si l'utilisateur y était déjà
+  // (sinon un poll pendant qu'on lit l'historique renverrait tout en bas).
+  const loadMessages = (chId: string, force = false) => {
     call<[string], any>("get_messages", chId)
       .then((res) => {
-        setMessages(Array.isArray(res) ? res : []);
-        scrollMsgsBottom(); // auto-scroll vers le message le plus récent
+        const fresh: Message[] = Array.isArray(res) ? res : [];
+        const stick = force || isNearBottom();
+        setMessages((prev) => {
+          if (!prev || fresh.length === 0) return fresh;
+          const freshIds = new Set(fresh.map((m) => m.id));
+          const oldestFreshId = fresh[0].id;
+          const preserved = prev.filter((m) => !freshIds.has(m.id) && BigInt(m.id) < BigInt(oldestFreshId));
+          return [...preserved, ...fresh];
+        });
+        setHasMore(fresh.length >= PAGE_SIZE);
+        if (stick) scrollMsgsBottom(); // auto-scroll vers le message le plus récent
       })
-      .catch(() => setMessages([]));
+      .catch(() => { if (force) setMessages([]); }); // un poll raté ne doit pas effacer ce qui est déjà affiché
+  };
+
+  // Remonte un lot plus ancien (avant le plus vieux message chargé) et le
+  // préfixe à la liste, en compensant le scroll pour ne pas faire sauter la
+  // vue (#17 : impossible de voir le début de la conversation).
+  const loadOlder = () => {
+    if (!channel || !messages || messages.length === 0 || loadingOlder || !hasMore) return;
+    setLoadingOlder(true);
+    const oldestId = messages[0].id;
+    const el = document.getElementById(MSG_LIST_ID);
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+    call<[string, string], any>("get_messages", channel.id, oldestId)
+      .then((res) => {
+        const older: Message[] = Array.isArray(res) ? res : [];
+        setHasMore(older.length >= PAGE_SIZE);
+        if (older.length > 0) {
+          setMessages((prev) => [...older, ...(prev || [])]);
+          setTimeout(() => {
+            const el2 = document.getElementById(MSG_LIST_ID);
+            if (el2) el2.scrollTop += el2.scrollHeight - prevScrollHeight;
+          }, 50);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingOlder(false));
   };
 
   const openChannel = (id: string, name: string, dm: boolean) => {
     setChannel({ id, name, dm });
     setCurrentTextChannel({ id, name, dm }); // → cible du partage de capture
     setMessages(null);
-    loadMessages(id);
+    setHasMore(true);
+    loadMessages(id, true);
     if (_textPoll) clearInterval(_textPoll);
     _textPoll = setInterval(() => loadMessages(id), 5000);
   };
@@ -158,11 +208,6 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     setCurrentTextChannel(null);
   }, []);
 
-  // Toujours suivre le dernier message : re-scroll en bas dès que la liste change
-  // (ouverture du salon ET chaque rafraîchissement du poll 5 s). Plus fiable que
-  // le seul setTimeout dans loadMessages (qui peut tirer avant le rendu).
-  useEffect(() => { if (messages) scrollMsgsBottom(); }, [messages]);
-
   const send = async () => {
     const text = draft.trim();
     if (!text || !channel || sending) return;
@@ -170,7 +215,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     try {
       await call("send_message", channel.id, text);
       setDraft("");
-      loadMessages(channel.id);
+      loadMessages(channel.id, true);
     } catch (e) { setError(String(e)); }
     setSending(false);
   };
@@ -186,11 +231,23 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         <div id={MSG_LIST_ID} ref={fillMsgs.ref} style={{ maxHeight: fillMsgs.height, overflowY: "auto", marginBottom: 6, paddingRight: 2 }}>
           {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 12 }}>{t("loading_messages")}</div>}
           {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_messages")}</div>}
+          {messages !== null && messages.length > 0 && hasMore && (
+            <Btn
+              disabled={loadingOlder}
+              onClick={loadOlder}
+              style={{ width: "100%", padding: "3px 8px", marginBottom: 6, fontSize: 11 }}
+            >
+              {loadingOlder ? t("loading_older") : t("load_older")}
+            </Btn>
+          )}
           {messages?.map((m) => {
             const links = extractLinks(m.content || "");
             const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
             return (
-              <div key={m.id} style={{ marginBottom: 7, fontSize: 12, lineHeight: 1.3 }}>
+              // Focusable même sans lien/image : sans ça, seuls les messages
+              // avec lien ou image sont des arrêts de nav manette/clavier, et
+              // le scroll (qui suit le focus) saute les messages "plats" (#17).
+              <Focusable key={m.id} noFocusRing style={{ display: "block", marginBottom: 7, fontSize: 12, lineHeight: 1.3 }}>
                 <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
                 {m.bot && <span style={{ fontSize: 8, background: "#5865f2", color: "#fff", borderRadius: 3, padding: "0 3px", marginLeft: 4 }}>BOT</span>}
                 <span style={{ opacity: 0.4, fontSize: 9, marginLeft: 5 }}>{shortTime(m.ts)}</span>
@@ -227,7 +284,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
                 ))}
 
                 {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
-              </div>
+              </Focusable>
             );
           })}
         </div>

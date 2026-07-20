@@ -3,6 +3,23 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.2 — 2026-07-21
+
+### Fixed
+- **Impossible to read past the last 30 messages in a channel/DM, and
+  keyboard/controller navigation only stopped on messages containing a link**
+  (#17). Two separate issues: only the most recent 30 messages were ever
+  fetched, with no way to reach anything older; and plain-text messages had no
+  focusable element at all, so D-pad/keyboard navigation (which drives
+  Steam's scroll-follows-focus behavior) skipped straight to the next message
+  that had a link or image. Every message is now itself a focus stop, and a
+  "Load older messages" button appears at the top of the list once there's
+  more history to fetch, paging backwards through the conversation.
+- The 5 s background refresh no longer snaps the view back to the bottom
+  while reading older history — it just doesn't discard messages loaded that
+  way — and it no longer wipes the whole conversation from view if a single
+  refresh happens to fail.
+
 ## 1.16.1 — 2026-07-20
 
 ### Changed

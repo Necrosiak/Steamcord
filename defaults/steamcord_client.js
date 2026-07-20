@@ -1184,8 +1184,11 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 }
                                 case "$get_messages": {
                                     // MessageStore est vide pour un salon non ouvert → RestAPI (newest-first,
-                                    // on inverse pour l'ordre de lecture). Timestamps ISO.
-                                    const res = await Vencord.Webpack.Common.RestAPI.get({ url: `/channels/${data.id}/messages?limit=30` });
+                                    // on inverse pour l'ordre de lecture). Timestamps ISO. `before` = pagination
+                                    // vers l'historique (id du plus vieux message déjà chargé côté frontend).
+                                    const url = `/channels/${data.id}/messages?limit=30`
+                                        + (data.before ? `&before=${encodeURIComponent(data.before)}` : "");
+                                    const res = await Vencord.Webpack.Common.RestAPI.get({ url });
                                     const arr = (res?.body || []).slice().reverse();
                                     const isImg = (a) => (a?.content_type || "").startsWith("image/")
                                         || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(a?.filename || a?.url || "");

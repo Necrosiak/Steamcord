@@ -796,8 +796,8 @@ class Plugin:
         return await cls.evt_handler.api.get_text_channels()
 
     @classmethod
-    async def get_messages(cls, channel_id):
-        return await cls.evt_handler.api.get_messages(channel_id)
+    async def get_messages(cls, channel_id, before=None):
+        return await cls.evt_handler.api.get_messages(channel_id, before)
 
     @classmethod
     async def send_message(cls, channel_id, content):

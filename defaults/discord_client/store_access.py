@@ -132,8 +132,8 @@ class StoreAccess:
     async def get_text_channels(self):
         return await self._store_access_request("$get_text_channels")
 
-    async def get_messages(self, channel_id):
-        return await self._store_access_request("$get_messages", id=channel_id)
+    async def get_messages(self, channel_id, before=None):
+        return await self._store_access_request("$get_messages", id=channel_id, before=before)
 
     async def send_message(self, channel_id, content):
         return await self._store_access_request("$send_message", id=channel_id, content=content)
