@@ -3,7 +3,7 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
-## 1.16.3 — 2026-07-20
+## 1.16.4 — 2026-07-20
 
 ### Added
 - **Soundboard** in the voice call view: browse and play the default sounds,
@@ -26,6 +26,10 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
   soundboard at all. All three turned out to share the same root cause —
   controller-focused elements being torn down and rebuilt by the UI on
   re-renders that had nothing to do with them — and are fixed together.
+- The new join/leave sound cue above could trigger randomly while **not even
+  in a voice channel**: voice-state updates are broadcast for any mutual
+  friend's voice activity anywhere, and a friend leaving a call elsewhere
+  reports no channel — which was matching "no channel" on our own side too.
 
 ## 1.16.2 — 2026-07-20
 

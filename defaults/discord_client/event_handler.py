@@ -314,6 +314,14 @@ class EventHandler:
             if user_id == self.me.id:
                 continue
 
+            # On n'est dans AUCUN salon (vc_channel_id=None) : ignorer entièrement.
+            # Sans cette garde, un AMI qui quitte un vocal ailleurs (channelId=null
+            # côté lui aussi) matchait `channel_id == self.vc_channel_id` (None==None)
+            # et faisait jouer un son "connexion" pour du monde sans rapport avec
+            # nous — régression découverte le 20/07 en testant les sons natifs.
+            if self.vc_channel_id is None:
+                continue
+
             if channel_id == self.vc_channel_id:
                 # `existed` AVANT la création : un membre qui ARRIVE caméra allumée
                 # (ou le resync) ne doit pas déclencher le toast « a allumé sa
