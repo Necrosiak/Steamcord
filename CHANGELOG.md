@@ -3,6 +3,30 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.3 — 2026-07-20
+
+### Added
+- **Soundboard** in the voice call view: browse and play the default sounds,
+  the current server's sounds, and — with Nitro — sounds from every other
+  server you've joined, same as the "soundboard everywhere" perk on the real
+  client. Browsing/playing only, no sound management (upload/edit/delete
+  stays server administration, out of scope here). You now hear your own
+  sounds locally too, matching the real client's behavior.
+- **Native Discord sound cues** for muting/unmuting, deafening/undeafening,
+  disconnecting from a voice channel, and other participants joining or
+  leaving the channel you're in. These reuse Discord's own bundled sounds
+  (whatever soundpack you have selected — classic, seasonal, etc.) instead of
+  shipping separate audio files.
+
+### Fixed
+- Soundboard tiles rendered as a plain full-width list instead of a compact
+  grid, and playing a sound could kick the controller focus out of the panel
+  entirely. A very similar focus loss also happened whenever another
+  participant's mic activity flickered on/off, even without touching the
+  soundboard at all. All three turned out to share the same root cause —
+  controller-focused elements being torn down and rebuilt by the UI on
+  re-renders that had nothing to do with them — and are fixed together.
+
 ## 1.16.2 — 2026-07-20
 
 ### Fixed

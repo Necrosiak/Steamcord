@@ -804,6 +804,14 @@ class Plugin:
         return await cls.evt_handler.api.send_message(channel_id, content)
 
     @classmethod
+    async def get_soundboard_sounds(cls):
+        return await cls.evt_handler.api.get_soundboard_sounds()
+
+    @classmethod
+    async def play_soundboard_sound(cls, sound_id, source_guild_id=None):
+        return await cls.evt_handler.api.play_soundboard_sound(sound_id, source_guild_id)
+
+    @classmethod
     async def get_local_mute(cls, user_id):
         r = await cls.evt_handler.api.get_local_mute(user_id)
         # Le client (ancien, déjà en page) renvoie `false` coercé en `{}` via

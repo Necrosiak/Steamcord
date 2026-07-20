@@ -55,6 +55,7 @@ import { initVoiceShortcut, getShortcutCfg, setShortcutCfg, captureBinding, canc
 import {
   VoiceChatChannel,
   VoiceChatMembers,
+  SoundboardPanel,
 } from "./components/VoiceChatViews";
 import { UploadScreenshot } from "./components/UploadScreenshot";
 import { GoLiveButton } from "./components/buttons/GoLiveButton";
@@ -705,6 +706,7 @@ const Content = () => {
               // ── Onglet Vocal, en appel : vue de l'appel en cours ──
               <>
                 <VoiceChatChannel />
+                <SoundboardPanel />
                 <VoiceChatMembers />
                 {/* Go Live marche PARTOUT depuis v1.15.0 : portail KWin en
                     Bureau/Big Picture, portal_shim (node gamescope) en console

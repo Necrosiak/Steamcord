@@ -123,6 +123,12 @@ class StoreAccess:
     async def get_voice_states(self, channel_id):
         return await self._store_access_request("$get_voice_states", id=channel_id)
 
+    async def get_soundboard_sounds(self):
+        return await self._store_access_request("$get_soundboard_sounds")
+
+    async def play_soundboard_sound(self, sound_id, source_guild_id=None):
+        return await self._store_access_request("$play_soundboard_sound", soundId=sound_id, sourceGuildId=source_guild_id)
+
     async def get_dm_channels(self):
         return await self._store_access_request("$get_dm_channels")
 

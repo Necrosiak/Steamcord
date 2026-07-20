@@ -4,12 +4,12 @@
 // texte voisin. Les TOASTS gardent leurs emojis (texte brut, pas de JSX).
 import {
   BsArrowRepeat, BsBell, BsBoxArrowRight, BsCamera, BsCameraVideo,
-  BsChatDots, BsCheckCircle, BsCircle, BsCircleFill, BsController,
+  BsChatDots, BsCheckCircle, BsChevronDown, BsCircle, BsCircleFill, BsController,
   BsDisplay, BsExclamationTriangle, BsFilm, BsFolder2Open, BsGear,
   BsGithub, BsHeadphones, BsHouseDoor, BsInfoCircle, BsJoystick,
   BsLink45Deg, BsMic, BsMicMute, BsMicMuteFill, BsMoon, BsPaperclip,
-  BsPerson, BsPhone, BsSlashCircle, BsTelephone, BsVolumeMuteFill,
-  BsVolumeUp,
+  BsPerson, BsPhone, BsSlashCircle, BsSoundwave, BsTelephone,
+  BsVolumeMuteFill, BsVolumeUp,
 } from "react-icons/bs";
 
 type IcProps = { size?: number | string; color?: string; style?: any };
@@ -49,6 +49,8 @@ export const IcCheckCircle = mk(BsCheckCircle);
 export const IcSmartphone = mk(BsPhone);
 export const IcInfo = mk(BsInfoCircle);
 export const IcGithub = mk(BsGithub);
+export const IcSoundboard = mk(BsSoundwave);
+export const IcChevronDown = mk(BsChevronDown);
 
 // Statuts Discord : pastilles teintées façon Discord (rond plein / lune /
 // cercle barré / cercle creux) — la couleur porte le sens, pas l'emoji.

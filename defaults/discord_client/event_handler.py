@@ -108,6 +108,17 @@ class EventHandler:
         except Exception:
             raise Exception("discord_reconnecting")
 
+    async def _play_sound(self, name):
+        # Sons natifs Discord (mute/deafen/disconnect/user_join/user_leave —
+        # demande user). Best-effort : la sonnerie ne doit JAMAIS faire échouer
+        # l'action réelle (toggle mute, mise à jour de la liste des membres…)
+        # qui l'a déclenchée, donc on avale toute erreur (ws fermé pendant une
+        # reconnexion, client pas encore prêt, etc.).
+        try:
+            await self.send_client({"type": "$play_sound", "name": name})
+        except Exception:
+            pass
+
     async def toggle_mute(self, act=False):
         if act:
             # ON N'ENVOIE QUE LA COMMANDE — surtout PAS de lecture ni de push ici.
@@ -229,11 +240,18 @@ class EventHandler:
         # changement de salon (ou si la liste a été perdue).
         if new_id is not None and new_id == self.vc_channel_id and self.vc_members:
             return
+        old_id = self.vc_channel_id
         self.vc_channel_id = new_id
         if self.vc_channel_id is None:
             self.vc_members = {}
             self.api._channel_name = None
             self.api._guild_name = None
+            # Pas de son "connect" natif chez Discord (le manifest du soundpack
+            # n'en a pas — seul "disconnect" existe) : on ne joue donc qu'à la
+            # VRAIE sortie d'un salon (old_id non nul), jamais au démarrage
+            # (old_id déjà None) ni à une simple re-sélection du même salon.
+            if old_id is not None:
+                await self._play_sound("disconnect")
             return
 
         channel = await self.api.get_channel(self.vc_channel_id)
@@ -306,6 +324,11 @@ class EventHandler:
                     user = User({"id": user_id, "username": "", "discriminator": None, "avatar": ""})
                     await user.populate(self.api)
                     self.vc_members[user_id] = user
+                    # Un membre existant déjà présent quand ON rejoint est peuplé par
+                    # _voice_channel_select (get_voice_states), PAS ici → ce branch
+                    # "not existed" n'est atteint que pour une VRAIE arrivée en
+                    # temps réel dans le salon où on est déjà connecté.
+                    await self._play_sound("user_join")
                 u = self.vc_members[user_id]
                 # Lecture défensive multi-casse (camelCase store / snake_case gateway)
                 # pour ne jamais rester coincé sur un faux « muet ».
@@ -321,6 +344,7 @@ class EventHandler:
                 u.is_video = new_video
             elif user_id in self.vc_members:
                 del self.vc_members[user_id]
+                await self._play_sound("user_leave")
 
     # Échos de Discord (AUDIO_TOGGLE_SELF_MUTE/DEAF). Ces events arrivent AUSSI quand
     # c'est NOUS qui avons déclenché le toggle (Discord ré-émet l'event qu'on lui a
@@ -330,11 +354,13 @@ class EventHandler:
         s = await self.api.get_media()
         self.me.is_muted = s["mute"]
         self.me.is_deafened = s["deaf"]
+        await self._play_sound("mute" if s["mute"] else "unmute")
 
     async def _toggle_deaf(self, data):
         s = await self.api.get_media()
         self.me.is_muted = s["mute"]
         self.me.is_deafened = s["deaf"]
+        await self._play_sound("deafen" if s["deaf"] else "undeafen")
 
     async def _rpc_notification(self, data):
         # L'event NOTIFICATION_CREATE de Discord porte title/body/icon_url à la

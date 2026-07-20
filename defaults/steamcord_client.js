@@ -1155,6 +1155,103 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     }));
                                     break;
                                 }
+                                case "$get_soundboard_sounds": {
+                                    // Sons par défaut Discord + sons du serveur du salon vocal courant +
+                                    // (si Nitro) sons de tous les autres serveurs rejoints — même perk que
+                                    // le client officiel ("soundboard everywhere"), détecté ici via
+                                    // premiumType plutôt qu'en rejouant leur logique interne de feature-flag.
+                                    const SCS = Vencord.Webpack.findStore("SelectedChannelStore");
+                                    const CS = Vencord.Webpack.Common.ChannelStore || Vencord.Webpack.findStore("ChannelStore");
+                                    const GS = Vencord.Webpack.Common.GuildStore;
+                                    const US = Vencord.Webpack.Common.UserStore;
+                                    const vcId = SCS?.getVoiceChannelId?.();
+                                    const vcChannel = vcId ? CS?.getChannel?.(vcId) : null;
+                                    const currentGuildId = vcChannel?.guild_id || null;
+
+                                    const mapSound = (s) => ({
+                                        id: String(s.sound_id), name: String(s.name || ""),
+                                        emoji: s.emoji_name || null, volume: s.volume ?? 1,
+                                    });
+
+                                    const out = { default: [], guild: null, everywhere: [] };
+                                    try {
+                                        const def = await Vencord.Webpack.Common.RestAPI.get({ url: "/soundboard-default-sounds" });
+                                        out.default = (def?.body || []).map(mapSound);
+                                    } catch (_) { }
+
+                                    if (currentGuildId) {
+                                        try {
+                                            const g = await Vencord.Webpack.Common.RestAPI.get({ url: `/guilds/${currentGuildId}/soundboard-sounds` });
+                                            const items = g?.body?.items || [];
+                                            out.guild = { guildId: currentGuildId, guildName: GS?.getGuild?.(currentGuildId)?.name || "", sounds: items.map(mapSound) };
+                                        } catch (_) { }
+                                    }
+
+                                    const premiumType = US?.getCurrentUser?.()?.premiumType;
+                                    if (premiumType) {
+                                        const allGuilds = GS?.getGuilds?.() || {};
+                                        for (const gid of Object.keys(allGuilds)) {
+                                            if (gid === currentGuildId) continue;
+                                            try {
+                                                const g = await Vencord.Webpack.Common.RestAPI.get({ url: `/guilds/${gid}/soundboard-sounds` });
+                                                const items = g?.body?.items || [];
+                                                if (items.length) out.everywhere.push({ guildId: gid, guildName: allGuilds[gid]?.name || "", sounds: items.map(mapSound) });
+                                            } catch (_) { }
+                                        }
+                                    }
+                                    result = out;
+                                    break;
+                                }
+                                case "$play_soundboard_sound": {
+                                    // Le son ne joue que dans le salon vocal où l'on est effectivement
+                                    // connecté (comme le vrai client) ; source_guild_id seulement pour un
+                                    // son venant d'un AUTRE serveur que celui du salon courant.
+                                    const SCS2 = Vencord.Webpack.findStore("SelectedChannelStore");
+                                    const channelId = SCS2?.getVoiceChannelId?.();
+                                    if (!channelId) { result = { ok: false, error: "not_in_voice" }; break; }
+                                    const body = { sound_id: data.soundId };
+                                    if (data.sourceGuildId) body.source_guild_id = data.sourceGuildId;
+                                    try {
+                                        await Vencord.Webpack.Common.RestAPI.post({ url: `/channels/${channelId}/send-soundboard-sound`, body });
+                                        // La requête REST ci-dessus notifie le serveur (les AUTRES participants
+                                        // l'entendent) mais ne joue RIEN localement — le vrai client Discord
+                                        // dispatche EN PLUS cette action pour se faire entendre soi-même
+                                        // (retrouvé en lisant le code source de son bouton soundboard natif :
+                                        // GUILD_SOUNDBOARD_SOUND_PLAY_LOCALLY). guildId "0" = son par défaut,
+                                        // même convention que source_guild_id ci-dessus. Testé en vrai : joue
+                                        // même avec un objet minimal (pas besoin du nom/emoji/volume).
+                                        try {
+                                            Vencord.Webpack.Common.FluxDispatcher.dispatch({
+                                                type: "GUILD_SOUNDBOARD_SOUND_PLAY_LOCALLY",
+                                                sound: { soundId: data.soundId, guildId: data.sourceGuildId || "0" },
+                                                channelId,
+                                                trigger: "SOUNDBOARD",
+                                            });
+                                        } catch (_) { }
+                                        result = { ok: true };
+                                    } catch (e) {
+                                        result = { ok: false, error: String(e?.body?.message || e) };
+                                    }
+                                    break;
+                                }
+                                case "$play_sound": {
+                                    // "Utilise les sons embed de Discord" (demande user) : rejoue le
+                                    // VRAI son natif du client (WebAudioSound — la classe que Discord
+                                    // utilise lui-même pour ses cues mute/deafen/connexion), plutôt que
+                                    // d'embarquer nos propres fichiers. Lookup par le NOM DE PROP réel
+                                    // (findByProps("WebAudioSound")) — pas par un alias mangled par le
+                                    // bundler (change à chaque build Discord) ni un ID de module en dur.
+                                    // Simplification acceptée : on ne résout pas le nom de fichier par
+                                    // soundpack custom (Halloween/Hiver/…) — juste le nom d'évènement, qui
+                                    // EST déjà le bon fichier pour tout le monde sauf pack thématique actif
+                                    // (rare) → dégrade proprement sur le son classique plutôt que planter.
+                                    try {
+                                        const Snd = Vencord.Webpack.findByProps("WebAudioSound")?.WebAudioSound;
+                                        if (Snd && data.name) new Snd(data.name, data.name, 1, "default").play();
+                                    } catch (_) { }
+                                    result = true;
+                                    break;
+                                }
                                 case "$get_text_channels": {
                                     // Serveurs → salons texte (type 0) + annonces (type 5) accessibles.
                                     const GS = Vencord.Webpack.Common.GuildStore;

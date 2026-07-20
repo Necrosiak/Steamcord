@@ -1,12 +1,12 @@
-import { call } from "@decky/api";
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { addEventListener, call, removeEventListener } from "@decky/api";
+import { memo, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { t } from "../i18n";
 import {
-  IcCameraVideo, IcController, IcFilm, IcMic, IcMicMute, IcMicMuteFill,
-  IcMonitor, IcSpeaker, IcSpeakerMuteFill,
+  IcCameraVideo, IcChevronDown, IcController, IcFilm, IcMic, IcMicMute, IcMicMuteFill,
+  IcMonitor, IcSoundboard, IcSpeaker, IcSpeakerMuteFill,
 } from "./Icons";
-import { SliderField, DialogButton, ModalRoot, showModal } from "@decky/ui";
+import { SliderField, DialogButton, Focusable, ModalRoot, showModal } from "@decky/ui";
 import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
 import { focusHalo, ACCENT, DANGER } from "./Styled";
@@ -267,6 +267,185 @@ export function VoiceChatChannel() {
   );
 }
 
+interface SoundboardSound { id: string; name: string; emoji: string | null; }
+interface SoundboardGuildSounds { guildId: string; guildName: string; sounds: SoundboardSound[]; }
+interface SoundboardData { default: SoundboardSound[]; guild: SoundboardGuildSounds | null; everywhere: SoundboardGuildSounds[]; }
+
+// `useSteamcordState()` republie un OBJET NEUF à CHAQUE event "state" — et le
+// backend en émet un à chaque flicker de is_speaking, en rafale pendant
+// qu'une personne parle. Un composant qui l'appelle directement re-render
+// donc des dizaines de fois par seconde en plein appel. Prouvé au CDP
+// (MutationObserver sur le QAM live) : ce chahut fait retirer-réinsérer le
+// nœud DOM de la tuile son actuellement focus manette → la GamepadUI perd la
+// référence et le focus visuel disparaît tant qu'on ne rebouge pas le stick.
+// Ce hook ne fait re-render l'appelant QUE quand on entre/sort réellement
+// d'un appel (le booléen change), jamais sur un simple flicker vocal.
+function useInCall(): boolean {
+  const [inCall, setInCall] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const apply = (s: any) => {
+      const next = !!s?.vc;
+      if (alive) setInCall((prev) => (prev === next ? prev : next));
+    };
+    call("get_state").then(apply);
+    addEventListener("state", apply);
+    return () => { alive = false; removeEventListener("state", apply); };
+  }, []);
+  return inCall;
+}
+
+// Puce individuelle : icône au-dessus du nom (comme les tuiles du soundboard
+// Discord natif), focus/couleur autogérés (mêmes codes que CardBtn/IconBtn de
+// Styled.tsx) pour rester dans le même langage visuel que le reste du plugin.
+function SoundTile({ sound, playing, onClick }: { sound: SoundboardSound; playing: boolean; onClick: () => void }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Btn
+      // PAS de `disabled` : un DialogButton désactivé sort de la navigation
+      // manette, donc le focus doit sauter ailleurs dès qu'on joue un son —
+      // visible et désagréable. On bloque juste le double-déclenchement dans
+      // le handler, le bouton reste focusable/à sa place tout du long.
+      onClick={() => { if (!playing) onClick(); }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        flex: "1 1 0", minWidth: 0, margin: 0, padding: "6px 4px", minHeight: 0,
+        boxSizing: "border-box", borderRadius: 6,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+        color: "#fff", fontSize: 10, lineHeight: 1.2,
+        background: playing ? ACCENT : "rgba(255,255,255,0.06)",
+        opacity: playing ? 0.75 : 1,
+        ...focusHalo(ACCENT, focused),
+      }}
+    >
+      <span style={{ fontSize: 16 }}>{sound.emoji || "🔊"}</span>
+      <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {sound.name}
+      </span>
+    </Btn>
+  );
+}
+
+// Sons par défaut + serveur courant + (Nitro) tous les autres serveurs rejoints.
+// Uniquement parcourir/jouer — pas de gestion des sons (upload/édition), hors
+// périmètre de Steamcord (utilisation, pas administration de serveur).
+// memo() : index.tsx (le parent) re-render à CHAQUE event "state" (rafale
+// pendant qu'on parle, cf useInCall ci-dessus). Sans memo, React ré-exécute
+// quand même le corps de SoundboardPanel à chaque fois que son parent
+// re-render, même si son propre useInCall() ne change pas — et recréer à
+// chaque passage les closures onClick/onFocus des tuiles suffit à faire
+// perdre le focus manette (le Focusable de Steam ré-enregistre son nœud DOM
+// dès que ces props changent d'identité). SoundboardPanel n'a pas de props →
+// memo bloque tout re-render déclenché par le parent, seul l'état interne
+// (open/data/playingId/useInCall) peut encore le faire re-render.
+export const SoundboardPanel = memo(function SoundboardPanel() {
+  const inCall = useInCall();
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<SoundboardData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [headerFocused, setHeaderFocused] = useState(false);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !data && !loading) {
+      setLoading(true);
+      setError(null);
+      call<[], SoundboardData>("get_soundboard_sounds")
+        .then((res) => setData(res))
+        .catch(() => setError(t("soundboard_error")))
+        .finally(() => setLoading(false));
+    }
+  };
+
+  const play = (soundId: string, sourceGuildId: string | null) => {
+    setPlayingId(soundId);
+    call<[string, string | null], any>("play_soundboard_sound", soundId, sourceGuildId)
+      .catch(() => {})
+      .finally(() => setTimeout(() => setPlayingId((p) => (p === soundId ? null : p)), 400));
+  };
+
+  if (!inCall) return null;
+
+  // Rangées de 3 puces dans un Focusable "horizontal" chacune (même recette que
+  // les onglets Vocal/Textuel de index.tsx) : un DialogButton nu dans un <div>
+  // flex ignore la largeur qu'on lui donne et reprend 100 % → empilement plein
+  // largeur au lieu d'une grille. Le Focusable est ce qui fait respecter le
+  // flex aux boutons enfants, ET donne au D-pad une navigation gauche/droite
+  // correcte à l'intérieur de la rangée.
+  const Grid = ({ sounds, guildId }: { sounds: SoundboardSound[]; guildId: string | null }) => {
+    const rows: SoundboardSound[][] = [];
+    for (let i = 0; i < sounds.length; i += 3) rows.push(sounds.slice(i, i + 3));
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {rows.map((row, i) => (
+          <Focusable key={i} flow-children="horizontal" style={{ display: "flex", gap: 4 }}>
+            {row.map((s) => (
+              <SoundTile key={s.id} sound={s} playing={playingId === s.id} onClick={() => play(s.id, guildId)} />
+            ))}
+            {/* Puces fantômes pour que la dernière rangée incomplète garde la
+                même largeur de tuile que les rangées pleines. */}
+            {row.length < 3 && Array.from({ length: 3 - row.length }).map((_, j) => (
+              <div key={"pad" + j} style={{ flex: "1 1 0" }} />
+            ))}
+          </Focusable>
+        ))}
+      </div>
+    );
+  };
+
+  const isEmpty = !!data && data.default.length === 0 && !data.guild?.sounds.length && data.everywhere.length === 0;
+
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <Btn
+        onClick={toggle}
+        onFocus={() => setHeaderFocused(true)}
+        onBlur={() => setHeaderFocused(false)}
+        onGamepadFocus={() => setHeaderFocused(true)}
+        onGamepadBlur={() => setHeaderFocused(false)}
+        style={{
+          width: "100%", padding: "5px 8px", fontSize: 11, minHeight: 0, margin: 0,
+          boxSizing: "border-box", borderRadius: 6, display: "flex", gap: 6, alignItems: "center",
+          color: "#fff", fontWeight: open ? 700 : 400,
+          background: open ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
+          ...focusHalo(ACCENT, headerFocused),
+        }}
+      >
+        <IcSoundboard /><span style={{ flex: 1, textAlign: "left" }}>{t("soundboard_title")}</span>
+        <span style={{ display: "flex", transform: open ? "rotate(180deg)" : "none", transition: "transform .12s ease" }}>
+          <IcChevronDown size={11} />
+        </span>
+      </Btn>
+      {open && (
+        <div style={{ marginTop: 4, padding: "6px 6px 2px", borderRadius: 6, background: "rgba(255,255,255,0.03)", display: "flex", flexDirection: "column", gap: 6 }}>
+          {loading && <div style={{ fontSize: 11, opacity: 0.6 }}>{t("loading")}</div>}
+          {error && <div style={{ fontSize: 11, color: "#ff6b6b" }}>{error}</div>}
+          {isEmpty && <div style={{ fontSize: 11, opacity: 0.5 }}>{t("soundboard_empty")}</div>}
+          {data && data.default.length > 0 && <Grid sounds={data.default} guildId={null} />}
+          {data?.guild && data.guild.sounds.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, opacity: 0.5, marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.3 }}>{data.guild.guildName}</div>
+              <Grid sounds={data.guild.sounds} guildId={null} />
+            </div>
+          )}
+          {data?.everywhere.map((g) => (
+            <div key={g.guildId}>
+              <div style={{ fontSize: 10, opacity: 0.5, marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.3 }}>{g.guildName}</div>
+              <Grid sounds={g.sounds} guildId={g.guildId} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
   const [volume, setVolume] = useState<number>(100);
   // Mute LOCAL : on ne l'entend plus, de NOTRE côté seulement (lui ne le sait pas).
@@ -395,12 +574,18 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           {user?.username}
           {user?.is_live && <span style={{ marginLeft: 4, color: "#ed4245", fontSize: 9 }}>● LIVE</span>}
         </span>
-        {speaking && (
-          <div style={{
-            width: 8, height: 8, borderRadius: "50%", background: "#23a55a", flexShrink: 0,
-            boxShadow: "0 0 6px 1px rgba(35,165,90,0.8)"
-          }} />
-        )}
+        {/* Toujours monté (jamais ajouté/retiré du DOM) : la pastille "en train
+            de parler" ne fait que changer d'opacité. Un ajout/retrait de nœud
+            ici, dans une rangée qui bouge à CHAQUE prise de parole, faisait
+            perdre le focus manette du panneau entier (même bug de fond que le
+            "scroll suit le focus" de la GamepadUI, déjà vu sur TextChat #17) —
+            garder une géométrie fixe évite le reflow qui le déclenche. */}
+        <div style={{
+          width: 8, height: 8, borderRadius: "50%", background: "#23a55a", flexShrink: 0,
+          boxShadow: "0 0 6px 1px rgba(35,165,90,0.8)",
+          opacity: speaking ? 1 : 0,
+          transition: "opacity 0.08s ease-out",
+        }} />
       </div>
       {/* Aperçu de MON partage d'écran (mode jeu), juste sous mon pseudo, pour
           voir ce que les autres voient. */}
