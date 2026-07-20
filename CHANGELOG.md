@@ -3,6 +3,23 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.6 — 2026-07-20
+
+### Fixed
+- Updater still failing with "Permission denied" on some root-owned installs
+  even after the v1.16.1 fix and a manual `chown -R` (#16). The atomic
+  `os.replace` fix in v1.16.1 only ever addressed file *ownership*; on
+  SELinux-enforcing systems (Bazzite/Fedora Atomic by default) a hierarchy
+  created by a `sudo`-run install can also be *mislabeled* at the SELinux
+  layer, which `chown` never touches. The updater now runs a best-effort
+  `restorecon -R` over the plugin directory after every successful update to
+  self-heal that labeling — a silent no-op on systems without SELinux
+  (SteamOS, CachyOS/Arch, Debian/Ubuntu). If an update still fails, the error
+  now also suggests `sudo restorecon -R` (only where SELinux is actually
+  enforcing) alongside the existing `chown -R` hint, and calls out explicitly
+  when the failure can't be an ownership issue because the plugin is already
+  running as root.
+
 ## 1.16.5 — 2026-07-20
 
 ### Added

@@ -142,6 +142,29 @@ def _content_root(extracted: Path) -> Path:
     return extracted
 
 
+def _selinux_enforcing() -> bool:
+    """True on Bazzite/Fedora Atomic and most SELinux distros in Enforcing mode.
+    False (never blocks) on SteamOS, Arch/CachyOS, Debian/Ubuntu — no getenforce there."""
+    try:
+        r = subprocess.run(["getenforce"], capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and r.stdout.strip() == "Enforcing"
+    except Exception:
+        return False
+
+
+def _restorecon_best_effort(path: Path) -> None:
+    """Re-apply the SELinux context inherited from the parent dir, in case `path`
+    was created/overwritten by a `sudo`-run install and got mislabeled (e.g.
+    admin_home_t instead of the usual user_home_t) — chown fixes DAC ownership
+    but never touches this MAC-layer label, so a root-owned install can stay
+    unwritable even after `chown -R`. No-op (silently) wherever restorecon isn't
+    installed (SteamOS, Arch/CachyOS, Debian/Ubuntu) or we lack rights to relabel."""
+    try:
+        subprocess.run(["restorecon", "-R", str(path)], capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
 def _apply_blocking(url: str) -> None:
     plugin_dir = Path(DECKY_PLUGIN_DIR)
     with tempfile.TemporaryDirectory() as tmp:
@@ -165,6 +188,11 @@ def _apply_blocking(url: str) -> None:
             else:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 _replace_file(src, dst)
+
+        # One recursive pass to heal any SELinux mislabeling left by a root-run
+        # install (chown fixes ownership but never touches this MAC-layer label).
+        # No-op wherever restorecon isn't installed or we lack rights to relabel.
+        _restorecon_best_effort(plugin_dir)
 
 
 def _replace_file(src: Path, dst: Path) -> None:
@@ -200,13 +228,20 @@ async def apply(url: str) -> dict:
         return {"ok": True}
     except PermissionError as e:
         logger.error(f"[updater] apply failed: {e}")
-        # Reaching this point means a *directory* in the plugin tree is not
-        # writable (files are replaced via os.replace, which only needs
-        # directory write access) — tell the user the exact fix.
+        blocked_path = getattr(e, "filename", "") or DECKY_PLUGIN_DIR
+        hints = [f"sudo chown -R $(id -un) {DECKY_PLUGIN_DIR}"]
+        if _selinux_enforcing():
+            # The likely real culprit on Bazzite/Fedora Atomic: chown fixes DAC
+            # ownership, but a root-run install can leave files mislabeled at the
+            # SELinux (MAC) layer, which chown never touches — restorecon does.
+            hints.append(f"sudo restorecon -R {DECKY_PLUGIN_DIR}")
+        as_root = os.geteuid() == 0
+        note = (" (this process already runs as root — a further Permission denied "
+                "here points at SELinux or an immutable file attribute, not ownership)"
+                if as_root else "")
         return {"ok": False,
-                "error": f"Permission denied ({getattr(e, 'filename', '')}) — "
-                         "run: sudo chown -R $(id -un) "
-                         f"{DECKY_PLUGIN_DIR} then retry"}
+                "error": f"Permission denied on {blocked_path}{note} — run:\n"
+                         + "\n".join(hints) + "\nthen retry"}
     except Exception as e:
         logger.error(f"[updater] apply failed: {e}")
         return {"ok": False, "error": str(e)}
