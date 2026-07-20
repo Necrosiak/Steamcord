@@ -3,7 +3,7 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
-## 1.16.2 — 2026-07-21
+## 1.16.2 — 2026-07-20
 
 ### Fixed
 - **Impossible to read past the last 30 messages in a channel/DM, and
