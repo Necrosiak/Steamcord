@@ -3,9 +3,9 @@
 // tree-shaké au build) : 1em / currentColor → hérite taille et couleur du
 // texte voisin. Les TOASTS gardent leurs emojis (texte brut, pas de JSX).
 import {
-  BsArrowRepeat, BsBell, BsBoxArrowRight, BsCamera, BsCameraVideo,
-  BsChatDots, BsCheckCircle, BsChevronDown, BsCircle, BsCircleFill, BsController,
-  BsDisplay, BsExclamationTriangle, BsFilm, BsFolder2Open, BsGear,
+  BsArrowDownUp, BsArrowRepeat, BsBell, BsBoxArrowRight, BsCamera, BsCameraVideo,
+  BsChatDots, BsCheckCircle, BsChevronDown, BsChevronUp, BsCircle, BsCircleFill, BsController,
+  BsDisplay, BsExclamationTriangle, BsEye, BsEyeSlash, BsFilm, BsFolder2Open, BsGear,
   BsGithub, BsHeadphones, BsHouseDoor, BsInfoCircle, BsJoystick,
   BsLink45Deg, BsMic, BsMicMute, BsMicMuteFill, BsMoon, BsPaperclip,
   BsPerson, BsPhone, BsSlashCircle, BsSoundwave, BsTelephone,
@@ -51,6 +51,10 @@ export const IcInfo = mk(BsInfoCircle);
 export const IcGithub = mk(BsGithub);
 export const IcSoundboard = mk(BsSoundwave);
 export const IcChevronDown = mk(BsChevronDown);
+export const IcChevronUp = mk(BsChevronUp);
+export const IcEye = mk(BsEye);
+export const IcEyeSlash = mk(BsEyeSlash);
+export const IcReorder = mk(BsArrowDownUp);
 
 // Statuts Discord : pastilles teintées façon Discord (rond plein / lune /
 // cercle barré / cercle creux) — la couleur porte le sens, pas l'emoji.

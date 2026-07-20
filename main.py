@@ -775,9 +775,85 @@ class Plugin:
     async def get_screen_bounds(cls):
         return await cls.evt_handler.api.get_screen_bounds()
 
+    # Réordonner/masquer des serveurs (issue #18) : préférences 100% LOCALES à
+    # Steamcord, PAS le tri natif Discord. Vérifié en vrai (redémarrage complet
+    # de Vesktop) : GUILD_MOVE_BY_ID (le mécanisme du glisser-déposer natif)
+    # met à jour l'arbre en mémoire du client MAIS ne persiste JAMAIS côté
+    # compte — l'ordre revenait comme avant après reload. Portage sur nos
+    # propres fichiers = vraiment permanent, et on n'a pas besoin de
+    # reproduire la synchro settings-proto de Discord (protobuf, fragile).
+    _GUILD_ORDER_CFG = os.path.expanduser("~/.config/steamcord-guild-order.json")
+    _HIDDEN_GUILDS_CFG = os.path.expanduser("~/.config/steamcord-hidden-guilds.json")
+    _guild_order = None
+    _hidden_guilds = None
+
+    @staticmethod
+    def _load_json_list(path, key):
+        from json import load
+        try:
+            with open(path) as f:
+                return list(load(f).get(key, []))
+        except Exception:
+            return []
+
+    @staticmethod
+    def _save_json_list(path, key, values):
+        from json import dump
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                dump({key: values}, f)
+        except Exception as e:
+            logger.warning(f"save {path} failed: {e!r}")
+
     @classmethod
-    async def get_guilds_vc(cls):
-        return await cls.evt_handler.api.get_guilds_vc()
+    def _guild_order_list(cls):
+        if cls._guild_order is None:
+            cls._guild_order = cls._load_json_list(cls._GUILD_ORDER_CFG, "order")
+        return cls._guild_order
+
+    @classmethod
+    def _hidden_guilds_set(cls):
+        if cls._hidden_guilds is None:
+            cls._hidden_guilds = set(cls._load_json_list(cls._HIDDEN_GUILDS_CFG, "ids"))
+        return cls._hidden_guilds
+
+    @classmethod
+    async def set_guild_order(cls, ordered_ids):
+        cls._guild_order = [str(g) for g in ordered_ids] if isinstance(ordered_ids, list) else []
+        cls._save_json_list(cls._GUILD_ORDER_CFG, "order", cls._guild_order)
+        return True
+
+    @classmethod
+    async def set_guild_hidden(cls, guild_id, hidden):
+        ids = cls._hidden_guilds_set()
+        if hidden:
+            ids.add(str(guild_id))
+        else:
+            ids.discard(str(guild_id))
+        cls._save_json_list(cls._HIDDEN_GUILDS_CFG, "ids", sorted(ids))
+        return True
+
+    @classmethod
+    async def get_guilds_vc(cls, include_hidden=False):
+        guilds = await cls.evt_handler.api.get_guilds_vc()
+        if not isinstance(guilds, list):
+            return guilds
+        hidden = cls._hidden_guilds_set()
+        order = cls._guild_order_list()
+        # Un serveur PAS dans `order` (nouveau, jamais réordonné, ou qu'on a
+        # quitté depuis) atterrit après ceux explicitement ordonnés, dans son
+        # ordre naturel Discord — jamais perdu, jamais planté par une entrée
+        # périmée (le dict `present` filtre silencieusement les ids qui ne
+        # correspondent plus à un serveur actuel).
+        present = {g.get("id"): g for g in guilds if isinstance(g, dict) and g.get("id")}
+        ordered = [present[gid] for gid in order if gid in present]
+        ordered_ids = {g.get("id") for g in ordered}
+        rest = [g for g in guilds if g.get("id") not in ordered_ids]
+        merged = ordered + rest
+        for g in merged:
+            g["hidden"] = g.get("id") in hidden
+        return merged if include_hidden else [g for g in merged if not g["hidden"]]
 
     @classmethod
     async def join_vc(cls, channel_id, guild_id):
