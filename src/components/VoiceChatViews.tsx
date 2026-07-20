@@ -1,7 +1,11 @@
 import { call } from "@decky/api";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { t } from "../i18n";
+import {
+  IcCameraVideo, IcController, IcFilm, IcMic, IcMicMute, IcMicMuteFill,
+  IcMonitor, IcSpeaker, IcSpeakerMuteFill,
+} from "./Icons";
 import { SliderField, DialogButton, ModalRoot, showModal } from "@decky/ui";
 import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
@@ -37,7 +41,8 @@ function VideoTile({ stream }: { stream: MediaStream }) {
 // Libellé humain d'une piste selon son kind (transmis par le client dans la meta
 // de l'offre : écran vs caméra — issue #8, on n'affiche plus de tuiles anonymes).
 const trackLabel = (kind: string) =>
-  kind === "screen" ? `🖥️ ${t("video_kind_screen")}` : kind === "camera" ? `📷 ${t("video_kind_camera")}` : "🎬";
+  kind === "screen" ? <><IcMonitor /> {t("video_kind_screen")}</>
+    : kind === "camera" ? <><IcCameraVideo /> {t("video_kind_camera")}</> : <IcFilm />;
 
 // Une tuile par PISTE vidéo : un participant peut diffuser ÉCRAN + CAMÉRA en même
 // temps (2 pistes dans le même MediaStream) → on les affiche séparément (un <video>
@@ -65,7 +70,7 @@ function SingleTrackTile({ userId, track, onFullscreen }:
           ...focusHalo(ACCENT, fsFocused),
         }}
       >
-        {`⛶ ${trackLabel(getTrackKind(userId, track.id))}`}
+        <>⛶ {trackLabel(getTrackKind(userId, track.id))}</>
       </Btn>
     </div>
   );
@@ -92,7 +97,7 @@ const ModalRootAny = ModalRoot as any;
 // par Steam par-dessus tout l'écran, et le bouton B la ferme nativement
 // (onCancel) — exactement la maquette « window popup » de David (#8).
 function FullscreenVideoModal({ track, label, closeModal }:
-  { track: MediaStreamTrack; label: string; closeModal?: () => void }) {
+  { track: MediaStreamTrack; label: ReactNode; closeModal?: () => void }) {
   const ms = useMemo(() => new MediaStream([track]), [track]);
   // La piste meurt (partage coupé pendant le plein écran) → on se referme au
   // lieu de laisser une image figée.
@@ -203,9 +208,9 @@ function GoLivePreviewTile() {
         if (!alive) return;
         if (r.jpg) { setSnap(r.jpg); setGiveUp(false); downPolls = 0; return; }
         downPolls = r.running ? 0 : downPolls + 1;
-        if (downPolls >= 8) setGiveUp(true);
+        if (downPolls >= 16) setGiveUp(true);
       } catch (_) { /* backend pas prêt : on retentera */ }
-    }, 2000);
+    }, 1000); // ~1 fps : suit la cadence resserrée du backend (issue #12)
     return () => {
       alive = false;
       clearInterval(poll);
@@ -382,7 +387,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 8, lineHeight: 1
             }}>
-              {deafened ? "🔇" : "🔕"}
+              {deafened ? <IcSpeakerMuteFill color="#fff" size={8} /> : <IcMicMuteFill color="#fff" size={8} />}
             </div>
           )}
         </div>
@@ -401,7 +406,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           voir ce que les autres voient. */}
       {isSelf && screenCamOn && (
         <div style={{ padding: "2px 8px 0" }}>
-          <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}>🎮 {t("self_preview_label")}</div>
+          <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}><IcController /> {t("self_preview_label")}</div>
           <SelfPreviewTile />
         </div>
       )}
@@ -409,7 +414,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           Pas quand le partage mode jeu tourne : SelfPreviewTile s'en charge. */}
       {isSelf && !screenCamOn && user?.is_live && (
         <div style={{ padding: "2px 8px 0" }}>
-          <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}>🖥️ {t("self_preview_label")}</div>
+          <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}><IcMonitor /> {t("self_preview_label")}</div>
           <GoLivePreviewTile />
         </div>
       )}
@@ -417,7 +422,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {/* Volume VOIX (à quel point TU l'entends) — barre PLEINE LARGEUR. */}
       <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
         <SliderFieldAny
-          label={`🔊 ${localMuted ? t("video_muted") : volume + "%"}`}
+          label={<><IcSpeaker /> {localMuted ? t("video_muted") : volume + "%"}</>}
           value={volume}
           min={0} max={200} step={5}
           onChange={onVolumeChange}
@@ -443,7 +448,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
               ...focusHalo(localMuted ? DANGER : ACCENT, muteFocused),
             }}
           >
-            {localMuted ? `🔇 ${t("unmute_voice")}` : `🎙️ ${t("mute_voice")}`}
+            {localMuted ? <><IcMicMute /> {t("unmute_voice")}</> : <><IcMic /> {t("mute_voice")}</>}
           </Btn>
         </div>
       )}
@@ -454,7 +459,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {user?.is_live && !isSelf && (
         <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
           <SliderFieldAny
-            label={`🖥️ ${t("video_stream")} ${streamVol}%`}
+            label={<><IcMonitor /> {t("video_stream")} {streamVol}%</>}
             value={streamVol}
             min={0} max={200} step={5}
             onChange={onStreamVolumeChange}
@@ -468,7 +473,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {user?.is_live && isSelf && (
         <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
           <SliderFieldAny
-            label={`🖥️ ${t("broadcast_volume")} ${bcastVol}%`}
+            label={<><IcMonitor /> {t("broadcast_volume")} {bcastVol}%</>}
             value={bcastVol}
             min={0} max={100} step={5}
             onChange={onBcastVolumeChange}
@@ -495,7 +500,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
               ...focusHalo(watching ? DANGER : ACCENT, videoFocused),
             }}
           >
-            {watching ? t("video_stop") : `${user?.is_live ? "🖥️" : "📷"} ${t("video_watch")}`}
+            {watching ? t("video_stop") : <>{user?.is_live ? <IcMonitor /> : <IcCameraVideo />} {t("video_watch")}</>}
           </Btn>
           {watching && remoteVideo && (
             <MultiVideoTiles

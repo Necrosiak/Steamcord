@@ -16,6 +16,11 @@ import {
 } from "@decky/ui";
 import { Component, Suspense, useState, useEffect } from "react";
 import { FaDiscord } from "react-icons/fa";
+import {
+  IcBell, IcCheckCircle, IcChat, IcController, IcFolder, IcGear, IcGithub,
+  IcHeadphones, IcHome, IcInfo, IcJoystick, IcLogout, IcMic, IcPhone,
+  IcRefresh, IcSmartphone, IcSpeaker, IcStatus, IcUser, IcWarn,
+} from "./components/Icons";
 
 class ContentErrorBoundary extends Component<{ children: any }, { hasError: boolean; msg: string }> {
   state = { hasError: false, msg: "" };
@@ -27,7 +32,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
   }
   render() {
     if (this.state.hasError)
-      return <div style={{ padding: 8, color: "#ff6b6b", fontSize: 13 }}>⚠ Steamcord render error — check webhelper_js.txt<br />{this.state.msg}</div>;
+      return <div style={{ padding: 8, color: "#ff6b6b", fontSize: 13 }}><IcWarn /> Steamcord render error — check webhelper_js.txt<br />{this.state.msg}</div>;
     return this.props.children;
   }
 }
@@ -91,7 +96,7 @@ const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: stri
       {qr_scanned ? (
         // QR scanné → Discord attend la validation sur le téléphone.
         <div style={{ textAlign: "center", padding: "12px 0" }}>
-          <div style={{ fontSize: 26, marginBottom: 8 }}>📱✅</div>
+          <div style={{ fontSize: 26, marginBottom: 8, display: "flex", gap: 8, justifyContent: "center" }}><IcSmartphone /><IcCheckCircle color="#23a55a" /></div>
           <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 4px" }}>{t("qr_scanned_title")}</p>
           <p style={{ fontSize: 11, opacity: 0.65, margin: 0, lineHeight: 1.4 }}>{t("qr_scanned_body")}</p>
         </div>
@@ -170,11 +175,11 @@ const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => (
   </BtnTab>
 );
 
-const STATUSES: { id: string; emoji: string; color: string }[] = [
-  { id: "online", emoji: "🟢", color: "#23a55a" },
-  { id: "idle", emoji: "🌙", color: "#f0b232" },
-  { id: "dnd", emoji: "⛔", color: "#f23f43" },
-  { id: "invisible", emoji: "⚪", color: "#80848e" },
+const STATUSES: { id: string; color: string }[] = [
+  { id: "online", color: "#23a55a" },
+  { id: "idle", color: "#f0b232" },
+  { id: "dnd", color: "#f23f43" },
+  { id: "invisible", color: "#80848e" },
 ];
 
 // Map Steam persona state → Discord status (Steam: 0 offline,1 online,2 busy,3 away,4 snooze,7 invisible)
@@ -283,7 +288,7 @@ const UserStatusButton = ({ me }: { me: any }) => {
         />
         <span style={{ flex: 1, textAlign: "left", fontSize: 13, fontWeight: 600 }}>{me?.username}</span>
         {/* Statut courant (icône) à droite du pseudo. */}
-        <span style={{ fontSize: 14 }}>{cur.emoji}</span>
+        <span style={{ fontSize: 14 }}><IcStatus id={cur.id} color={cur.color} /></span>
         <span style={{ opacity: 0.4, fontSize: 10 }}>{open ? "▲" : "▼"}</span>
       </BtnTab>
       {open && (
@@ -312,7 +317,7 @@ const UserStatusButton = ({ me }: { me: any }) => {
                   zIndex: isF ? 1 : 0,
                 }}
               >
-                {s.emoji}
+                <IcStatus id={s.id} color={selected ? "#fff" : s.color} />
               </BtnTab>
             );
           })}
@@ -382,7 +387,7 @@ const NowPlayingRow = () => {
             style={{ display: "block", borderRadius: 2, flexShrink: 0 }}
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         ) : (
-          <span style={{ fontSize: 11 }}>🎮</span>
+          <span style={{ fontSize: 11 }}><IcController /></span>
         )}
         <span style={{ fontSize: 11, color: "#ccc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {t("now_playing")} <b style={{ color: "#eee" }}>{game.name}</b>
@@ -535,7 +540,7 @@ const UpdaterSection = () => {
           onFocus={() => setFocused("upd")}
           onBlur={() => setFocused((f) => (f === "upd" ? null : f))}
         >
-          {status === "failed" ? "⚠️" : "🔄"} {label}
+          {status === "failed" ? <IcWarn /> : <IcRefresh />} {label}
         </WideBtn>
       </SR>
       {status === "failed" && updErr ? (
@@ -609,7 +614,7 @@ const Content = () => {
     if (vesktopBackend === null) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", minHeight: "60vh", padding: "0 12px", textAlign: "center" }}>
-          <h2 style={{ margin: "0" }}>⚠️</h2>
+          <h2 style={{ margin: "0" }}><IcWarn /></h2>
           <div style={{ fontSize: "13px", lineHeight: "1.5" }}>{t("vesktop_missing")}</div>
         </div>
       );
@@ -673,7 +678,7 @@ const Content = () => {
                 onFocus={() => setTabFocus("top-voice")}
                 onBlur={() => setTabFocus((f) => (f === "top-voice" ? null : f))}
               >
-                {inCall ? "📞" : "🎧"} {t("tab_voice")}
+                {inCall ? <IcPhone /> : <IcHeadphones />} {t("tab_voice")}
               </TabBtn>
               <TabBtn
                 active={topTab === "text"} focused={tabFocus === "top-text"}
@@ -681,7 +686,7 @@ const Content = () => {
                 onFocus={() => setTabFocus("top-text")}
                 onBlur={() => setTabFocus((f) => (f === "top-text" ? null : f))}
               >
-                💬 {t("tab_text")}
+                <IcChat /> {t("tab_text")}
               </TabBtn>
               <TabBtn
                 active={topTab === "config"} focused={tabFocus === "top-config"}
@@ -689,8 +694,8 @@ const Content = () => {
                 onFocus={() => setTabFocus("top-config")}
                 onBlur={() => setTabFocus((f) => (f === "top-config" ? null : f))}
               >
-                ⚙️
-              </TabBtn>
+                <IcGear />
+        </TabBtn>
             </Focusable>
 
             {topTab === "config" ? (
@@ -724,7 +729,7 @@ const Content = () => {
                     onFocus={() => setTabFocus("browse")}
                     onBlur={() => setTabFocus((f) => (f === "browse" ? null : f))}
                   >
-                    📂 {t("browse_discord")}
+                    <IcFolder /> {t("browse_discord")}
                   </WideBtn>
                 </div>
               </>
@@ -752,7 +757,7 @@ const Content = () => {
                     onFocus={() => setTabFocus("servers")}
                     onBlur={() => setTabFocus((f) => (f === "servers" ? null : f))}
                   >
-                    🏠 {t("tab_servers")}
+                    <IcHome /> {t("tab_servers")}
                   </TabBtn>
                   <TabBtn
                     active={srcTab === "dms"} focused={tabFocus === "dms"}
@@ -760,7 +765,7 @@ const Content = () => {
                     onFocus={() => setTabFocus("dms")}
                     onBlur={() => setTabFocus((f) => (f === "dms" ? null : f))}
                   >
-                    👤 {t("tab_dms")}
+                    <IcUser /> {t("tab_dms")}
                   </TabBtn>
                 </Focusable>
                 {/* Contenu = mode × source. La clé force un remontage propre au
@@ -810,12 +815,12 @@ const AudioDevicesConfig = () => {
 
   return (
     <>
-      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "2px 0" }}>🔊 {t("audio_output")}</div></SR>
+      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "2px 0" }}><IcSpeaker /> {t("audio_output")}</div></SR>
       <SR>
         <Dropdown rgOptions={opt(dev.outputs) as any} selectedOption={outSel}
           onChange={(e: any) => { setOutSel(e.data); call("set_audio_output", e.data).catch(() => {}); }} />
       </SR>
-      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>🎙️ {t("audio_input")}</div></SR>
+      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}><IcMic /> {t("audio_input")}</div></SR>
       <SR>
         <Dropdown rgOptions={opt(dev.inputs) as any} selectedOption={inSel}
           onChange={(e: any) => { setInSel(e.data); call("set_audio_input", e.data).catch(() => {}); }} />
@@ -844,16 +849,28 @@ const MicProcessingConfig = () => {
 
   return (
     <>
-      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "2px 0" }}>🎙️ {t("mic_noise_reduction")}</div></SR>
+      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "2px 0" }}><IcMic /> {t("mic_noise_reduction")}</div></SR>
       <SR>
         <Dropdown rgOptions={noiseOpts as any} selectedOption={cfg.noise}
-          onChange={(e: any) => { setCfg({ ...cfg, noise: e.data }); call("set_noise_reduction", e.data).catch(() => {}); }} />
+          onChange={(e: any) => {
+            setCfg({ ...cfg, noise: e.data });
+            // Resync sur la valeur RÉELLEMENT appliquée (le setter la renvoie) :
+            // un no-op silencieux affichait un réglage jamais pris (issue #14).
+            call<[string], any>("set_noise_reduction", e.data)
+              .then((r) => { if (r && r.noise && r.noise !== e.data) setCfg((c: any) => ({ ...c, noise: r.noise })); })
+              .catch(() => {});
+          }} />
       </SR>
       <SR>
         <ToggleField
           label={t("mic_echo_cancellation")}
           checked={!!cfg.echoCancellation}
-          onChange={(v: boolean) => { setCfg({ ...cfg, echoCancellation: v }); call("set_echo_cancellation", v).catch(() => {}); }}
+          onChange={(v: boolean) => {
+            setCfg({ ...cfg, echoCancellation: v });
+            call<[boolean], any>("set_echo_cancellation", v)
+              .then((r) => { if (r && typeof r.echoCancellation === "boolean" && r.echoCancellation !== v) setCfg((c: any) => ({ ...c, echoCancellation: r.echoCancellation })); })
+              .catch(() => {});
+          }}
           bottomSeparator="none"
         />
       </SR>
@@ -861,7 +878,12 @@ const MicProcessingConfig = () => {
         <ToggleField
           label={t("mic_auto_gain")}
           checked={!!cfg.automaticGainControl}
-          onChange={(v: boolean) => { setCfg({ ...cfg, automaticGainControl: v }); call("set_automatic_gain_control", v).catch(() => {}); }}
+          onChange={(v: boolean) => {
+            setCfg({ ...cfg, automaticGainControl: v });
+            call<[boolean], any>("set_automatic_gain_control", v)
+              .then((r) => { if (r && typeof r.automaticGainControl === "boolean" && r.automaticGainControl !== v) setCfg((c: any) => ({ ...c, automaticGainControl: r.automaticGainControl })); })
+              .catch(() => {});
+          }}
           bottomSeparator="none"
         />
       </SR>
@@ -877,7 +899,7 @@ const AboutSection = () => {
   return (
     <>
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>ℹ️ {t("about")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcInfo /> {t("about")}</div>
       </SR>
       <SR>
         <div style={{ fontSize: 11, color: "#aaa", lineHeight: 1.6 }}>
@@ -886,7 +908,7 @@ const AboutSection = () => {
         </div>
       </SR>
       <SR>
-        <WideBtn onClick={() => open("https://github.com/Necrosiak/Steamcord")}>🔗 GitHub</WideBtn>
+        <WideBtn onClick={() => open("https://github.com/Necrosiak/Steamcord")}><IcGithub /> GitHub</WideBtn>
       </SR>
     </>
   );
@@ -912,12 +934,12 @@ const LogoutSection = () => {
     <>
       <hr />
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🚪 {t("config_account")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcLogout /> {t("config_account")}</div>
       </SR>
       <SR>
         {!confirm ? (
           <Btn onClick={() => setConfirm(true)} {...btn("out", "rgba(237,66,69,0.6)", { width: "100%" })}>
-            🚪 {t("logout_discord")}
+            <IcLogout /> {t("logout_discord")}
           </Btn>
         ) : (
           <div style={{ width: "100%" }}>
@@ -979,7 +1001,7 @@ const VoiceShortcutConfig = () => {
           </SR>
           <SR>
             <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>
-              🕹️ {t("shortcut_binding")}: <b>{cfg.label || t("shortcut_none")}</b>
+              <IcJoystick /> {t("shortcut_binding")}: <b>{cfg.label || t("shortcut_none")}</b>
             </div>
           </SR>
           <SR>
@@ -997,33 +1019,33 @@ const ConfigPanel = () => {
   return (
     <div>
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎮 {t("config_status")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcController /> {t("config_status")}</div>
       </SR>
       <StatusAutoToggle />
       <RpcToggle />
       <hr />
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🕹️ {t("config_shortcut")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcJoystick /> {t("config_shortcut")}</div>
       </SR>
       <VoiceShortcutConfig />
       <hr />
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎧 {t("config_audio")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcHeadphones /> {t("config_audio")}</div>
       </SR>
       <AudioDevicesConfig />
       <hr />
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🎤 {t("config_mic")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcMic /> {t("config_mic")}</div>
       </SR>
       <MicProcessingConfig />
       <hr />
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔄 {t("config_updates")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcRefresh /> {t("config_updates")}</div>
       </SR>
       <UpdaterSection />
       <hr />
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>🔔 {t("config_notifs")}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcBell /> {t("config_notifs")}</div>
       </SR>
       <NotifStyleToggle />
       <hr />

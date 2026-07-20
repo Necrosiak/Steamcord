@@ -1276,28 +1276,46 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 }
                                 case "$set_noise_reduction": {
                                     // data.mode: "none" | "standard" | "krisp"
+                                    // Le module d'actions peut manquer selon le bundle (issue #14 :
+                                    // no-op silencieux = réglage « qui ne prend pas ») → fallback
+                                    // FluxDispatcher, et une ERREUR remonte si rien n'a pris.
                                     const SET = Vencord.Webpack.findByProps("setNoiseCancellation");
                                     if (SET) {
                                         if (data.mode === "krisp") { SET.setNoiseSuppression(false); SET.setNoiseCancellation(true); }
                                         else if (data.mode === "standard") { SET.setNoiseCancellation(false); SET.setNoiseSuppression(true); }
                                         else { SET.setNoiseCancellation(false); SET.setNoiseSuppression(false); }
+                                    } else {
+                                        const FD = Vencord.Webpack.Common.FluxDispatcher;
+                                        FD.dispatch({ type: "AUDIO_SET_NOISE_CANCELLATION", enabled: data.mode === "krisp" });
+                                        FD.dispatch({ type: "AUDIO_SET_NOISE_SUPPRESSION", enabled: data.mode === "standard" });
                                     }
+                                    await new Promise(r => setTimeout(r, 150));
                                     const MES = Vencord.Webpack.findStore("MediaEngineStore");
-                                    result = { noise: MES.getNoiseCancellation() ? "krisp" : (MES.getNoiseSuppression() ? "standard" : "none") };
+                                    const applied = MES.getNoiseCancellation() ? "krisp" : (MES.getNoiseSuppression() ? "standard" : "none");
+                                    result = applied === data.mode ? { noise: applied }
+                                        : { noise: applied, error: "noise setting did not apply (module not found?)" };
                                     break;
                                 }
                                 case "$set_echo_cancellation": {
                                     const SET = Vencord.Webpack.findByProps("setEchoCancellation");
                                     if (SET) SET.setEchoCancellation(!!data.enabled);
+                                    else Vencord.Webpack.Common.FluxDispatcher.dispatch({ type: "AUDIO_SET_ECHO_CANCELLATION", enabled: !!data.enabled });
+                                    await new Promise(r => setTimeout(r, 150));
                                     const MES = Vencord.Webpack.findStore("MediaEngineStore");
-                                    result = { echoCancellation: !!MES.getEchoCancellation() };
+                                    const ec = !!MES.getEchoCancellation();
+                                    result = ec === !!data.enabled ? { echoCancellation: ec }
+                                        : { echoCancellation: ec, error: "echo setting did not apply (module not found?)" };
                                     break;
                                 }
                                 case "$set_automatic_gain_control": {
                                     const SET = Vencord.Webpack.findByProps("setAutomaticGainControl");
                                     if (SET) SET.setAutomaticGainControl(!!data.enabled);
+                                    else Vencord.Webpack.Common.FluxDispatcher.dispatch({ type: "AUDIO_SET_AUTOMATIC_GAIN_CONTROL", enabled: !!data.enabled });
+                                    await new Promise(r => setTimeout(r, 150));
                                     const MES = Vencord.Webpack.findStore("MediaEngineStore");
-                                    result = { automaticGainControl: !!MES.getAutomaticGainControl() };
+                                    const agc = !!MES.getAutomaticGainControl();
+                                    result = agc === !!data.enabled ? { automaticGainControl: agc }
+                                        : { automaticGainControl: agc, error: "AGC setting did not apply (module not found?)" };
                                     break;
                                 }
                             }

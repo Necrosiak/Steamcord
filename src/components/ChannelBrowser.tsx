@@ -3,6 +3,7 @@ import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight } from "./Styled";
+import { IcRefresh, IcSpeaker } from "./Icons";
 
 interface ChannelMember { id: string; avatar: string | null; }
 interface VoiceChannel { id: string; name: string; members: ChannelMember[]; }
@@ -63,7 +64,7 @@ export function ChannelBrowser() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-        <Btn onClick={refresh} style={{ padding: "2px 8px", fontSize: 10, minHeight: 0 }}>↻</Btn>
+        <Btn onClick={refresh} style={{ padding: "2px 8px", fontSize: 10, minHeight: 0 }}><IcRefresh /></Btn>
       </div>
       <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
         {guilds.map(guild => {
@@ -99,7 +100,7 @@ export function ChannelBrowser() {
                         display: "flex", alignItems: "center", gap: 6,
                       }}
                     >
-                      <span style={{ opacity: 0.6, fontSize: 10 }}>🔊</span>
+                      <span style={{ opacity: 0.6, fontSize: 10 }}><IcSpeaker /></span>
                       <span style={{ flex: 1, textAlign: "left" }}>{joining === ch.id ? t("connecting") : ch.name}</span>
                       <MemberAvatars members={ch.members} />
                     </Btn>

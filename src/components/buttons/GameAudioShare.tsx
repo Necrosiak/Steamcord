@@ -2,6 +2,7 @@ import { DialogButton, SliderField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaVolumeUp, FaStop } from "react-icons/fa";
+import { IcController, IcMic } from "../Icons";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
 import { focusHalo, ACCENT, DANGER } from "../Styled";
@@ -75,7 +76,7 @@ export function GameAudioShare() {
         <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
           {hasMic ? (
             <Slider
-              label={`🎙️ ${t("game_audio_voice")} ${voice}%`}
+              label={<><IcMic /> {t("game_audio_voice")} {voice}%</>}
               value={voice}
               min={0} max={150} step={5}
               onChange={(v: number) => { setVoice(v); call("set_game_audio_volume", "voice", v); }}
@@ -87,7 +88,7 @@ export function GameAudioShare() {
             </div>
           )}
           <Slider
-            label={`🎮 ${t("game_audio_game")} ${game}%`}
+            label={<><IcController /> {t("game_audio_game")} {game}%</>}
             value={game}
             min={0} max={150} step={5}
             onChange={(v: number) => { setGame(v); call("set_game_audio_volume", "game", v); }}

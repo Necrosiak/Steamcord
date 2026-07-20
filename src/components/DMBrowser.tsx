@@ -3,6 +3,7 @@ import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight } from "./Styled";
+import { IcPhone, IcRefresh } from "./Icons";
 
 interface DMRecipient { id: string; username: string; avatar: string | null; }
 interface DMChannel {
@@ -88,7 +89,7 @@ function DMRow({ ch }: { ch: DMChannel }) {
           background: ch.active_call ? "#23a55a" : undefined,
         }}
       >
-        {busy ? "…" : ch.active_call ? `📞 ${t("join")}` : `📞 ${t("call")}`}
+        {busy ? "…" : <><IcPhone /> {ch.active_call ? t("join") : t("call")}</>}
       </Btn>
     </div>
   );
@@ -130,7 +131,7 @@ export function DMBrowser() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-        <Btn onClick={refresh} style={{ padding: "2px 8px", fontSize: 10, minHeight: 0 }}>↻</Btn>
+        <Btn onClick={refresh} style={{ padding: "2px 8px", fontSize: 10, minHeight: 0 }}><IcRefresh /></Btn>
       </div>
       {loading && channels.length === 0 ? (
         <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading")}</div>

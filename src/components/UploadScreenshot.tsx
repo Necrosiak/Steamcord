@@ -3,6 +3,7 @@ import { DialogButton } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
 import { currentTextChannel, onTextChannelChange } from "./TextChat";
+import { IcCamera } from "./Icons";
 
 declare const SteamClient: any;
 
@@ -44,7 +45,7 @@ export function UploadScreenshot() {
     <div>
       <hr />
       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, opacity: 0.8 }}>
-        📷 {t("share_screenshot")}
+        <IcCamera /> {t("share_screenshot")}
       </div>
       <img
         width={240}

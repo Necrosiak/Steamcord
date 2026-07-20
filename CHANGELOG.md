@@ -3,6 +3,57 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.1 — 2026-07-20
+
+### Changed
+- **Monochrome SVG icons across the whole QAM UI** (#15). All color emoji
+  icons (tabs, config sections, sliders, buttons, status picker) were replaced
+  with monochrome vector icons that inherit the surrounding text size and
+  color, so the plugin now blends in with the rest of the SteamOS UI. Discord
+  statuses are shown as tinted dots (filled / moon / slashed / hollow) instead
+  of emoji.
+- **Faster Go Live self-preview** (#12). The stock-SteamOS screenshot fallback
+  now produces roughly one frame per second (instead of one every ~3 s): the
+  loop waits for the screenshot file to actually finish being written instead
+  of sleeping a fixed margin, and the QAM polls the thumbnail every second.
+
+### Fixed
+- **In-plugin updates failed on root-owned installs** (#16). The plugin
+  backend runs as the regular user, and the updater overwrote files with
+  `shutil.copy2`, which ends with a `chmod` on the destination — an operation
+  a non-root user cannot perform on root-owned files even when they are
+  world-writable. Files are now replaced via a temp file + atomic
+  `os.replace`, which only needs write permission on the directory; as a
+  bonus every replaced file becomes owned by the user, so a root-owned
+  install heals itself as it updates. If a directory is still not writable,
+  the error message now tells you the exact `chown -R` command to run.
+- **Controller shortcut capture never registered any button** (#14). Newer
+  Steam client builds changed the `RegisterForControllerInputMessages`
+  callback from an array of event objects to positional arguments, so the
+  capture (and the shortcut itself) silently saw nothing. The listener now
+  handles both signatures — and button ids are unchanged between builds, so
+  existing bindings keep working. Button names are also nicer now (A/B/X/Y,
+  D-pad, L4/L5/R4/R5, … instead of `BTN<n>`).
+- **Pressing the capture button instantly saved "A" as the shortcut** (#14).
+  The controller events of the very press that clicked "Set binding" leaked
+  into the capture, validating a one-button "A" chord before you could touch
+  anything. The capture now ignores the activating press (short grace period
+  + already-held buttons) and only validates once you release your actual
+  chord — you can still bind A itself by pressing it again after the grace.
+- **Mic processing settings (noise suppression, echo cancellation, automatic
+  gain control) reverted to defaults** (#14). The plugin now persists your
+  choices itself and re-asserts them every time the Discord client logs in,
+  so they survive plugin and console restarts even when Discord's own
+  persistence fails. The setters also verify the value actually applied and
+  report an error instead of silently doing nothing, and the QAM shows the
+  real applied value rather than an optimistic one. If the volume of other
+  apps was "dancing" during your calls (#13), it was most likely WebRTC's
+  automatic gain control staying enabled no matter what you selected — turn
+  AGC off and it should stop now that the toggle actually sticks.
+- **Audio output/input "Auto" kept the last manual choice** (#14). Switching
+  back to Auto now actively moves the Discord streams back to the system
+  default device instead of leaving them wherever they were last routed.
+
 ## 1.16.0 — 2026-07-19
 
 ### Added

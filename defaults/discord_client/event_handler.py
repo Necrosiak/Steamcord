@@ -59,6 +59,9 @@ class EventHandler:
         # consommateur (yield_new_state).
         self.notification_event = Event()
         self.remote_auth = RemoteAuth()
+        # Posé par Plugin : ré-assertion de réglages (ex. prefs micro) à chaque
+        # login du client — la persistance Discord seule ne suffit pas (#14).
+        self.on_logged_in = None
 
     def build_state_dict(self):
         return {
@@ -199,6 +202,11 @@ class EventHandler:
         self.me.is_muted = s["mute"]
         self.me.is_deafened = s["deaf"]
         self.me.is_live = s["live"]
+        if self.on_logged_in:
+            try:
+                await self.on_logged_in()
+            except Exception as e:
+                logger.warning(f"on_logged_in hook failed: {e!r}")
 
     async def _logout(self, data):
         self.logged_in = False

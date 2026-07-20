@@ -216,6 +216,10 @@ class Plugin:
     # Routage audio par-application (PipeWire) : None = auto (suit le système).
     _audio_out = None
     _audio_in = None
+    # Réglages micro voulus par l'user (noise/echo/AGC). Persistés côté plugin
+    # et ré-assertés à chaque login du client : la persistance interne de
+    # Discord se perd sur certains setups → retour aux défauts (issue #14).
+    _mic_prefs = {}
     _AUDIO_CFG = os.path.expanduser("~/.config/steamcord-audio.json")
     # ── Partage audio du jeu (voir section "Partage AUDIO du jeu") ──
     _ga_active = False
@@ -354,6 +358,7 @@ class Plugin:
         create_task(cls._audio_keepalive())
         create_task(cls._autoupdate_check())
         cls._load_audio_cfg()
+        cls.evt_handler.on_logged_in = cls._apply_mic_prefs
         create_task(cls._audio_routing_watcher())
         create_task(cls._screen_diag())
         create_task(cls._ga_boot_cleanup())
@@ -817,19 +822,51 @@ class Plugin:
 
     @classmethod
     async def get_audio_processing(cls):
-        return await cls.evt_handler.api.get_audio_processing()
+        r = await cls.evt_handler.api.get_audio_processing()
+        # Client indisponible (reconnexion…) : montrer au moins les prefs
+        # persistées plutôt que des défauts trompeurs (issue #14).
+        if (not isinstance(r, dict) or r.get("error")) and cls._mic_prefs:
+            return {"noise": cls._mic_prefs.get("noise", "krisp"),
+                    "echoCancellation": cls._mic_prefs.get("echoCancellation", True),
+                    "automaticGainControl": cls._mic_prefs.get("automaticGainControl", True)}
+        return r
 
     @classmethod
     async def set_noise_reduction(cls, mode):
+        cls._mic_prefs["noise"] = mode
+        cls._save_audio_cfg()
         return await cls.evt_handler.api.set_noise_reduction(mode)
 
     @classmethod
     async def set_echo_cancellation(cls, enabled):
+        cls._mic_prefs["echoCancellation"] = bool(enabled)
+        cls._save_audio_cfg()
         return await cls.evt_handler.api.set_echo_cancellation(enabled)
 
     @classmethod
     async def set_automatic_gain_control(cls, enabled):
+        cls._mic_prefs["automaticGainControl"] = bool(enabled)
+        cls._save_audio_cfg()
         return await cls.evt_handler.api.set_automatic_gain_control(enabled)
+
+    @classmethod
+    async def _apply_mic_prefs(cls):
+        """Ré-asserte les réglages micro persistés (appelé à chaque login du
+        client Discord) : le plugin est la source de vérité, les défauts ne
+        peuvent plus « revenir » après un restart (issue #14)."""
+        prefs = dict(cls._mic_prefs)
+        if not prefs:
+            return
+        try:
+            if "noise" in prefs:
+                await cls.evt_handler.api.set_noise_reduction(prefs["noise"])
+            if "echoCancellation" in prefs:
+                await cls.evt_handler.api.set_echo_cancellation(bool(prefs["echoCancellation"]))
+            if "automaticGainControl" in prefs:
+                await cls.evt_handler.api.set_automatic_gain_control(bool(prefs["automaticGainControl"]))
+            logger.info(f"mic prefs re-asserted: {prefs}")
+        except Exception as e:
+            logger.warning(f"mic prefs reassert failed: {e!r}")
 
     @classmethod
     async def _screen_diag(cls):
@@ -972,6 +1009,11 @@ class Plugin:
     async def set_audio_output(cls, name):
         cls._audio_out = None if name in (None, "auto") else name
         cls._save_audio_cfg()
+        if cls._audio_out is None and not cls._ga_active:
+            # Retour « Auto » : _apply_audio_routing ne touche pas aux flux
+            # quand la cible est None → sans ce reset ils restaient collés au
+            # dernier choix manuel (issue #14).
+            await cls._reset_vesktop_routing(outputs=True)
         await cls._apply_audio_routing()
         return True
 
@@ -979,8 +1021,27 @@ class Plugin:
     async def set_audio_input(cls, name):
         cls._audio_in = None if name in (None, "auto") else name
         cls._save_audio_cfg()
+        if cls._audio_in is None and not cls._ga_active:
+            await cls._reset_vesktop_routing(inputs=True)
         await cls._apply_audio_routing()
         return True
+
+    @classmethod
+    async def _reset_vesktop_routing(cls, outputs=False, inputs=False):
+        """Ramène les flux Vesktop sur le périphérique système par défaut
+        (@DEFAULT_SINK@/@DEFAULT_SOURCE@ sont résolus par pactl)."""
+        from json import loads
+        try:
+            if outputs:
+                for si in loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]"):
+                    if cls._is_vesktop_stream(si):
+                        await cls._pactl("move-sink-input", str(si.get("index")), "@DEFAULT_SINK@")
+            if inputs:
+                for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
+                    if cls._is_vesktop_stream(so):
+                        await cls._pactl("move-source-output", str(so.get("index")), "@DEFAULT_SOURCE@")
+        except Exception as e:
+            logger.warning(f"audio routing reset failed: {e!r}")
 
     @staticmethod
     def _is_vesktop_stream(s):
@@ -1037,6 +1098,8 @@ class Plugin:
                 cfg = load(f)
             cls._audio_out = cfg.get("output") or None
             cls._audio_in = cfg.get("input") or None
+            if isinstance(cfg.get("mic"), dict):
+                cls._mic_prefs = cfg["mic"]
             if isinstance(cfg.get("ga_vol"), dict):
                 cls._ga_vol.update({k: int(v) for k, v in cfg["ga_vol"].items()
                                     if k in cls._ga_vol})
@@ -1050,7 +1113,7 @@ class Plugin:
             os.makedirs(os.path.dirname(cls._AUDIO_CFG), exist_ok=True)
             with open(cls._AUDIO_CFG, "w") as f:
                 dump({"output": cls._audio_out, "input": cls._audio_in,
-                      "ga_vol": cls._ga_vol}, f)
+                      "mic": cls._mic_prefs, "ga_vol": cls._ga_vol}, f)
         except Exception as e:
             logger.warning(f"save audio cfg failed: {e!r}")
 
@@ -1497,13 +1560,28 @@ class Plugin:
         try:
             while True:
                 try:
+                    try:
+                        os.remove(raw)
+                    except OSError:
+                        pass
                     p = await create_subprocess_exec(
                         "gamescopectl", "screenshot", raw,
                         stdout=DEVNULL, stderr=DEVNULL, env=env)
                     await p.wait()
                     # gamescopectl rend la main tout de suite ; gamescope écrit
-                    # le fichier juste après → petite marge avant conversion.
-                    await sleep(0.6)
+                    # le fichier juste après → on attend qu'il apparaisse et
+                    # que sa taille se stabilise (PNG non atomique) plutôt
+                    # qu'une grosse marge fixe (issue #12 : aperçu ~1 fps).
+                    last = -1
+                    for _ in range(12):
+                        await sleep(0.1)
+                        try:
+                            size = os.path.getsize(raw)
+                        except OSError:
+                            continue
+                        if size > 0 and size == last:
+                            break
+                        last = size
                     p = await create_subprocess_exec(
                         "ffmpeg", "-y", "-loglevel", "error", "-i", raw,
                         "-vf", "scale=640:-2", "-q:v", "7", path + ".tmp",
@@ -1513,7 +1591,7 @@ class Plugin:
                         os.replace(path + ".tmp", path)
                 except Exception as e:
                     logger.warning(f"[gstprev] fallback screenshot: {e!r}")
-                await sleep(2)
+                await sleep(0.5)
         finally:
             for f in (raw, path, path + ".tmp"):
                 try:

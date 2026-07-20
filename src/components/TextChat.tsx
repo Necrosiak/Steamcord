@@ -3,6 +3,7 @@ import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight } from "./Styled";
+import { IcLink, IcPaperclip } from "./Icons";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -221,11 +222,11 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
                 {/* Liens cliquables → navigateur gamemode Steam. */}
                 {links.map((u, i) => (
                   <Btn key={`l${i}`} onClick={() => openUrl(u)} style={{ width: "100%", padding: "3px 8px", marginTop: 3, fontSize: 11, display: "flex", gap: 6, alignItems: "center" }}>
-                    <span>🔗</span><span style={{ flex: 1, textAlign: "left", color: "#00a8fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLink(u)}</span>
+                    <span><IcLink /></span><span style={{ flex: 1, textAlign: "left", color: "#00a8fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLink(u)}</span>
                   </Btn>
                 ))}
 
-                {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}>📎 {m.files}</div>}
+                {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
               </div>
             );
           })}

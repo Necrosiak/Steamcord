@@ -4,8 +4,12 @@ Checks the latest GitHub Release of the repo, compares it to the installed
 version (plugin.json), and — if newer — downloads the release ZIP and unpacks
 it over the plugin directory, then restarts plugin_loader to reload the code.
 
-The plugin backend runs as root (plugin_loader User=root) and the plugin dir
-is root-owned, so it can write to itself and restart the loader without sudo.
+The backend runs as the session user (no "root" flag in plugin.json), so the
+plugin dir may not be ours: manual/sudo installs leave files root-owned.
+Files are therefore replaced via tmp-file + os.replace, which only needs write
+permission on the *directory* — overwriting a root-owned file in place (or
+chmod-ing it, which shutil.copy2 does) fails with EPERM for a non-root user
+even when the file is mode 777 (issue #16).
 Network/disk work runs in a thread executor so the asyncio loop never blocks.
 """
 
@@ -160,7 +164,27 @@ def _apply_blocking(url: str) -> None:
                 dst.mkdir(parents=True, exist_ok=True)
             else:
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+                _replace_file(src, dst)
+
+
+def _replace_file(src: Path, dst: Path) -> None:
+    """Copy src over dst via a same-directory tmp file + atomic os.replace.
+
+    os.replace only needs write permission on the parent directory, so this
+    works even when dst itself is root-owned (issue #16) — and the replaced
+    file then belongs to us, healing such installs one update at a time.
+    """
+    tmp_dst = dst.parent / (dst.name + ".steamcord-new")
+    try:
+        shutil.copyfile(src, tmp_dst)
+        shutil.copymode(src, tmp_dst)  # our own file: keeps +x on binaries
+        os.replace(tmp_dst, dst)
+    except OSError:
+        try:
+            os.unlink(tmp_dst)
+        except OSError:
+            pass
+        raise
 
 
 async def apply(url: str) -> dict:
@@ -176,9 +200,13 @@ async def apply(url: str) -> dict:
         return {"ok": True}
     except PermissionError as e:
         logger.error(f"[updater] apply failed: {e}")
+        # Reaching this point means a *directory* in the plugin tree is not
+        # writable (files are replaced via os.replace, which only needs
+        # directory write access) — tell the user the exact fix.
         return {"ok": False,
                 "error": f"Permission denied ({getattr(e, 'filename', '')}) — "
-                         "plugin files not writable (root-owned local install?)"}
+                         "run: sudo chown -R $(id -un) "
+                         f"{DECKY_PLUGIN_DIR} then retry"}
     except Exception as e:
         logger.error(f"[updater] apply failed: {e}")
         return {"ok": False, "error": str(e)}
