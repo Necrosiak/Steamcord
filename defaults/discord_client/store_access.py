@@ -141,8 +141,23 @@ class StoreAccess:
     async def get_messages(self, channel_id, before=None):
         return await self._store_access_request("$get_messages", id=channel_id, before=before)
 
-    async def send_message(self, channel_id, content):
-        return await self._store_access_request("$send_message", id=channel_id, content=content)
+    async def send_message(self, channel_id, content, reply_to=None):
+        return await self._store_access_request("$send_message", id=channel_id, content=content, reply_to=reply_to)
+
+    async def send_typing(self, channel_id):
+        return await self._store_access_request("$send_typing", id=channel_id)
+
+    async def edit_message(self, channel_id, message_id, content):
+        return await self._store_access_request("$edit_message", id=channel_id, message_id=message_id, content=content)
+
+    async def delete_message(self, channel_id, message_id):
+        return await self._store_access_request("$delete_message", id=channel_id, message_id=message_id)
+
+    async def add_reaction(self, channel_id, message_id, emoji):
+        return await self._store_access_request("$add_reaction", id=channel_id, message_id=message_id, emoji=emoji)
+
+    async def remove_reaction(self, channel_id, message_id, emoji):
+        return await self._store_access_request("$remove_reaction", id=channel_id, message_id=message_id, emoji=emoji)
 
     async def get_local_mute(self, user_id):
         return await self._store_access_request("$get_local_mute", id=user_id)

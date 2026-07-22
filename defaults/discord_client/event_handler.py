@@ -33,6 +33,7 @@ class EventHandler:
             "$MIC_WEBRTC": self._mic_webrtc,
             "$VIDEO_WEBRTC": self._video_webrtc,
             "CALL_RING": self._call_ring,
+            "TYPING_START": self._typing_start,
         }
         self.loaded = False
         self.logged_in = False
@@ -415,6 +416,17 @@ class EventHandler:
                              "kind": "call", "icon": data.get("caller_avatar") or "",
                              "channel_id": data.get("channel_id") or ""}
         self.notification_event.set()
+
+    async def _typing_start(self, data):
+        # "X is typing…" for whichever conversation is open in the fullscreen
+        # chat — pushed live via Decky's emit (same channel as "state"), no
+        # polling needed. The frontend filters by channel_id itself and
+        # auto-clears after a few seconds (Discord has no "stopped typing"
+        # event, only repeated TYPING_START while someone keeps typing).
+        await emit("typing", {
+            "channel_id": str(data.get("channel_id") or ""),
+            "username": data.get("username") or "",
+        })
 
     async def _mic_webrtc(self, data):
         # Relay the Discord tab's mic offer/ICE to the SharedJSContext frontend,

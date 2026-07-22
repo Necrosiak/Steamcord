@@ -1,11 +1,12 @@
 import { Focusable, ModalRoot, NavEntryPositionPreferences, TextField } from "@decky/ui";
-import { call } from "@decky/api";
+import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
 import { Btn, Message, MessageRow } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
 import { IcChevronDown } from "./Icons";
 import { ActionCard, ACCENT, focusHalo } from "./Styled";
+import { useSteamcordState } from "../hooks/useSteamcordState";
 
 const ModalRootAny = ModalRoot as any;
 
@@ -44,6 +45,9 @@ const PAGE_SIZE = 30;
 const NEAR_BOTTOM_PX = 80;
 const FS_MSG_LIST_ID = "steamcord-msglist-fs";
 const FS_MSG_FLOW_ID = "steamcord-msgflow-fs";
+// Niveau module (évite useRef, cf. TextChat.tsx) : un seul modal ouvert à la
+// fois, pas besoin d'un état par instance pour ce simple throttle.
+let _lastTypingSent = 0;
 
 // Plusieurs tentatives échelonnées : à l'ouverture de la modale (animation de
 // transition) ou juste après le 1er chargement, la hauteur réelle du contenu
@@ -104,6 +108,7 @@ const isFsNearBottom = () => {
 // bouton "revenir aux derniers messages" apparaît pour reprendre le flux.
 export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }:
   { channelId: string; channelName: string; isDm: boolean; closeModal?: () => void }) {
+  const myId = useSteamcordState()?.me?.id;
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -112,6 +117,37 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, setFocusedInitial] = useState(false);
+  const [typingUser, setTypingUser] = useState<string | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{ id: string; author: string } | null>(null);
+
+  // "X is typing…" (#20) — poussé en direct par le backend (event Decky
+  // "typing", pas de polling) dès qu'un TYPING_START Discord arrive pour ce
+  // salon. Discord n'a pas d'event "a arrêté d'écrire" (juste des TYPING_START
+  // répétés tant que la personne écrit) → on efface tout seul si rien de
+  // neuf n'arrive pendant quelques secondes.
+  useEffect(() => {
+    let clearTimer: any = null;
+    const onTyping = (data: { channel_id: string; username: string }) => {
+      if (data.channel_id !== channelId) return;
+      setTypingUser(data.username);
+      if (clearTimer) clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => setTypingUser(null), 8000);
+    };
+    addEventListener("typing", onTyping);
+    return () => {
+      removeEventListener("typing", onTyping);
+      if (clearTimer) clearTimeout(clearTimer);
+    };
+  }, [channelId]);
+
+  // Signale NOTRE frappe aux autres (symétrique de l'indicateur reçu) — au
+  // plus une requête toutes les ~8s tant qu'on écrit, pas à chaque caractère.
+  const notifyTyping = () => {
+    const now = Date.now();
+    if (now - _lastTypingSent < 8000) return;
+    _lastTypingSent = now;
+    call("send_typing", channelId).catch(() => {});
+  };
 
   // `force` = 1er chargement (ou juste après un envoi) : remplace tout et
   // recolle en bas inconditionnellement. Sans `force` (poll 5s), fusionne avec
@@ -173,8 +209,9 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
     if (!text || sending) return;
     setSending(true);
     try {
-      await call("send_message", channelId, text);
+      await call("send_message", channelId, text, replyTarget?.id);
       setDraft("");
+      setReplyTarget(null);
       loadMessages(true);
     } catch (e) { setError(String(e)); }
     setSending(false);
@@ -223,7 +260,17 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
               tentatives manuelles de scroll/focus vers le bas. Mécanisme
               déclaratif natif au lieu de rejouer une course avec lui. */}
           <Focusable id={FS_MSG_FLOW_ID} flow-children="vertical" navEntryPreferPosition={NavEntryPositionPreferences.LAST}>
-            {messages?.map((m) => <MessageRow key={m.id} m={m} />)}
+            {messages?.map((m) => (
+              <MessageRow
+                key={m.id}
+                m={m}
+                channelId={channelId}
+                isMine={!!myId && m.author_id === myId}
+                onLocalUpdate={(patch) => setMessages((prev) => prev?.map((x) => x.id === m.id ? { ...x, ...patch } : x) ?? prev)}
+                onLocalDelete={() => setMessages((prev) => prev?.filter((x) => x.id !== m.id) ?? prev)}
+                onReply={() => setReplyTarget({ id: m.id, author: m.author })}
+              />
+            ))}
           </Focusable>
         </div>
 
@@ -235,11 +282,31 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
           </div>
         )}
 
+        {typingUser && (
+          <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic", marginTop: 6 }}>
+            {t("typing_indicator", { name: typingUser })}
+          </div>
+        )}
+
+        {replyTarget && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6, marginTop: 8, padding: "4px 8px",
+            borderRadius: 6, background: "rgba(255,255,255,0.06)", fontSize: 11,
+          }}>
+            <span style={{ flex: 1, opacity: 0.85 }}>↩ {t("replying_to", { name: replyTarget.author })}</span>
+            <Btn onClick={() => setReplyTarget(null)} style={{ padding: "1px 8px", fontSize: 11, minHeight: 0 }}>✕</Btn>
+          </div>
+        )}
+
         <div style={{ marginTop: 8 }}>
           <TextField
             value={draft}
             placeholder={t("message_placeholder")}
-            onChange={(e: any) => setDraft(e?.target?.value ?? "")}
+            onChange={(e: any) => {
+              const v = e?.target?.value ?? "";
+              setDraft(v);
+              if (v.trim()) notifyTyping();
+            }}
             style={{ fontSize: 13, width: "100%" }}
           />
           {/* Envoyer + capture d'écran sur la même rangée (retour user #20 :

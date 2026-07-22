@@ -877,8 +877,28 @@ class Plugin:
         return await cls.evt_handler.api.get_messages(channel_id, before)
 
     @classmethod
-    async def send_message(cls, channel_id, content):
-        return await cls.evt_handler.api.send_message(channel_id, content)
+    async def send_message(cls, channel_id, content, reply_to=None):
+        return await cls.evt_handler.api.send_message(channel_id, content, reply_to)
+
+    @classmethod
+    async def send_typing(cls, channel_id):
+        return await cls.evt_handler.api.send_typing(channel_id)
+
+    @classmethod
+    async def edit_message(cls, channel_id, message_id, content):
+        return await cls.evt_handler.api.edit_message(channel_id, message_id, content)
+
+    @classmethod
+    async def delete_message(cls, channel_id, message_id):
+        return await cls.evt_handler.api.delete_message(channel_id, message_id)
+
+    @classmethod
+    async def add_reaction(cls, channel_id, message_id, emoji):
+        return await cls.evt_handler.api.add_reaction(channel_id, message_id, emoji)
+
+    @classmethod
+    async def remove_reaction(cls, channel_id, message_id, emoji):
+        return await cls.evt_handler.api.remove_reaction(channel_id, message_id, emoji)
 
     @classmethod
     async def get_soundboard_sounds(cls):

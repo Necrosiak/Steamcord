@@ -1,8 +1,8 @@
-import { DialogButton, Focusable, showModal } from "@decky/ui";
+import { DialogButton, Focusable, showModal, TextField } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
-import { useFillHeight } from "./Styled";
+import { useFillHeight, focusHalo, ACCENT } from "./Styled";
 import { IcChat, IcLink, IcPaperclip } from "./Icons";
 import { ChatFullscreenModal } from "./ChatFullscreen";
 
@@ -19,10 +19,12 @@ interface DMChannel {
   recipients: DMRecipient[]; active_call: boolean;
 }
 export interface MsgImage { url: string; proxy_url: string; w: number; h: number; }
+export interface MsgReaction { emoji: string; count: number; me: boolean; }
 export interface Message {
   id: string; author: string; author_id: string; avatar: string | null;
   bot: boolean; content: string; ts: string | null;
-  images: MsgImage[]; files: number;
+  images: MsgImage[]; files: number; reactions?: MsgReaction[];
+  reply_to?: { author: string; content: string } | null;
 }
 
 export const Btn = DialogButton as any;
@@ -77,6 +79,11 @@ export const shortTime = (ts: string | null) => {
   try { const d = new Date(ts); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
 };
 
+// Émojis de réaction rapide (Unicode standard uniquement, cf. mapMsg côté JS —
+// pas d'emoji custom serveur, ça demanderait de charger la liste d'émojis de
+// la guilde, hors scope).
+const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+
 // Un message. `Btn` (DialogButton), PAS un `Focusable` brut : un simple
 // Focusable avec onFocus/onGamepadFocus perd son statut d'arrêt de nav dès
 // qu'un autre vrai composant interactif (lien Btn, image Focusable+onActivate)
@@ -84,18 +91,77 @@ export const shortTime = (ts: string | null) => {
 // (retour user, régression du 1er essai). DialogButton est le SEUL composant
 // utilisé pour le tracking de focus custom partout ailleurs dans ce fichier/
 // VoiceChatViews (`focusHalo`) : on suit exactement le même pattern ici.
-export function MessageRow({ m }: { m: Message }) {
+export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete, onReply }: {
+  m: Message; channelId?: string; isMine?: boolean;
+  onLocalUpdate?: (patch: Partial<Message>) => void;
+  onLocalDelete?: () => void;
+  onReply?: () => void;
+}) {
   const [focused, setFocused] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(m.content);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [pickingEmoji, setPickingEmoji] = useState(false);
+  const [busy, setBusy] = useState(false);
   const links = extractLinks(m.content || "");
   const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
-  // Un message avec lien(s)/image(s) a déjà ses propres arrêts de nav internes
-  // (Btn de lien, Focusable d'image) — un Btn englobant SANS action au-dessus
-  // les rendait inatteignables au bouton A (bouton imbriqué dans un bouton,
-  // retour user #20 : "j'appuie sur A sur le lien, rien ne se passe"). Le
-  // wrapper englobant n'est un Btn (= son propre arrêt de nav) que pour les
-  // messages plats qui n'ont RIEN d'autre de focusable (nécessaire pour
-  // qu'un message texte sans lien reste quand même atteignable, cf. #17).
-  const hasInteractiveChild = links.length > 0 || (m.images?.length ?? 0) > 0;
+
+  const toggleReaction = (r: MsgReaction) => {
+    if (!channelId || busy) return;
+    setBusy(true);
+    const method = r.me ? "remove_reaction" : "add_reaction";
+    call(method, channelId, m.id, r.emoji)
+      .catch(() => {})
+      .finally(() => setBusy(false));
+    onLocalUpdate?.({
+      reactions: (m.reactions || []).map((x) => x.emoji === r.emoji
+        ? { ...x, me: !x.me, count: x.count + (x.me ? -1 : 1) }
+        : x),
+    });
+  };
+
+  const addQuickReaction = (emoji: string) => {
+    if (!channelId || busy) return;
+    setPickingEmoji(false);
+    setBusy(true);
+    call("add_reaction", channelId, m.id, emoji).catch(() => {}).finally(() => setBusy(false));
+    const existing = (m.reactions || []).find((x) => x.emoji === emoji);
+    const reactions = existing
+      ? (m.reactions || []).map((x) => x.emoji === emoji ? { ...x, me: true, count: x.count + (x.me ? 0 : 1) } : x)
+      : [...(m.reactions || []), { emoji, count: 1, me: true }];
+    onLocalUpdate?.({ reactions });
+  };
+
+  const saveEdit = () => {
+    if (!channelId || busy || !editDraft.trim()) return;
+    setBusy(true);
+    call("edit_message", channelId, m.id, editDraft.trim())
+      .then(() => { onLocalUpdate?.({ content: editDraft.trim() }); setEditing(false); })
+      .catch(() => {})
+      .finally(() => setBusy(false));
+  };
+
+  const doDelete = () => {
+    if (!channelId || busy) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setTimeout(() => setConfirmingDelete(false), 4000);
+      return;
+    }
+    setBusy(true);
+    call("delete_message", channelId, m.id).then(() => onLocalDelete?.()).catch(() => setBusy(false));
+  };
+
+  // Un message avec lien(s)/image(s) — OU maintenant la rangée réactions/
+  // édition qui suit toujours le contenu — a déjà ses propres arrêts de nav
+  // internes (Btn de lien, Focusable d'image, bouton "+" réaction…) — un Btn
+  // englobant SANS action au-dessus les rendait inatteignables au bouton A
+  // (bouton imbriqué dans un bouton, retour user #20 : "j'appuie sur A sur le
+  // lien, rien ne se passe"). Le wrapper englobant n'est un Btn (= son propre
+  // arrêt de nav) que pour les messages qui n'ont RIEN d'autre de focusable —
+  // en pratique ça n'arrive plus jamais depuis que le bouton "+" réaction est
+  // toujours présent, mais on garde le filet de sécurité au cas où.
+  const hasInteractiveChild = true;
 
   const rowStyle = {
     display: "block", textAlign: "left" as const, width: "100%", color: "#fff",
@@ -108,12 +174,30 @@ export function MessageRow({ m }: { m: Message }) {
 
   const body = (
     <>
+      {m.reply_to && (
+        <div style={{ display: "flex", gap: 4, fontSize: 10, opacity: 0.6, marginBottom: 2 }}>
+          <span>↩</span>
+          <span style={{ fontWeight: 600 }}>{m.reply_to.author}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.reply_to.content}</span>
+        </div>
+      )}
       <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
       {m.bot && <span style={{ fontSize: 8, background: "#5865f2", color: "#fff", borderRadius: 3, padding: "0 3px", marginLeft: 4 }}>BOT</span>}
       <span style={{ opacity: 0.4, fontSize: 9, marginLeft: 5 }}>{shortTime(m.ts)}</span>
-      {m.content
-        ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{m.content}</div>
-        : (!hasBody && <div style={{ opacity: 0.4, fontStyle: "italic" }}>—</div>)}
+
+      {editing ? (
+        <div style={{ marginTop: 3 }}>
+          <TextField value={editDraft} onChange={(e: any) => setEditDraft(e?.target?.value ?? "")} style={{ fontSize: 12, width: "100%" }} />
+          <Focusable flow-children="horizontal" style={{ display: "flex", gap: 4, marginTop: 3 }}>
+            <Btn disabled={busy || !editDraft.trim()} onClick={saveEdit} style={{ flex: 1, padding: "3px 0", fontSize: 11, minHeight: 0 }}>{t("save")}</Btn>
+            <Btn disabled={busy} onClick={() => { setEditing(false); setEditDraft(m.content); }} style={{ flex: 1, padding: "3px 0", fontSize: 11, minHeight: 0 }}>{t("cancel")}</Btn>
+          </Focusable>
+        </div>
+      ) : (
+        m.content
+          ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{m.content}</div>
+          : (!hasBody && <div style={{ opacity: 0.4, fontStyle: "italic" }}>—</div>)
+      )}
 
       {/* Miniatures d'images : ne se chargent que lorsque ce salon est
           ouvert (la vue messages n'est montée qu'à ce moment). Clic →
@@ -144,13 +228,49 @@ export function MessageRow({ m }: { m: Message }) {
       ))}
 
       {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
+
+      {/* Réactions existantes (clic = ajouter/retirer la sienne) + bouton "+"
+          pour en ajouter une nouvelle parmi un petit set d'émojis courants. */}
+      {channelId && (
+        <Focusable flow-children="horizontal" style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4, alignItems: "center" }}>
+          {(m.reactions || []).map((r) => (
+            <ReactionPill key={r.emoji} r={r} disabled={busy} onClick={() => toggleReaction(r)} />
+          ))}
+          <Btn
+            disabled={busy}
+            onClick={() => setPickingEmoji((v) => !v)}
+            style={{ padding: "1px 6px", fontSize: 11, minHeight: 0, borderRadius: 10 }}
+          >
+            +
+          </Btn>
+          {onReply && !editing && (
+            <Btn disabled={busy} onClick={onReply} style={{ padding: "1px 6px", fontSize: 11, minHeight: 0 }}>{t("reply")}</Btn>
+          )}
+          {isMine && !editing && (
+            <>
+              <Btn disabled={busy} onClick={() => setEditing(true)} style={{ padding: "1px 6px", fontSize: 11, minHeight: 0 }}>{t("edit")}</Btn>
+              <Btn disabled={busy} onClick={doDelete} style={{ padding: "1px 6px", fontSize: 11, minHeight: 0, color: confirmingDelete ? "#ff6b6b" : "#fff" }}>
+                {confirmingDelete ? t("confirm_delete") : t("delete")}
+              </Btn>
+            </>
+          )}
+        </Focusable>
+      )}
+      {pickingEmoji && (
+        <Focusable flow-children="horizontal" style={{ display: "flex", gap: 4, marginTop: 3 }}>
+          {QUICK_EMOJIS.map((e) => (
+            <Btn key={e} disabled={busy} onClick={() => addQuickReaction(e)} style={{ padding: "1px 7px", fontSize: 13, minHeight: 0 }}>{e}</Btn>
+          ))}
+        </Focusable>
+      )}
     </>
   );
 
   if (hasInteractiveChild) {
     // <div> simple, PAS un arrêt de nav lui-même : le halo suit quand même le
-    // focus d'un enfant (lien/image) car React fait remonter onFocus/onBlur
-    // par bubbling (focusin/focusout) depuis n'importe quel descendant focusé.
+    // focus d'un enfant (lien/image/réaction) car React fait remonter
+    // onFocus/onBlur par bubbling (focusin/focusout) depuis n'importe quel
+    // descendant focusé.
     return (
       <div onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={rowStyle}>
         {body}
@@ -167,6 +287,28 @@ export function MessageRow({ m }: { m: Message }) {
       style={rowStyle}
     >
       {body}
+    </Btn>
+  );
+}
+
+function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boolean; onClick: () => void }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Btn
+      disabled={disabled}
+      onClick={onClick}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        padding: "1px 6px", fontSize: 11, minHeight: 0, borderRadius: 10, display: "flex", gap: 3, alignItems: "center",
+        background: r.me ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.08)",
+        border: r.me ? "1px solid " + ACCENT : "1px solid transparent",
+        ...focusHalo(ACCENT, focused),
+      }}
+    >
+      <span>{r.emoji}</span><span style={{ opacity: 0.8 }}>{r.count}</span>
     </Btn>
   );
 }

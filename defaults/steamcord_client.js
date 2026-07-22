@@ -1297,6 +1297,21 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             const im = e?.image || e?.thumbnail;
                                             if (im && im.url) images.push({ url: im.url, proxy_url: im.proxy_url || im.url, w: im.width || 0, h: im.height || 0 });
                                         }
+                                        // Réactions : uniquement les emojis Unicode standards pour
+                                        // l'instant (pas les emojis custom du serveur — il faudrait
+                                        // charger la liste des emojis de la guilde pour les afficher,
+                                        // hors scope). `emoji.id` non-null = emoji custom → ignoré.
+                                        const reactions = (Array.isArray(m.reactions) ? m.reactions : [])
+                                            .filter(r => !r.emoji?.id)
+                                            .map(r => ({ emoji: r.emoji?.name || "", count: r.count || 0, me: !!r.me }));
+                                        // Contexte de citation si CE message est une réponse. Discord
+                                        // résout `referenced_message` en même temps que le message qui
+                                        // répond (null si le message cité a été supprimé depuis).
+                                        const ref = m.referenced_message;
+                                        const reply_to = ref ? {
+                                            author: ref.author?.global_name || ref.author?.username || "?",
+                                            content: (ref.content || "").slice(0, 80),
+                                        } : null;
                                         return {
                                             id: String(m.id),
                                             author: m.author?.global_name || m.author?.username || "?",
@@ -1307,6 +1322,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             ts: m.timestamp || null,
                                             images,
                                             files: atts.filter(a => !isImg(a)).length,
+                                            reactions,
+                                            reply_to,
                                             _hasBody: !!(m.content) || images.length > 0 || atts.length > 0,
                                         };
                                     };
@@ -1337,10 +1354,50 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     break;
                                 }
                                 case "$send_message": {
+                                    const body = { content: String(data.content || "") };
+                                    if (data.reply_to) {
+                                        body.message_reference = { message_id: String(data.reply_to) };
+                                    }
                                     await Vencord.Webpack.Common.RestAPI.post({
                                         url: `/channels/${data.id}/messages`,
+                                        body,
+                                    });
+                                    result = true;
+                                    break;
+                                }
+                                case "$edit_message": {
+                                    await Vencord.Webpack.Common.RestAPI.patch({
+                                        url: `/channels/${data.id}/messages/${data.message_id}`,
                                         body: { content: String(data.content || "") },
                                     });
+                                    result = true;
+                                    break;
+                                }
+                                case "$delete_message": {
+                                    await Vencord.Webpack.Common.RestAPI.del({
+                                        url: `/channels/${data.id}/messages/${data.message_id}`,
+                                    });
+                                    result = true;
+                                    break;
+                                }
+                                case "$add_reaction":
+                                case "$remove_reaction": {
+                                    // Emoji Unicode uniquement (cf. mapMsg) → encodeURIComponent direct,
+                                    // pas besoin du format "name:id" réservé aux emojis custom.
+                                    const method = data.type === "$add_reaction" ? "put" : "del";
+                                    await Vencord.Webpack.Common.RestAPI[method]({
+                                        url: `/channels/${data.id}/messages/${data.message_id}/reactions/${encodeURIComponent(data.emoji)}/@me`,
+                                    });
+                                    result = true;
+                                    break;
+                                }
+                                case "$send_typing": {
+                                    // Signale NOTRE frappe aux autres (symétrique du "X is
+                                    // typing…" reçu) — best-effort, une frappe manquée n'est
+                                    // pas grave, pas la peine de faire remonter une erreur.
+                                    try {
+                                        await Vencord.Webpack.Common.RestAPI.post({ url: `/channels/${data.id}/typing` });
+                                    } catch (_) {}
                                     result = true;
                                     break;
                                 }
@@ -1532,6 +1589,19 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         caller_avatar = "https://cdn.discordapp.com/avatars/" + u.id + "/" + u.avatar + ".png?size=64";
                                     window.STEAMCORD_WS.send(JSON.stringify({ type: "CALL_RING", caller, caller_avatar, channel_id: String(e.channelId) }));
                                 }
+                            }
+                        } else if (e.type === "TYPING_START" && e.userId) {
+                            // "X is typing…" pour la vue plein écran (#20) — pas nous-même,
+                            // et Discord ne dit jamais "a arrêté d'écrire" (le frontend
+                            // efface tout seul après quelques secondes sans nouvel event).
+                            const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
+                            if (e.userId !== me?.id) {
+                                const u = Vencord.Webpack.Common.UserStore.getUser(e.userId);
+                                window.STEAMCORD_WS.send(JSON.stringify({
+                                    type: "TYPING_START",
+                                    channel_id: String(e.channelId),
+                                    username: u?.global_name || u?.username || "…",
+                                }));
                             }
                         }
                     } catch (_) {}
