@@ -3,6 +3,18 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.8 — 2026-07-22
+
+### Changed
+- Updater (#16): the SELinux/`restorecon` theory from v1.16.6 turned out to be
+  incomplete — confirmed by reports from Steam Deck/Steam Machine (stock
+  SteamOS, which has no SELinux at all) still hitting `Permission denied`
+  even after the directory ownership was verified correct. Rather than guess
+  a third fix blind, a `Permission denied` failure now logs the update
+  process's actual uid/euid/groups and the target directory's owner/mode/
+  `os.access(W_OK)` result at the moment it happens, so the next report gives
+  a conclusive answer instead of another manual `ls -la` round-trip.
+
 ## 1.16.7 — 2026-07-21
 
 ### Fixed

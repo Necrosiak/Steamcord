@@ -195,6 +195,40 @@ def _apply_blocking(url: str) -> None:
         _restorecon_best_effort(plugin_dir)
 
 
+def _diagnose_permission(path: Path) -> str:
+    """Extra context logged alongside a PermissionError so the NEXT report is
+    conclusive instead of another guess — issue #16 has already burned two
+    (chown -R alone insufficient; SELinux/restorecon also insufficient on
+    SteamOS, which doesn't even have SELinux). Correct ownership + writable
+    mode on the directory (confirmed via `ls -la` by two independent reporters)
+    plus a persistent EPERM/EACCES on file *creation* inside it points at the
+    process not actually running as the uid the directory is chown'd to — this
+    logs the actual runtime identity next to the failure so that's provable."""
+    import pwd
+    d = path if path.is_dir() else path.parent
+    bits = []
+    try:
+        euid = os.geteuid()
+        uid = os.getuid()
+        name = pwd.getpwuid(euid).pw_name
+        bits.append(f"process uid={uid} euid={euid} ({name})")
+    except Exception as e:
+        bits.append(f"uid lookup failed: {e!r}")
+    try:
+        groups = os.getgroups()
+        bits.append(f"groups={groups}")
+    except Exception as e:
+        bits.append(f"getgroups failed: {e!r}")
+    try:
+        st = d.stat()
+        owner = pwd.getpwuid(st.st_uid).pw_name
+        bits.append(f"{d} owned by uid={st.st_uid} ({owner}) gid={st.st_gid} mode={oct(st.st_mode)[-4:]}")
+    except Exception as e:
+        bits.append(f"stat({d}) failed: {e!r}")
+    bits.append(f"os.access(W_OK) on {d}: {os.access(d, os.W_OK)}")
+    return " | ".join(bits)
+
+
 def _replace_file(src: Path, dst: Path) -> None:
     """Copy src over dst via a same-directory tmp file + atomic os.replace.
 
@@ -227,8 +261,8 @@ async def apply(url: str) -> dict:
         logger.info("[updater] update unpacked; restarting plugin_loader")
         return {"ok": True}
     except PermissionError as e:
-        logger.error(f"[updater] apply failed: {e}")
         blocked_path = getattr(e, "filename", "") or DECKY_PLUGIN_DIR
+        logger.error(f"[updater] apply failed: {e} | {_diagnose_permission(Path(blocked_path))}")
         hints = [f"sudo chown -R $(id -un) {DECKY_PLUGIN_DIR}"]
         if _selinux_enforcing():
             # The likely real culprit on Bazzite/Fedora Atomic: chown fixes DAC
