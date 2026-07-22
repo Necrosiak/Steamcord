@@ -292,7 +292,13 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
 // (retour user #20, même famille que le bug soundboard/Envoyer déjà vu ce
 // soir). `width:"auto"` en style inline gagne toujours sur un défaut interne
 // en CSS classique, quelle que soit sa spécificité.
-const CHIP_SIZING = { flex: "0 0 0%", width: "auto" } as const;
+// `minWidth: 0` en plus de `flex`/`width` : DialogButton a apparemment une
+// largeur minimale interne (comme TabBtn devait déjà le neutraliser avec
+// `minWidth: 0` dans index.tsx) qui l'emporte sur flex-basis:0% seul — sans
+// ça chaque puce restait large même une fois la logique flex neutralisée
+// (retour user, capture à l'appui : "+"/Répondre bien plus larges que leur
+// texte).
+const CHIP_SIZING = { flex: "0 0 0%", width: "auto", minWidth: 0 } as const;
 
 function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boolean; onClick: () => void }) {
   const [focused, setFocused] = useState(false);
@@ -306,7 +312,7 @@ function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boo
       onGamepadBlur={() => setFocused(false)}
       style={{
         ...CHIP_SIZING,
-        padding: "2px 6px", fontSize: 11, lineHeight: "16px", minHeight: 0, borderRadius: 10, display: "flex", gap: 3, alignItems: "center",
+        padding: "2px 9px", fontSize: 11, lineHeight: "16px", minHeight: 0, borderRadius: 10, display: "flex", gap: 4, alignItems: "center",
         background: r.me ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.08)",
         border: r.me ? "1px solid " + ACCENT : "1px solid transparent",
         ...focusHalo(ACCENT, focused),
