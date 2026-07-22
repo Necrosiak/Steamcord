@@ -3,6 +3,23 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.16.9 — 2026-07-22
+
+### Fixed
+- Updater still failing with "Permission denied" on real installs after
+  v1.16.8's diagnostics (#16) — traced to Decky Loader itself: it only keeps
+  the plugin's top-level directory (and `plugin.json`) root-owned, while
+  every other file gets chowned to the host user at install time. The
+  tmp-file + `os.replace` dance from v1.16.1 needs to create a new entry in
+  that directory before it can rename it into place, which needs directory
+  write access — something a non-root backend never has there, regardless of
+  who owns the files inside. When that fails, the updater now falls back to
+  overwriting the destination file's content directly, which only needs
+  write permission on the file itself (already granted by Decky) — covering
+  essentially every file in a normal update. Only `plugin.json` or a
+  genuinely brand-new top-level file added in some future release can still
+  hit the wall, in which case the existing `chown -R` guidance still applies.
+
 ## 1.16.8 — 2026-07-22
 
 ### Changed
