@@ -406,7 +406,14 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   const loadMessages = (chId: string) => {
     call<[string], any>("get_messages", chId)
       .then((res) => {
-        setMessages(Array.isArray(res) ? res : []);
+        const fresh = Array.isArray(res) ? res : [];
+        // Un poll qui revient vide est un aléa passager (API/réseau), pas la
+        // preuve que la conv s'est vidée — sinon l'aperçu clignotait "vide"
+        // toutes les 5s dès qu'un poll ratait (retour user : "ça a tout
+        // retiré"). Seul le tout premier chargement (messages encore null,
+        // avant que quoi que ce soit ait été affiché) peut légitimement
+        // afficher "aucun message".
+        setMessages((prev) => (fresh.length > 0 || prev === null) ? fresh : prev);
         setTimeout(() => {
           const el = document.getElementById(PREVIEW_LIST_ID);
           if (el) el.scrollTop = el.scrollHeight;

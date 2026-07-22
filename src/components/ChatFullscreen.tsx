@@ -158,7 +158,15 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
         const fresh: Message[] = Array.isArray(res) ? res : [];
         const stick = force || isFsNearBottom();
         setMessages((prev) => {
-          if (!prev || fresh.length === 0) return fresh;
+          if (!prev) return fresh;
+          // Un poll (force=false) qui revient vide est un aléa passager (API,
+          // réseau) — PAS la preuve que la conversation s'est vidée. Avant, ça
+          // écrasait tout l'historique déjà affiché par un tableau vide toutes
+          // les 5s dès qu'un poll ratait, donnant l'impression que la conv se
+          // "rechargeait" en clignotant (retour user : "entre 2 ça a tout
+          // retiré"). Seul un chargement FORCÉ (changement de salon, envoi)
+          // peut légitimement afficher "aucun message".
+          if (fresh.length === 0) return force ? fresh : prev;
           const freshIds = new Set(fresh.map((m) => m.id));
           const oldestFreshId = fresh[0].id;
           const preserved = prev.filter((m) => !freshIds.has(m.id) && BigInt(m.id) < BigInt(oldestFreshId));
