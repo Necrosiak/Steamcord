@@ -306,7 +306,7 @@ function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boo
       onGamepadBlur={() => setFocused(false)}
       style={{
         ...CHIP_SIZING,
-        padding: "4px 6px", fontSize: 11, lineHeight: 1, minHeight: 0, borderRadius: 10, display: "flex", gap: 3, alignItems: "center",
+        padding: "2px 6px", fontSize: 11, lineHeight: "16px", minHeight: 0, borderRadius: 10, display: "flex", gap: 3, alignItems: "center",
         background: r.me ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.08)",
         border: r.me ? "1px solid " + ACCENT : "1px solid transparent",
         ...focusHalo(ACCENT, focused),
@@ -338,7 +338,7 @@ export function ChipBtn({ disabled, onClick, color, children }: { disabled?: boo
         // (police couleur) ignorent souvent le fontSize en-dessous d'une
         // taille de rendu minimale et débordaient du bouton avec un padding
         // trop serré (retour user, capture à l'appui).
-        padding: "4px 8px", fontSize: 11, lineHeight: 1, minHeight: 0, borderRadius: 10, color: "#fff",
+        padding: "2px 7px", fontSize: 11, lineHeight: "16px", minHeight: 0, borderRadius: 10, color: "#fff",
         background: focused ? c : "rgba(255,255,255,0.08)",
         opacity: disabled ? 0.5 : 1,
         ...focusHalo(c, focused),
