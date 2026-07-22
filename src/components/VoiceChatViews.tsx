@@ -391,7 +391,7 @@ export const SoundboardPanel = memo(function SoundboardPanel() {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {rows.map((row, i) => (
-          <Focusable key={i} flow-children="horizontal" style={{ display: "flex", gap: 4 }}>
+          <Focusable key={i} flow-children="row" style={{ display: "flex", gap: 4 }}>
             {row.map((s) => (
               <SoundTile key={s.id} sound={s} playing={playingId === s.id} onClick={() => play(s.id, guildId)} />
             ))}

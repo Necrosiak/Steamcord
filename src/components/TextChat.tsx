@@ -188,7 +188,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
       {editing ? (
         <div style={{ marginTop: 3 }}>
           <TextField value={editDraft} onChange={(e: any) => setEditDraft(e?.target?.value ?? "")} style={{ fontSize: 12, width: "100%" }} />
-          <Focusable flow-children="horizontal" style={{ display: "flex", gap: 4, marginTop: 3 }}>
+          <Focusable flow-children="row" style={{ display: "flex", gap: 4, marginTop: 3 }}>
             <Btn disabled={busy || !editDraft.trim()} onClick={saveEdit} style={{ flex: 1, padding: "3px 0", fontSize: 11, minHeight: 0 }}>{t("save")}</Btn>
             <Btn disabled={busy} onClick={() => { setEditing(false); setEditDraft(m.content); }} style={{ flex: 1, padding: "3px 0", fontSize: 11, minHeight: 0 }}>{t("cancel")}</Btn>
           </Focusable>
@@ -232,7 +232,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
       {/* Réactions existantes (clic = ajouter/retirer la sienne) + bouton "+"
           pour en ajouter une nouvelle parmi un petit set d'émojis courants. */}
       {channelId && (
-        <Focusable flow-children="horizontal" style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4, alignItems: "center" }}>
+        <Focusable flow-children="row" style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4, alignItems: "center" }}>
           {(m.reactions || []).map((r) => (
             <ReactionPill key={r.emoji} r={r} disabled={busy} onClick={() => toggleReaction(r)} />
           ))}
@@ -251,7 +251,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
         </Focusable>
       )}
       {pickingEmoji && (
-        <Focusable flow-children="horizontal" style={{ display: "flex", gap: 4, marginTop: 3 }}>
+        <Focusable flow-children="row" style={{ display: "flex", gap: 4, marginTop: 3 }}>
           {QUICK_EMOJIS.map((e) => (
             <ChipBtn key={e} disabled={busy} onClick={() => addQuickReaction(e)}>{e}</ChipBtn>
           ))}
@@ -306,7 +306,7 @@ function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boo
       onGamepadBlur={() => setFocused(false)}
       style={{
         ...CHIP_SIZING,
-        padding: "1px 6px", fontSize: 11, minHeight: 0, borderRadius: 10, display: "flex", gap: 3, alignItems: "center",
+        padding: "4px 6px", fontSize: 11, lineHeight: 1, minHeight: 0, borderRadius: 10, display: "flex", gap: 3, alignItems: "center",
         background: r.me ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.08)",
         border: r.me ? "1px solid " + ACCENT : "1px solid transparent",
         ...focusHalo(ACCENT, focused),
@@ -334,7 +334,11 @@ export function ChipBtn({ disabled, onClick, color, children }: { disabled?: boo
       onGamepadBlur={() => setFocused(false)}
       style={{
         ...CHIP_SIZING,
-        padding: "1px 8px", fontSize: 11, minHeight: 0, borderRadius: 10, color: "#fff",
+        // Padding vertical généreux + lineHeight explicite : les glyphes emoji
+        // (police couleur) ignorent souvent le fontSize en-dessous d'une
+        // taille de rendu minimale et débordaient du bouton avec un padding
+        // trop serré (retour user, capture à l'appui).
+        padding: "4px 8px", fontSize: 11, lineHeight: 1, minHeight: 0, borderRadius: 10, color: "#fff",
         background: focused ? c : "rgba(255,255,255,0.08)",
         opacity: disabled ? 0.5 : 1,
         ...focusHalo(c, focused),

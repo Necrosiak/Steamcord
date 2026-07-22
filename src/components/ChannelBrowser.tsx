@@ -149,7 +149,7 @@ export function ChannelBrowser() {
 
   return (
     <div>
-      <Focusable flow-children="horizontal" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginBottom: 4 }}>
+      <Focusable flow-children="row" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginBottom: 4 }}>
         {(showHidden || hiddenCount > 0) && (
           <Btn
             onClick={() => setShowHidden(s => !s)}
@@ -177,7 +177,7 @@ export function ChannelBrowser() {
                   serveur doit être direct, pas coincé derrière le mode
                   réorganisation) ; ↑/↓ restent réservés au mode réorganisation. */}
               {(editMode || showHidden) ? (
-                <Focusable flow-children="horizontal" style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                <Focusable flow-children="row" style={{ display: "flex", alignItems: "center", gap: 3 }}>
                   <GuildRowBtn guild={guild} totalActive={totalActive} expanded={expanded === guild.id}
                     onClick={() => setExpanded(expanded === guild.id ? null : guild.id)} flex />
                   {editMode && !showHidden && (

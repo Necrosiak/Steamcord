@@ -101,7 +101,7 @@ function ScreenshotPickerModal({ channelId, closeModal }: { channelId: string; c
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "70vh", overflowY: "auto" }}>
           {rows.map((row, i) => (
-            <Focusable key={i} flow-children="horizontal" style={{ display: "flex", gap: 6 }}>
+            <Focusable key={i} flow-children="row" style={{ display: "flex", gap: 6 }}>
               {row.map((s) => (
                 <ShotTile key={s.hHandle} shot={s} busy={busyHandle !== null} onClick={() => pick(s)} />
               ))}

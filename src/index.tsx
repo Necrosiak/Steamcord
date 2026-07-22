@@ -294,7 +294,7 @@ const UserStatusButton = ({ me }: { me: any }) => {
       {open && (
         <Focusable
           style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 6 }}
-          flow-children="horizontal"
+          flow-children="row"
         >
           {STATUSES.map((s) => {
             const selected = current === s.id;
@@ -647,11 +647,11 @@ const Content = () => {
         </div>
         <hr></hr>
         {/* Contrôles vocaux SOUS le pseudo : mute micro / casque / déconnexion.
-            Focusable + flow-children="horizontal" → D-pad gauche/droite circule
+            Focusable + flow-children="row" → D-pad gauche/droite circule
             entre les boutons (sinon nav unidirectionnelle). */}
         <div style={{ marginBottom: "12px" }}>
           <SR>
-            <Focusable flow-children="horizontal" style={{ display: "flex", justifyContent: "center", gap: 6 }}>
+            <Focusable flow-children="row" style={{ display: "flex", justifyContent: "center", gap: 6 }}>
               <MuteButton />
               <DeafenButton />
               <DisconnectButton />
@@ -668,10 +668,10 @@ const Content = () => {
         <div style={{ marginBottom: "12px" }}>
           <SR>
             {/* 1. Menu de haut niveau (persistant) : Vocal / Textuel / Config.
-                Focusable + flow-children="horizontal" : la rangée devient UN arrêt
+                Focusable + flow-children="row" : la rangée devient UN arrêt
                 de nav vertical, gauche/droite circule entre les onglets (un <div>
                 flex de boutons bruts ne navigue que dans un sens à la manette). */}
-            <Focusable flow-children="horizontal" style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
+            <Focusable flow-children="row" style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
               <TabBtn
                 active={topTab === "voice"} focused={tabFocus === "top-voice"}
                 onClick={() => setTopTab("voice")}
@@ -751,7 +751,7 @@ const Content = () => {
                   </div>
                 )}
                 {/* 2. Menu source (partagé) : Serveurs / MP */}
-                <Focusable flow-children="horizontal" style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
+                <Focusable flow-children="row" style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
                   <TabBtn
                     active={srcTab === "servers"} focused={tabFocus === "servers"}
                     onClick={() => setSrcTab("servers")}

@@ -13,7 +13,7 @@ const ModalRootAny = ModalRoot as any;
 // Bouton Envoyer de la rangée composer : `flex` posé DIRECTEMENT sur le Btn,
 // PAS sur un <div> enveloppant (retour user #20 : le bouton n'était plus
 // navigable à la manette). Même piège/recette que TabBtn (index.tsx) — un
-// Focusable flow-children="horizontal" attend ses enfants focusables en
+// Focusable flow-children="row" attend ses enfants focusables en
 // contact direct, un wrapper intermédiaire casse la navigation de toute la
 // rangée, pas seulement de l'enfant enveloppé.
 function SendBtn({ disabled, onClick, children }: { disabled?: boolean; onClick: () => void; children: any }) {
@@ -248,18 +248,17 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
               </ActionCard>
             </div>
           )}
-          {/* flow-children="vertical" indispensable : cf. le même commentaire
-              dans TextChat.tsx (MessageRow) — sans lui, un message plat sans
-              lien/image n'est pas reconnu comme arrêt de nav manette.
-              navEntryPreferPosition=LAST (retour user #20, "les plus anciens
-              en premier, contre-productif") : Steam pose sinon le focus sur
-              le PREMIER enfant à chaque entrée dans ce conteneur (comportement
-              par défaut de FooterLegend, cf. commentaire de la lib) — ce qui
-              re-scrollait la vue vers le HAUT à chaque fois (au montage, ET à
-              chaque poll qui change la liste), en concurrence avec nos
-              tentatives manuelles de scroll/focus vers le bas. Mécanisme
-              déclaratif natif au lieu de rejouer une course avec lui. */}
-          <Focusable id={FS_MSG_FLOW_ID} flow-children="vertical" navEntryPreferPosition={NavEntryPositionPreferences.LAST}>
+          {/* flow-children="column" (PAS "vertical" — le module Steam lui-même,
+              inspecté en direct au CDP, n'accepte que row/row-reverse/column/
+              column-reverse/grid/geometric ; "horizontal"/"vertical"
+              déclenchaient "Unhandled flow-children" à CHAQUE re-render de
+              cette liste, un vrai plantage React récurrent qui empêchait même
+              les nouveaux messages de s'afficher — cf. commit de ce soir).
+              navEntryPreferPosition=LAST : retour user #20 ("les plus anciens
+              en premier, contre-productif") — Steam pose sinon le focus sur le
+              PREMIER enfant à chaque entrée dans ce conteneur (comportement
+              par défaut de FooterLegend). */}
+          <Focusable id={FS_MSG_FLOW_ID} flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.LAST}>
             {messages?.map((m) => (
               <MessageRow
                 key={m.id}
@@ -314,10 +313,15 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
           {/* Envoyer + capture d'écran sur la même rangée (retour user #20 :
               le gros bloc d'origine — titre/vignette/ligne cible — prenait
               trop de place pour ce qui est juste un bouton "envoyer une
-              capture"). flow-children="horizontal" pour une nav D-pad
-              gauche/droite correcte entre les deux, même recette que
-              partout ailleurs dans ce fichier/VoiceChatViews. */}
-          <Focusable flow-children="horizontal" style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              capture"). flow-children="row" (PAS "horizontal" — cf. le
+              module Steam lui-même inspecté en direct au CDP : les seules
+              valeurs acceptées sont row/row-reverse/column/column-reverse/
+              grid/geometric ; "horizontal"/"vertical" déclenchaient
+              "Unhandled flow-children" à CHAQUE render, un vrai plantage React
+              récurrent qui empêchait même les nouveaux messages de s'afficher —
+              bug très probablement présent partout ailleurs dans ce plugin
+              (et les 3 autres) depuis une mise à jour du client Steam). */}
+          <Focusable flow-children="row" style={{ display: "flex", gap: 6, marginTop: 4 }}>
             <SendBtn disabled={sending || !draft.trim()} onClick={send}>
               {sending ? "…" : t("send")}
             </SendBtn>
