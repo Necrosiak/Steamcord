@@ -57,7 +57,6 @@ import {
   VoiceChatMembers,
   SoundboardPanel,
 } from "./components/VoiceChatViews";
-import { UploadScreenshot } from "./components/UploadScreenshot";
 import { GoLiveButton } from "./components/buttons/GoLiveButton";
 import { ScreenCameraButton } from "./components/buttons/ScreenCameraButton";
 import { GameAudioShare } from "./components/buttons/GameAudioShare";
@@ -772,19 +771,13 @@ const Content = () => {
                 </Focusable>
                 {/* Contenu = mode × source. La clé force un remontage propre au
                     changement de source (réinitialise la conversation ouverte).
-                    Le partage de captures n'apparaît QUE dans Textuel (envoi vers
-                    le salon/conversation en cours). */}
+                    Textuel n'affiche plus qu'un aperçu passif + un bouton pour
+                    ouvrir la vraie vue plein écran (nav historique + réponse +
+                    partage de capture, cf. ChatFullscreen.tsx) — retour user
+                    #20 : le panneau QAM est trop étroit pour ça. */}
                 {topTab === "voice"
                   ? (srcTab === "servers" ? <ChannelBrowser /> : <DMBrowser />)
-                  : (
-                    <>
-                      <TextChat key={srcTab} source={srcTab} />
-                      <hr />
-                      <SR>
-                        <UploadScreenshot />
-                      </SR>
-                    </>
-                  )}
+                  : <TextChat key={srcTab} source={srcTab} />}
               </>
             )}
           </SR>
@@ -1117,11 +1110,16 @@ export default definePlugin(() => {
     ' Toggle=' + !!Toggle + ' SliderField=' + !!SliderField + ' Dropdown=' + !!Dropdown);
 
   window.STEAMCORD = {
-    dispatchNotification: (payload: { title: string; body: string; kind?: string; icon?: string }) => {
+    dispatchNotification: (payload: { title: string; body: string; kind?: string; icon?: string; channel_id?: string }) => {
       console.log("Dispatching Steamcord notification: ", payload);
       if (payload.kind === "call") {
         // Appel entrant (toujours un MP) : le backend met le nom de l'appelant
         // dans body et son avatar Discord dans icon → persona = appelant.
+        // Pas d'action au clic pour l'instant : dm_call() peut rejoindre l'appel
+        // en arrière-plan, mais rien ne peut ramener le QAM au premier plan
+        // pour voir qui est connecté (aucune API SteamClient trouvée pour ça,
+        // cherché des deux côtés SharedJSContext/QuickAccess) — un clic qui ne
+        // fait "qu'à moitié" son travail semblerait buggé, retour user.
         notify({
           title: "",
           body: `📞 ${t("incoming_call")}`,

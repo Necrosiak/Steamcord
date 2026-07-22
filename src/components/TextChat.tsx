@@ -1,39 +1,15 @@
-import { DialogButton, Focusable, TextField } from "@decky/ui";
+import { DialogButton, Focusable, showModal } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight } from "./Styled";
-import { IcLink, IcPaperclip } from "./Icons";
+import { IcChat, IcLink, IcPaperclip } from "./Icons";
+import { ChatFullscreenModal } from "./ChatFullscreen";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
 // une instance distincte par source via `key`).
 let _textPoll: any = null;
-const MSG_LIST_ID = "steamcord-msglist";
-// Doit suivre le `limit=30` côté backend (defaults/steamcord_client.js) : sert
-// juste d'heuristique pour savoir si un lot plein = probablement encore de l'historique.
-const PAGE_SIZE = 30;
-const NEAR_BOTTOM_PX = 80;
-const scrollMsgsBottom = () => {
-  setTimeout(() => {
-    const el = document.getElementById(MSG_LIST_ID);
-    if (el) el.scrollTop = el.scrollHeight;
-  }, 50);
-};
-const isNearBottom = () => {
-  const el = document.getElementById(MSG_LIST_ID);
-  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-};
-
-// Salon/conversation texte actuellement OUVERT — partagé avec UploadScreenshot
-// pour que le partage de capture cible la conversation en cours.
-export let currentTextChannel: { id: string; name: string; dm: boolean } | null = null;
-const _channelSubs = new Set<() => void>();
-export const onTextChannelChange = (fn: () => void) => { _channelSubs.add(fn); return () => { _channelSubs.delete(fn); }; };
-const setCurrentTextChannel = (c: typeof currentTextChannel) => {
-  currentTextChannel = c;
-  _channelSubs.forEach((f) => { try { f(); } catch {} });
-};
 
 interface TextChannel { id: string; name: string; type: number; }
 interface Guild { id: string; name: string; icon: string | null; channels: TextChannel[]; }
@@ -42,22 +18,33 @@ interface DMChannel {
   id: string; type: number; name: string; icon: string | null;
   recipients: DMRecipient[]; active_call: boolean;
 }
-interface MsgImage { url: string; proxy_url: string; w: number; h: number; }
-interface Message {
+export interface MsgImage { url: string; proxy_url: string; w: number; h: number; }
+export interface Message {
   id: string; author: string; author_id: string; avatar: string | null;
   bot: boolean; content: string; ts: string | null;
   images: MsgImage[]; files: number;
 }
 
-const Btn = DialogButton as any;
+export const Btn = DialogButton as any;
 
 // Ouvre une URL dans le navigateur intégré du gamemode Steam (overlay web).
-const openUrl = (url: string) => {
-  try { (window as any).SteamClient?.URL?.ExecuteSteamURL?.("steam://openurl/" + url); } catch {}
+// Plusieurs API SteamClient tentées : selon le contexte de rendu (panneau QAM
+// vs vraie modale plein écran — #20, ChatFullscreenModal), `window.SteamClient`
+// n'expose pas forcément les mêmes espaces de noms (vérifié en direct au CDP :
+// `.URL` est absent du contexte QuickAccess mais présent dans SharedJSContext),
+// donc pas de garantie qu'un seul appel marche partout. `window.open` en tout
+// dernier recours : marche dans n'importe quel contexte Chromium/CEF.
+export const openUrl = (url: string) => {
+  try {
+    const sc = (window as any).SteamClient;
+    if (sc?.URL?.ExecuteSteamURL) { sc.URL.ExecuteSteamURL("steam://openurl/" + url); return; }
+    if (sc?.System?.OpenInSystemBrowser) { sc.System.OpenInSystemBrowser(url); return; }
+  } catch {}
+  try { window.open(url, "_blank"); } catch {}
 };
 
 // Miniature légère via le CDN média Discord (redimensionne côté serveur → peu de data).
-const thumbUrl = (img: MsgImage) => {
+export const thumbUrl = (img: MsgImage) => {
   const base = img.proxy_url || img.url;
   return base + (base.includes("?") ? "&" : "?") + "width=240&height=240";
 };
@@ -80,12 +67,12 @@ const shortLink = (url: string) => {
 
 // Couleur stable par auteur (comme Discord, agréable à scanner).
 const NAME_COLORS = ["#5865f2", "#23a55a", "#f0b232", "#eb459e", "#f23f43", "#00a8fc", "#9b59b6"];
-const colorFor = (id: string) => {
+export const colorFor = (id: string) => {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return NAME_COLORS[h % NAME_COLORS.length];
 };
-const shortTime = (ts: string | null) => {
+export const shortTime = (ts: string | null) => {
   if (!ts) return "";
   try { const d = new Date(ts); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
 };
@@ -97,25 +84,30 @@ const shortTime = (ts: string | null) => {
 // (retour user, régression du 1er essai). DialogButton est le SEUL composant
 // utilisé pour le tracking de focus custom partout ailleurs dans ce fichier/
 // VoiceChatViews (`focusHalo`) : on suit exactement le même pattern ici.
-function MessageRow({ m }: { m: Message }) {
+export function MessageRow({ m }: { m: Message }) {
   const [focused, setFocused] = useState(false);
   const links = extractLinks(m.content || "");
   const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
-  return (
-    <Btn
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onGamepadFocus={() => setFocused(true)}
-      onGamepadBlur={() => setFocused(false)}
-      style={{
-        display: "block", textAlign: "left", width: "100%", color: "#fff",
-        marginBottom: 7, marginTop: 0, fontSize: 12, lineHeight: 1.3, minHeight: 0,
-        borderRadius: 6, padding: "3px 6px", boxSizing: "border-box",
-        background: focused ? "rgba(88,101,242,0.22)" : "transparent",
-        boxShadow: focused ? "0 0 0 1px rgba(88,101,242,0.7)" : "none",
-        transition: "background .08s ease, box-shadow .08s ease",
-      }}
-    >
+  // Un message avec lien(s)/image(s) a déjà ses propres arrêts de nav internes
+  // (Btn de lien, Focusable d'image) — un Btn englobant SANS action au-dessus
+  // les rendait inatteignables au bouton A (bouton imbriqué dans un bouton,
+  // retour user #20 : "j'appuie sur A sur le lien, rien ne se passe"). Le
+  // wrapper englobant n'est un Btn (= son propre arrêt de nav) que pour les
+  // messages plats qui n'ont RIEN d'autre de focusable (nécessaire pour
+  // qu'un message texte sans lien reste quand même atteignable, cf. #17).
+  const hasInteractiveChild = links.length > 0 || (m.images?.length ?? 0) > 0;
+
+  const rowStyle = {
+    display: "block", textAlign: "left" as const, width: "100%", color: "#fff",
+    marginBottom: 7, marginTop: 0, fontSize: 12, lineHeight: 1.3, minHeight: 0,
+    borderRadius: 6, padding: "3px 6px", boxSizing: "border-box" as const,
+    background: focused ? "rgba(88,101,242,0.22)" : "transparent",
+    boxShadow: focused ? "0 0 0 1px rgba(88,101,242,0.7)" : "none",
+    transition: "background .08s ease, box-shadow .08s ease",
+  };
+
+  const body = (
+    <>
       <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
       {m.bot && <span style={{ fontSize: 8, background: "#5865f2", color: "#fff", borderRadius: 3, padding: "0 3px", marginLeft: 4 }}>BOT</span>}
       <span style={{ opacity: 0.4, fontSize: 9, marginLeft: 5 }}>{shortTime(m.ts)}</span>
@@ -152,6 +144,29 @@ function MessageRow({ m }: { m: Message }) {
       ))}
 
       {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
+    </>
+  );
+
+  if (hasInteractiveChild) {
+    // <div> simple, PAS un arrêt de nav lui-même : le halo suit quand même le
+    // focus d'un enfant (lien/image) car React fait remonter onFocus/onBlur
+    // par bubbling (focusin/focusout) depuis n'importe quel descendant focusé.
+    return (
+      <div onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={rowStyle}>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Btn
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={rowStyle}
+    >
+      {body}
     </Btn>
   );
 }
@@ -174,20 +189,16 @@ function DMAvatar({ ch }: { ch: DMChannel }) {
 
 // Messagerie texte. `source` = "servers" (serveurs → salons texte) ou "dms"
 // (conversations privées en texte). Les deux partagent la même vue de messages.
+const PREVIEW_LIST_ID = "steamcord-msg-preview";
+
 export function TextChat({ source }: { source: "servers" | "dms" }) {
-  // Deux instances : la liste de messages garde de la place sous elle pour le
-  // champ de saisie + bouton Envoyer (~110px) en plus de la marge commune.
   const fillList = useFillHeight();
-  const fillMsgs = useFillHeight(200, 124);
+  const fillPreview = useFillHeight(80, 56);
   const [guilds, setGuilds] = useState<Guild[] | null>(null);
   const [dms, setDms] = useState<DMChannel[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [channel, setChannel] = useState<{ id: string; name: string; dm: boolean } | null>(null);
   const [messages, setMessages] = useState<Message[] | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Charge la liste (serveurs ou MP) au montage, selon la source.
@@ -203,60 +214,27 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     }
   }, [source]);
 
-  // `force` = premier chargement d'un salon (ou juste après un envoi) : on
-  // remplace tout et on scrolle en bas inconditionnellement. Sans `force`
-  // (poll 5 s), on fusionne avec l'historique déjà remonté via loadOlder au
-  // lieu d'écraser — et on ne recolle en bas que si l'utilisateur y était déjà
-  // (sinon un poll pendant qu'on lit l'historique renverrait tout en bas).
-  const loadMessages = (chId: string, force = false) => {
+  // Preview passive du QAM : juste les derniers messages, pas d'historique ni
+  // de fusion à gérer ici — la modale plein écran (ChatFullscreenModal) a son
+  // propre état pour la vraie navigation/envoi (#20). Toujours recollée en bas
+  // (pas de nav manette dans cette zone, donc pas de "flow" à préserver comme
+  // dans la modale — juste un scroll auto vers le plus récent).
+  const loadMessages = (chId: string) => {
     call<[string], any>("get_messages", chId)
       .then((res) => {
-        const fresh: Message[] = Array.isArray(res) ? res : [];
-        const stick = force || isNearBottom();
-        setMessages((prev) => {
-          if (!prev || fresh.length === 0) return fresh;
-          const freshIds = new Set(fresh.map((m) => m.id));
-          const oldestFreshId = fresh[0].id;
-          const preserved = prev.filter((m) => !freshIds.has(m.id) && BigInt(m.id) < BigInt(oldestFreshId));
-          return [...preserved, ...fresh];
-        });
-        setHasMore(fresh.length >= PAGE_SIZE);
-        if (stick) scrollMsgsBottom(); // auto-scroll vers le message le plus récent
+        setMessages(Array.isArray(res) ? res : []);
+        setTimeout(() => {
+          const el = document.getElementById(PREVIEW_LIST_ID);
+          if (el) el.scrollTop = el.scrollHeight;
+        }, 50);
       })
-      .catch(() => { if (force) setMessages([]); }); // un poll raté ne doit pas effacer ce qui est déjà affiché
-  };
-
-  // Remonte un lot plus ancien (avant le plus vieux message chargé) et le
-  // préfixe à la liste, en compensant le scroll pour ne pas faire sauter la
-  // vue (#17 : impossible de voir le début de la conversation).
-  const loadOlder = () => {
-    if (!channel || !messages || messages.length === 0 || loadingOlder || !hasMore) return;
-    setLoadingOlder(true);
-    const oldestId = messages[0].id;
-    const el = document.getElementById(MSG_LIST_ID);
-    const prevScrollHeight = el?.scrollHeight ?? 0;
-    call<[string, string], any>("get_messages", channel.id, oldestId)
-      .then((res) => {
-        const older: Message[] = Array.isArray(res) ? res : [];
-        setHasMore(older.length >= PAGE_SIZE);
-        if (older.length > 0) {
-          setMessages((prev) => [...older, ...(prev || [])]);
-          setTimeout(() => {
-            const el2 = document.getElementById(MSG_LIST_ID);
-            if (el2) el2.scrollTop += el2.scrollHeight - prevScrollHeight;
-          }, 50);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoadingOlder(false));
+      .catch(() => {}); // un poll raté garde le dernier aperçu affiché
   };
 
   const openChannel = (id: string, name: string, dm: boolean) => {
     setChannel({ id, name, dm });
-    setCurrentTextChannel({ id, name, dm }); // → cible du partage de capture
     setMessages(null);
-    setHasMore(true);
-    loadMessages(id, true);
+    loadMessages(id);
     if (_textPoll) clearInterval(_textPoll);
     _textPoll = setInterval(() => loadMessages(id), 5000);
   };
@@ -264,76 +242,46 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   const closeChannel = () => {
     if (_textPoll) { clearInterval(_textPoll); _textPoll = null; }
     setChannel(null);
-    setCurrentTextChannel(null);
     setMessages(null);
-    setDraft("");
   };
 
   useEffect(() => () => {
     if (_textPoll) { clearInterval(_textPoll); _textPoll = null; }
-    setCurrentTextChannel(null);
   }, []);
 
-  const send = async () => {
-    const text = draft.trim();
-    if (!text || !channel || sending) return;
-    setSending(true);
-    try {
-      await call("send_message", channel.id, text);
-      setDraft("");
-      loadMessages(channel.id, true);
-    } catch (e) { setError(String(e)); }
-    setSending(false);
-  };
-
-  // ── Vue MESSAGES d'un salon / d'une conversation ──────────────────────────
+  // ── Vue passive d'un salon / d'une conversation : juste un aperçu des
+  // derniers messages (non interactif, toujours collé aux plus récents) + un
+  // bouton pour ouvrir la vraie vue plein écran (nav historique + réponse +
+  // capture d'écran) — retour user #20 : le panneau QAM est trop étroit pour
+  // naviguer confortablement, mieux vaut une vraie modale plein écran pour ça.
   if (channel) {
+    const preview = (messages ?? []).slice(-10);
     return (
       <div>
-        <Btn onClick={closeChannel} style={{ width: "100%", padding: "3px 8px", fontSize: 11, marginBottom: 4, display: "flex", gap: 6 }}>
+        <Btn onClick={closeChannel} style={{ width: "100%", padding: "3px 8px", fontSize: 11, marginBottom: 6, display: "flex", gap: 6 }}>
           <span>←</span><span style={{ flex: 1, textAlign: "left" }}>{channel.dm ? channel.name : `#${channel.name}`}</span>
         </Btn>
 
-        <div id={MSG_LIST_ID} ref={fillMsgs.ref} style={{ maxHeight: fillMsgs.height, overflowY: "auto", marginBottom: 6, paddingRight: 2 }}>
+        <div id={PREVIEW_LIST_ID} ref={fillPreview.ref} style={{ maxHeight: fillPreview.height, overflowY: "auto", marginBottom: 8 }}>
           {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 12 }}>{t("loading_messages")}</div>}
           {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_messages")}</div>}
-          {messages !== null && messages.length > 0 && hasMore && (
-            <Btn
-              disabled={loadingOlder}
-              onClick={loadOlder}
-              style={{ width: "100%", padding: "3px 8px", marginBottom: 6, fontSize: 11 }}
-            >
-              {loadingOlder ? t("loading_older") : t("load_older")}
-            </Btn>
-          )}
-          {/* flow-children="vertical" indispensable ici : sans lui, un Focusable
-              plat sans DialogButton/SliderField à l'intérieur n'est pas reconnu
-              comme un arrêt de nav par le moteur manette de Steam — seuls les
-              vrais composants interactifs (nos boutons lien, load older) l'étaient,
-              ce qui donnait l'impression que le fix Focusable seul ne suffisait
-              pas (retour user #17 après le 1er correctif). */}
-          <Focusable flow-children="vertical">
-          {messages?.map((m) => <MessageRow key={m.id} m={m} />)}
-          </Focusable>
+          {preview.map((m) => (
+            <div key={m.id} style={{ fontSize: 11, lineHeight: 1.35, marginBottom: 4, wordBreak: "break-word" }}>
+              <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
+              {"  "}
+              <span style={{ opacity: 0.85 }}>
+                {m.content || (m.images?.length ? "📷" : m.files > 0 ? "📎" : "")}
+              </span>
+            </div>
+          ))}
         </div>
 
-        {/* Réponse : champ pleine largeur, bouton Envoyer en dessous (empilé).
-            Le clavier Steam s'ouvre tout seul au focus du champ. */}
-        <div>
-          <TextField
-            value={draft}
-            placeholder={t("message_placeholder")}
-            onChange={(e: any) => setDraft(e?.target?.value ?? "")}
-            style={{ fontSize: 12, width: "100%" }}
-          />
-          <Btn
-            disabled={sending || !draft.trim()}
-            onClick={send}
-            style={{ width: "100%", marginTop: 4, padding: "5px 0", fontSize: 12, minHeight: 0 }}
-          >
-            {sending ? "…" : t("send")}
-          </Btn>
-        </div>
+        <Btn
+          onClick={() => showModal(<ChatFullscreenModal channelId={channel.id} channelName={channel.name} isDm={channel.dm} />)}
+          style={{ width: "100%", padding: "7px 0", fontSize: 13, display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}
+        >
+          <IcChat /> {t("open_chat")}
+        </Btn>
         {error && <div style={{ color: "#ff6b6b", fontSize: 10, marginTop: 4 }}>{error}</div>}
       </div>
     );

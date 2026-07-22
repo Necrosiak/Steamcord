@@ -605,6 +605,7 @@ class Plugin:
                     "body": notification["body"],
                     "kind": notification.get("kind", ""),
                     "icon": notification.get("icon", ""),
+                    "channel_id": notification.get("channel_id", ""),
                 }
             )
             # payload (json.dumps ASCII) est une expression JS valide telle quelle.

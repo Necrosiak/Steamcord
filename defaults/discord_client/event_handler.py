@@ -400,7 +400,8 @@ class EventHandler:
             if ctx:
                 title = f"{title} ({ctx})"
         self.notification = {"title": title, "body": body, "icon": icon,
-                             "kind": "dm" if dm else "group"}
+                             "kind": "dm" if dm else "group",
+                             "channel_id": str(data.get("channelId") or msg.get("channel_id") or "")}
         logger.info(f"notification built: kind={self.notification['kind']} "
                     f"title={title!r} icon={'oui' if icon else 'non'} "
                     f"enrichi={'__sc_dm' in data}")
@@ -408,8 +409,11 @@ class EventHandler:
 
     async def _call_ring(self, data):
         # Incoming DM call → notify. The frontend localizes the title via kind="call".
+        # channel_id lets a click on the notification answer the call directly
+        # (dm_call(channel_id, join_existing=True) — same call already ringing).
         self.notification = {"title": "", "body": data.get("caller") or "Discord",
-                             "kind": "call", "icon": data.get("caller_avatar") or ""}
+                             "kind": "call", "icon": data.get("caller_avatar") or "",
+                             "channel_id": data.get("channel_id") or ""}
         self.notification_event.set()
 
     async def _mic_webrtc(self, data):

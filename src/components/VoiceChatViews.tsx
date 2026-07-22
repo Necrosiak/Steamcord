@@ -109,15 +109,22 @@ function FullscreenVideoModal({ track, label, closeModal }:
     if (el && el.srcObject !== ms) { el.srcObject = ms; (el as any).play?.().catch(() => {}); }
   }, [ms]);
   return (
-    <ModalRootAny closeModal={closeModal} onCancel={() => closeModal?.()} bAllowFullSize>
+    <ModalRootAny
+      closeModal={closeModal}
+      onCancel={() => closeModal?.()}
+      onCancelActionDescription={t("video_exit_fullscreen")}
+      bAllowFullSize
+    >
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
+        <div style={{
+          fontSize: 14, fontWeight: 600, padding: "6px 12px", borderRadius: 8,
+          background: "rgba(255,255,255,0.06)",
+        }}>{label}</div>
         <video
           ref={ref}
           autoPlay muted playsInline
           style={{ width: "100%", maxHeight: "72vh", objectFit: "contain", background: "#000", borderRadius: 6, display: "block" }}
         />
-        <div style={{ fontSize: 11, opacity: 0.6 }}>{`${t("video_exit_fullscreen")} (B)`}</div>
       </div>
     </ModalRootAny>
   );

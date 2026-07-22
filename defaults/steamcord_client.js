@@ -1283,13 +1283,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // MessageStore est vide pour un salon non ouvert → RestAPI (newest-first,
                                     // on inverse pour l'ordre de lecture). Timestamps ISO. `before` = pagination
                                     // vers l'historique (id du plus vieux message déjà chargé côté frontend).
-                                    const url = `/channels/${data.id}/messages?limit=30`
-                                        + (data.before ? `&before=${encodeURIComponent(data.before)}` : "");
-                                    const res = await Vencord.Webpack.Common.RestAPI.get({ url });
-                                    const arr = (res?.body || []).slice().reverse();
                                     const isImg = (a) => (a?.content_type || "").startsWith("image/")
                                         || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(a?.filename || a?.url || "");
-                                    result = arr.map(m => {
+                                    const mapMsg = (m) => {
                                         const atts = Array.isArray(m.attachments) ? m.attachments : [];
                                         // Images = pièces jointes image + images d'embeds (liens d'images
                                         // postés deviennent des embeds). proxy_url = CDN média redimensionnable.
@@ -1311,8 +1307,33 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             ts: m.timestamp || null,
                                             images,
                                             files: atts.filter(a => !isImg(a)).length,
+                                            _hasBody: !!(m.content) || images.length > 0 || atts.length > 0,
                                         };
-                                    });
+                                    };
+                                    // Discord compte les événements système (arrivée de membre, boost…)
+                                    // parmi les "messages" du salon — sans filtre, les 30 derniers peuvent
+                                    // n'être QUE ça sur un salon peu actif (vu en vrai #20 : plein d'écran
+                                    // de "—" alors que du vrai contenu existe plus loin dans l'historique).
+                                    // On les filtre ici et on remonte plusieurs pages si besoin pour garder
+                                    // PAGE_SIZE (30) messages RÉELS — sinon `hasMore` côté frontend (basé
+                                    // sur la taille du lot renvoyé) deviendrait faux dès qu'un lot brut est
+                                    // filtré, cassant la pagination "load older".
+                                    let before = data.before;
+                                    const collected = [];
+                                    for (let page = 0; page < 5 && collected.length < 30; page++) {
+                                        const url = `/channels/${data.id}/messages?limit=30`
+                                            + (before ? `&before=${encodeURIComponent(before)}` : "");
+                                        const res = await Vencord.Webpack.Common.RestAPI.get({ url });
+                                        const raw = res?.body || [];
+                                        if (raw.length === 0) break;
+                                        before = raw[raw.length - 1].id; // newest-first : le dernier du lot est le plus vieux
+                                        for (const m of raw) {
+                                            const mapped = mapMsg(m);
+                                            if (mapped._hasBody) collected.push(mapped);
+                                        }
+                                        if (raw.length < 30) break; // fin réelle de l'historique
+                                    }
+                                    result = collected.slice(0, 30).reverse().map(({ _hasBody, ...rest }) => rest);
                                     break;
                                 }
                                 case "$send_message": {

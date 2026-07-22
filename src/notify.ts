@@ -123,7 +123,7 @@ function primeSenderPersona(sid64: string, accountid: number, name: string, avat
   } catch {}
 }
 
-function chatStyleNotification(title: string, body: string, sender?: string, avatar?: string, dm?: boolean) {
+function chatStyleNotification(title: string, body: string, sender?: string, avatar?: string, dm?: boolean, onClick?: () => void) {
   try {
     const name = sender || title || "Steamcord";
     const { sid64, accountid } = fakeSenderSid(name);
@@ -133,10 +133,14 @@ function chatStyleNotification(title: string, body: string, sender?: string, ava
     // Type 1 (GroupChatMessage) pour les chans de serveur et les notifs système.
     // `title` du proto = nom de groupe (affiché seulement hors gamemode) : on le
     // vide quand il répéterait le pseudo déjà rendu via le persona.
+    // Le 3e argument est appelé par Steam quand l'utilisateur CLIQUE la notif
+    // (doc SteamClient : "executed when the user interacts with the notification")
+    // — jusqu'ici toujours un no-op, donc cliquer une notif ne faisait rien
+    // (retour user : « répondre à l'appel/aller à la conv » demandés).
     (window as any).SteamClient?.ClientNotifications?.DisplayClientNotification?.(
       dm ? 2 : 1,
       JSON.stringify({ title: title === name ? "" : title, body, state: "active", steamid: sid64 }),
-      () => {},
+      () => { try { onClick?.(); } catch (e) { console.error("[Steamcord] notification onClick failed", e); } },
     );
   } catch (e) {
     console.error("[Steamcord] notification failed", e);
@@ -145,15 +149,15 @@ function chatStyleNotification(title: string, body: string, sender?: string, ava
 
 // Notification Steamcord : chat-style persona en mode sûr, toast Decky natif si
 // le user a activé le mode natif.
-export function notify(payload: { title: string; body: string; sender?: string; avatar?: string; dm?: boolean }) {
+export function notify(payload: { title: string; body: string; sender?: string; avatar?: string; dm?: boolean; onClick?: () => void }) {
   try {
     const dpl: any = (window as any).DeckyPluginLoader;
     if (getNativeToasts() && typeof dpl?.toaster?.toast === "function") {
-      dpl.toaster.toast({ title: payload.sender || payload.title, body: payload.body });
+      dpl.toaster.toast({ title: payload.sender || payload.title, body: payload.body, onClick: payload.onClick });
       return;
     }
   } catch {}
-  chatStyleNotification(payload.title, payload.body, payload.sender, payload.avatar, payload.dm);
+  chatStyleNotification(payload.title, payload.body, payload.sender, payload.avatar, payload.dm, payload.onClick);
 }
 
 // Enrobe toaster.toast (Decky + tous les plugins) selon le mode. Marqueur
