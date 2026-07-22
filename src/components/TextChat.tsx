@@ -236,22 +236,16 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
           {(m.reactions || []).map((r) => (
             <ReactionPill key={r.emoji} r={r} disabled={busy} onClick={() => toggleReaction(r)} />
           ))}
-          <Btn
-            disabled={busy}
-            onClick={() => setPickingEmoji((v) => !v)}
-            style={{ padding: "1px 6px", fontSize: 11, minHeight: 0, borderRadius: 10 }}
-          >
-            +
-          </Btn>
+          <ChipBtn disabled={busy} onClick={() => setPickingEmoji((v) => !v)}>+</ChipBtn>
           {onReply && !editing && (
-            <Btn disabled={busy} onClick={onReply} style={{ padding: "1px 6px", fontSize: 11, minHeight: 0 }}>{t("reply")}</Btn>
+            <ChipBtn disabled={busy} onClick={onReply}>{t("reply")}</ChipBtn>
           )}
           {isMine && !editing && (
             <>
-              <Btn disabled={busy} onClick={() => setEditing(true)} style={{ padding: "1px 6px", fontSize: 11, minHeight: 0 }}>{t("edit")}</Btn>
-              <Btn disabled={busy} onClick={doDelete} style={{ padding: "1px 6px", fontSize: 11, minHeight: 0, color: confirmingDelete ? "#ff6b6b" : "#fff" }}>
+              <ChipBtn disabled={busy} onClick={() => setEditing(true)}>{t("edit")}</ChipBtn>
+              <ChipBtn disabled={busy} onClick={doDelete} color={confirmingDelete ? "#ed4245" : undefined}>
                 {confirmingDelete ? t("confirm_delete") : t("delete")}
-              </Btn>
+              </ChipBtn>
             </>
           )}
         </Focusable>
@@ -259,7 +253,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
       {pickingEmoji && (
         <Focusable flow-children="horizontal" style={{ display: "flex", gap: 4, marginTop: 3 }}>
           {QUICK_EMOJIS.map((e) => (
-            <Btn key={e} disabled={busy} onClick={() => addQuickReaction(e)} style={{ padding: "1px 7px", fontSize: 13, minHeight: 0 }}>{e}</Btn>
+            <ChipBtn key={e} disabled={busy} onClick={() => addQuickReaction(e)}>{e}</ChipBtn>
           ))}
         </Focusable>
       )}
@@ -291,6 +285,15 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
   );
 }
 
+// `flex: "0 0 0%"` + `width: "auto"` explicites : un Btn (DialogButton) nu
+// dans un conteneur flex garde sinon sa largeur interne par défaut (100%) tant
+// que le flex-basis n'est pas forcé à une valeur non-"auto" — chaque puce/
+// bouton se retrouvait plein-largeur, empilé au lieu d'être côte à côte
+// (retour user #20, même famille que le bug soundboard/Envoyer déjà vu ce
+// soir). `width:"auto"` en style inline gagne toujours sur un défaut interne
+// en CSS classique, quelle que soit sa spécificité.
+const CHIP_SIZING = { flex: "0 0 0%", width: "auto" } as const;
+
 function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boolean; onClick: () => void }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -302,6 +305,7 @@ function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boo
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       style={{
+        ...CHIP_SIZING,
         padding: "1px 6px", fontSize: 11, minHeight: 0, borderRadius: 10, display: "flex", gap: 3, alignItems: "center",
         background: r.me ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.08)",
         border: r.me ? "1px solid " + ACCENT : "1px solid transparent",
@@ -309,6 +313,34 @@ function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boo
       }}
     >
       <span>{r.emoji}</span><span style={{ opacity: 0.8 }}>{r.count}</span>
+    </Btn>
+  );
+}
+
+// Petit bouton d'action générique (+, Répondre, Modifier, Supprimer…) — même
+// recette que ReactionPill : fond + halo de focus explicites (jamais le
+// rendu natif DialogButton, blanc-sur-blanc au repos sinon — retour user) et
+// taille au contenu, pas 100% du conteneur flex.
+export function ChipBtn({ disabled, onClick, color, children }: { disabled?: boolean; onClick: () => void; color?: string; children: any }) {
+  const [focused, setFocused] = useState(false);
+  const c = color || ACCENT;
+  return (
+    <Btn
+      disabled={disabled}
+      onClick={onClick}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        ...CHIP_SIZING,
+        padding: "1px 8px", fontSize: 11, minHeight: 0, borderRadius: 10, color: "#fff",
+        background: focused ? c : "rgba(255,255,255,0.08)",
+        opacity: disabled ? 0.5 : 1,
+        ...focusHalo(c, focused),
+      }}
+    >
+      {children}
     </Btn>
   );
 }

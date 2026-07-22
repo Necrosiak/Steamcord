@@ -2,7 +2,7 @@ import { Focusable, ModalRoot, NavEntryPositionPreferences, TextField } from "@d
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
-import { Btn, Message, MessageRow } from "./TextChat";
+import { Btn, ChipBtn, Message, MessageRow } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
 import { IcChevronDown } from "./Icons";
 import { ActionCard, ACCENT, focusHalo } from "./Styled";
@@ -293,8 +293,10 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
             display: "flex", alignItems: "center", gap: 6, marginTop: 8, padding: "4px 8px",
             borderRadius: 6, background: "rgba(255,255,255,0.06)", fontSize: 11,
           }}>
-            <span style={{ flex: 1, opacity: 0.85 }}>↩ {t("replying_to", { name: replyTarget.author })}</span>
-            <Btn onClick={() => setReplyTarget(null)} style={{ padding: "1px 8px", fontSize: 11, minHeight: 0 }}>✕</Btn>
+            <span style={{ flex: 1, opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              ↩ {t("replying_to", { name: replyTarget.author })}
+            </span>
+            <ChipBtn onClick={() => setReplyTarget(null)}>✕</ChipBtn>
           </div>
         )}
 
