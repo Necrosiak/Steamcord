@@ -4,12 +4,13 @@ Checks the latest GitHub Release of the repo, compares it to the installed
 version (plugin.json), and — if newer — downloads the release ZIP and unpacks
 it over the plugin directory, then restarts plugin_loader to reload the code.
 
-The backend runs as the session user (no "root" flag in plugin.json), so the
-plugin dir may not be ours: manual/sudo installs leave files root-owned.
-Files are therefore replaced via tmp-file + os.replace, which only needs write
-permission on the *directory* — overwriting a root-owned file in place (or
-chmod-ing it, which shutil.copy2 does) fails with EPERM for a non-root user
-even when the file is mode 777 (issue #16).
+The backend runs as the session user (no "root" flag in plugin.json). Decky
+itself keeps the plugin's top-level directory (and plugin.json) root-owned
+even on a normal install — only the directory's *contents* get chowned to the
+host user — so a non-root backend can never create new directory entries
+there (tmp-file + os.replace needs write on the directory, not the file).
+_replace_file() tries that first and falls back to an in-place write for
+existing, already-host-owned files when it isn't available (issue #16).
 Network/disk work runs in a thread executor so the asyncio loop never blocks.
 """
 
@@ -235,18 +236,42 @@ def _replace_file(src: Path, dst: Path) -> None:
     os.replace only needs write permission on the parent directory, so this
     works even when dst itself is root-owned (issue #16) — and the replaced
     file then belongs to us, healing such installs one update at a time.
+
+    But Decky only root-owns the plugin's top-level directory and plugin.json
+    at install time (browser.py's set_plugin_dir_permissions chowns every
+    other file to the host user recursively) — so on a real (non-dev-deploy)
+    install it's the *directory* that's unwritable, while dst itself, if it
+    already exists, usually isn't. tmp+rename can't work there since creating
+    the tmp file also needs directory write — but overwriting an existing
+    file's content only needs write permission on the file itself, so that
+    still works. Fall back to writing dst in place in that case.
     """
     tmp_dst = dst.parent / (dst.name + ".steamcord-new")
     try:
         shutil.copyfile(src, tmp_dst)
         shutil.copymode(src, tmp_dst)  # our own file: keeps +x on binaries
         os.replace(tmp_dst, dst)
+        return
+    except PermissionError:
+        try:
+            os.unlink(tmp_dst)
+        except OSError:
+            pass
+        if not dst.exists() or not os.access(dst, os.W_OK):
+            raise
     except OSError:
         try:
             os.unlink(tmp_dst)
         except OSError:
             pass
         raise
+
+    # Non-atomic (a crash mid-write leaves dst truncated), but src was already
+    # downloaded and extracted successfully before this ever runs, and the
+    # alternative here is a guaranteed Permission denied.
+    with open(src, "rb") as s, open(dst, "wb") as d:
+        shutil.copyfileobj(s, d)
+    shutil.copymode(src, dst)
 
 
 async def apply(url: str) -> dict:
