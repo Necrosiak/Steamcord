@@ -1,16 +1,32 @@
-import { DialogButton, Focusable, showModal, TextField } from "@decky/ui";
+import { DialogButton, Focusable, NavEntryPositionPreferences, showModal, TextField } from "@decky/ui";
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight, focusHalo, ACCENT } from "./Styled";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
-import { ChatFullscreenModal } from "./ChatFullscreen";
+import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
 import { TinyIconBtn } from "./ChannelBrowser";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
 // une instance distincte par source via `key`).
 let _textPoll: any = null;
+
+// Brouillon par salon, PARTAGÉ entre le composer rapide du QAM et la modale
+// plein écran (ChatFullscreen) : commencer une réponse dans le QAM puis ouvrir
+// le plein écran (ou l'inverse) ne perd jamais le texte en cours — et une
+// fermeture accidentelle de l'un ou l'autre non plus (B du clavier virtuel
+// remontant au onCancel, cf. ChatFullscreen).
+export const draftByChannel: Record<string, string> = {};
+// Throttle du signal "en train d'écrire" sortant, partagé lui aussi : au plus
+// une requête toutes les ~8s quel que soit l'endroit où l'on tape.
+let _lastTypingSent = 0;
+export const notifyTypingThrottled = (channelId: string) => {
+  const now = Date.now();
+  if (now - _lastTypingSent < 8000) return;
+  _lastTypingSent = now;
+  call("send_typing", channelId).catch(() => {});
+};
 
 interface TextChannel { id: string; name: string; type: number; }
 interface Guild { id: string; name: string; icon: string | null; channels: TextChannel[]; hidden?: boolean; }
@@ -153,16 +169,17 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
     call("delete_message", channelId, m.id).then(() => onLocalDelete?.()).catch(() => setBusy(false));
   };
 
-  // Un message avec lien(s)/image(s) — OU maintenant la rangée réactions/
-  // édition qui suit toujours le contenu — a déjà ses propres arrêts de nav
-  // internes (Btn de lien, Focusable d'image, bouton "+" réaction…) — un Btn
-  // englobant SANS action au-dessus les rendait inatteignables au bouton A
-  // (bouton imbriqué dans un bouton, retour user #20 : "j'appuie sur A sur le
-  // lien, rien ne se passe"). Le wrapper englobant n'est un Btn (= son propre
-  // arrêt de nav) que pour les messages qui n'ont RIEN d'autre de focusable —
-  // en pratique ça n'arrive plus jamais depuis que le bouton "+" réaction est
-  // toujours présent, mais on garde le filet de sécurité au cas où.
-  const hasInteractiveChild = true;
+  // Un message avec lien(s)/image(s) — ou la rangée réactions/édition, toujours
+  // présente quand `channelId` est fourni (mode plein écran) — a déjà ses
+  // propres arrêts de nav internes (Btn de lien, Focusable d'image, bouton "+"
+  // réaction…) — un Btn englobant SANS action au-dessus les rendait
+  // inatteignables au bouton A (bouton imbriqué dans un bouton, retour user
+  // #20 : "j'appuie sur A sur le lien, rien ne se passe"). Le wrapper englobant
+  // n'est un Btn (= son propre arrêt de nav) que pour les messages qui n'ont
+  // RIEN d'autre de focusable : les messages plats du mode rapide QAM (sans
+  // `channelId`, donc sans puces d'action) — sans quoi ils ne seraient pas des
+  // arrêts de nav du tout et le stick les sauterait (bug d'origine de #17).
+  const hasInteractiveChild = !!channelId || links.length > 0 || (m.images?.length ?? 0) > 0;
 
   const rowStyle = {
     display: "block", textAlign: "left" as const, width: "100%", color: "#fff",
@@ -389,16 +406,32 @@ function DMAvatar({ ch }: { ch: DMChannel }) {
 // Messagerie texte. `source` = "servers" (serveurs → salons texte) ou "dms"
 // (conversations privées en texte). Les deux partagent la même vue de messages.
 const PREVIEW_LIST_ID = "steamcord-msg-preview";
+// La liste du QAM est désormais navigable (mode rapide) : on ne recolle en bas
+// que si l'utilisateur y était déjà, pour ne pas lui arracher la vue pendant
+// qu'il remonte lire un lien/une photo (même heuristique que le plein écran,
+// mais en scroll "normal" : la distance au bas se mesure par différence).
+const isPreviewNearBottom = () => {
+  const el = document.getElementById(PREVIEW_LIST_ID);
+  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+};
 
 export function TextChat({ source }: { source: "servers" | "dms" }) {
   const fillList = useFillHeight();
-  const fillPreview = useFillHeight(80, 56);
+  // Réserve sous la liste : composer rapide (TextField + rangée Envoyer/plein
+  // écran) en plus de la marge d'origine.
+  const fillPreview = useFillHeight(80, 116);
   const [guilds, setGuilds] = useState<Guild[] | null>(null);
   const [dms, setDms] = useState<DMChannel[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [channel, setChannel] = useState<{ id: string; name: string; dm: boolean } | null>(null);
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Composer rapide du QAM (spec : QAM = lecture + réponse rapide ; tout le
+  // reste — réactions, édition, captures… — reste exclusif au plein écran).
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [typingUser, setTypingUser] = useState<string | null>(null);
   // Réordonner/masquer les serveurs — même mécanisme (et mêmes prefs backend)
   // que l'onglet vocal (ChannelBrowser). Les MP ne sont pas concernés.
   const [showHidden, setShowHidden] = useState(false);
@@ -462,8 +495,9 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         // retiré"). Seul le tout premier chargement (messages encore null,
         // avant que quoi que ce soit ait été affiché) peut légitimement
         // afficher "aucun message".
+        const stick = isPreviewNearBottom();
         setMessages((prev) => (fresh.length > 0 || prev === null) ? fresh : prev);
-        setTimeout(() => {
+        if (stick) setTimeout(() => {
           const el = document.getElementById(PREVIEW_LIST_ID);
           if (el) el.scrollTop = el.scrollHeight;
         }, 50);
@@ -474,6 +508,9 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   const openChannel = (id: string, name: string, dm: boolean) => {
     setChannel({ id, name, dm });
     setMessages(null);
+    setDraft(draftByChannel[id] || "");
+    setSendError(null);
+    setTypingUser(null);
     loadMessages(id);
     // Salon suivi côté Vesktop : ses events MESSAGE_* sont poussés en temps
     // réel (event Decky "chat_message", consommé ici ET par la modale plein
@@ -489,6 +526,26 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     call("watch_channel", "").catch(() => {});
     setChannel(null);
     setMessages(null);
+    setDraft("");
+    setSendError(null);
+    setTypingUser(null);
+  };
+
+  // Envoi rapide depuis le QAM — même contrat que le plein écran (brouillon
+  // partagé purgé après envoi réussi), sans reply/captures (plein écran only).
+  const sendQuick = (chId: string) => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setSendError(null);
+    call("send_message", chId, text)
+      .then(() => {
+        setDraft("");
+        delete draftByChannel[chId];
+        loadMessages(chId);
+      })
+      .catch((e) => setSendError(errText(e)))
+      .finally(() => setSending(false));
   };
 
   useEffect(() => () => {
@@ -503,12 +560,15 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     const onChat = (data: any) => {
       if (!data || String(data.channel_id) !== String(channel.id)) return;
       if (data.op === "create" && data.message) {
+        // L'auteur de ce message n'est plus "en train d'écrire".
+        setTypingUser((cur) => (cur === data.message.author ? null : cur));
+        const stick = isPreviewNearBottom();
         setMessages((prev) => {
           const base = prev ?? [];
           if (base.some((m) => m.id === data.message.id)) return prev;
           return [...base, data.message];
         });
-        setTimeout(() => {
+        if (stick) setTimeout(() => {
           const el = document.getElementById(PREVIEW_LIST_ID);
           if (el) el.scrollTop = el.scrollHeight;
         }, 50);
@@ -522,46 +582,96 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     return () => removeEventListener("chat_message", onChat);
   }, [channel?.id]);
 
-  // ── Vue passive d'un salon / d'une conversation : juste un aperçu des
-  // derniers messages (non interactif, toujours collé aux plus récents) + un
-  // bouton pour ouvrir la vraie vue plein écran (nav historique + réponse +
-  // capture d'écran) — retour user #20 : le panneau QAM est trop étroit pour
-  // naviguer confortablement, mieux vaut une vraie modale plein écran pour ça.
+  // "X écrit…" dans le QAM aussi (même canal Decky "typing" que le plein
+  // écran, auto-effacé faute de nouvel event — Discord n'a pas de "fin de
+  // frappe").
+  useEffect(() => {
+    if (!channel) return;
+    let clearTimer: any = null;
+    const onTyping = (data: { channel_id: string; username: string }) => {
+      if (data.channel_id !== channel.id) return;
+      setTypingUser(data.username);
+      if (clearTimer) clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => setTypingUser(null), 8000);
+    };
+    addEventListener("typing", onTyping);
+    return () => {
+      removeEventListener("typing", onTyping);
+      if (clearTimer) clearTimeout(clearTimer);
+    };
+  }, [channel?.id]);
+
+  // ── Vue rapide d'un salon / d'une conversation (spec quick-reply) : les
+  // derniers messages en NAVIGABLE (liens/photos consultables au stick, comme
+  // en plein écran mais sans les puces réactions/modifier/supprimer — pas de
+  // `channelId` passé à MessageRow, qui masque alors tout ça) + un composer
+  // minimal pour répondre en quelques secondes. Tout le reste (historique
+  // complet, réactions, édition, reply ciblé, captures) reste EXCLUSIF à la
+  // modale plein écran, toujours accessible à côté du bouton Envoyer.
   if (channel) {
-    const preview = (messages ?? []).slice(-10);
+    const chId = channel.id;
+    const preview = (messages ?? []).slice(-15);
     return (
       <div>
         <Btn onClick={closeChannel} style={{ width: "100%", padding: "3px 8px", fontSize: 11, marginBottom: 6, display: "flex", gap: 6 }}>
           <span>←</span><span style={{ flex: 1, textAlign: "left" }}>{channel.dm ? channel.name : `#${channel.name}`}</span>
         </Btn>
 
-        <div id={PREVIEW_LIST_ID} ref={fillPreview.ref} style={{ maxHeight: fillPreview.height, overflowY: "auto", marginBottom: 8 }}>
+        <div id={PREVIEW_LIST_ID} ref={fillPreview.ref} style={{ maxHeight: fillPreview.height, overflowY: "auto", marginBottom: 6 }}>
           {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 12 }}>{t("loading_messages")}</div>}
           {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_messages")}</div>}
-          {preview.map((m) => (
-            <div key={m.id} style={{ fontSize: 11, lineHeight: 1.35, marginBottom: 4, wordBreak: "break-word" }}>
-              <img
-                src={m.avatar
-                  ? `https://cdn.discordapp.com/avatars/${m.author_id}/${m.avatar}.webp?size=32`
-                  : `https://cdn.discordapp.com/embed/avatars/0.png`}
-                width={14} height={14}
-                style={{ borderRadius: "50%", verticalAlign: "-2px", marginRight: 4 }}
-              />
-              <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
-              {"  "}
-              <span style={{ opacity: 0.85 }}>
-                {m.content || (m.images?.length ? "📷" : m.files > 0 ? "📎" : "")}
-              </span>
-            </div>
-          ))}
+          {/* Entrée de nav sur le DERNIER message (adjacent au composer en
+              dessous), chaque cran remonte d'un message — même réglage que la
+              liste plein écran. */}
+          <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.LAST}>
+            {preview.map((m) => (
+              <MessageRow key={m.id} m={m} />
+            ))}
+          </Focusable>
         </div>
 
-        <Btn
-          onClick={() => showModal(<ChatFullscreenModal channelId={channel.id} channelName={channel.name} isDm={channel.dm} />)}
-          style={{ width: "100%", padding: "7px 0", fontSize: 13, display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}
-        >
-          <IcChat /> {t("open_chat")}
-        </Btn>
+        {typingUser && (
+          <div style={{ fontSize: 10, opacity: 0.7, fontStyle: "italic", marginBottom: 4 }}>
+            {t("typing_indicator", { name: typingUser })}
+          </div>
+        )}
+
+        <TextField
+          value={draft}
+          placeholder={t("message_placeholder")}
+          onChange={(e: any) => {
+            const v = e?.target?.value ?? "";
+            setDraft(v);
+            draftByChannel[chId] = v;
+            if (v.trim()) notifyTypingThrottled(chId);
+          }}
+          // Entrée = envoyer, comme en plein écran : la validation du clavier
+          // virtuel part le message directement.
+          onKeyDown={(e: any) => {
+            if (e?.key === "Enter" && !e?.shiftKey) {
+              e.preventDefault?.();
+              sendQuick(chId);
+            }
+          }}
+          style={{ fontSize: 12, width: "100%" }}
+        />
+        <Focusable flow-children="row" style={{ display: "flex", gap: 6, marginTop: 4 }}>
+          <SendBtn disabled={sending || !draft.trim()} onClick={() => sendQuick(chId)}>
+            {sending ? "…" : t("send")}
+          </SendBtn>
+          <Btn
+            onClick={() => showModal(
+              <ChatFullscreenModal
+                channelId={chId} channelName={channel.name} isDm={channel.dm}
+                onClosed={() => setDraft(draftByChannel[chId] || "")}
+              />
+            )}
+            style={{ flex: "0 0 auto", width: "auto", minWidth: 0, padding: "6px 10px", fontSize: 12, minHeight: 0, display: "flex", gap: 5, alignItems: "center" }}
+          >
+            <IcChat /> {t("open_chat")}
+          </Btn>
+        </Focusable>
+        {sendError && <div style={{ color: "#ff6b6b", fontSize: 10, marginTop: 4 }}>{sendError}</div>}
         {error && <div style={{ color: "#ff6b6b", fontSize: 10, marginTop: 4 }}>{error}</div>}
       </div>
     );

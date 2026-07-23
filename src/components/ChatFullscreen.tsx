@@ -2,7 +2,7 @@ import { Focusable, ModalRoot, NavEntryPositionPreferences, TextField } from "@d
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
-import { Btn, ChipBtn, Message, MessageRow } from "./TextChat";
+import { Btn, ChipBtn, Message, MessageRow, draftByChannel, notifyTypingThrottled } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
 import { IcChevronDown } from "./Icons";
 import { ActionCard, ACCENT, focusHalo } from "./Styled";
@@ -16,7 +16,7 @@ const ModalRootAny = ModalRoot as any;
 // Focusable flow-children="row" attend ses enfants focusables en
 // contact direct, un wrapper intermédiaire casse la navigation de toute la
 // rangée, pas seulement de l'enfant enveloppé.
-function SendBtn({ disabled, onClick, children }: { disabled?: boolean; onClick: () => void; children: any }) {
+export function SendBtn({ disabled, onClick, children }: { disabled?: boolean; onClick: () => void; children: any }) {
   const [focused, setFocused] = useState(false);
   return (
     <Btn
@@ -45,14 +45,10 @@ const PAGE_SIZE = 30;
 const NEAR_BOTTOM_PX = 80;
 const FS_MSG_LIST_ID = "steamcord-msglist-fs";
 const FS_MSG_FLOW_ID = "steamcord-msgflow-fs";
-// Niveau module (évite useRef, cf. TextChat.tsx) : un seul modal ouvert à la
-// fois, pas besoin d'un état par instance pour ce simple throttle.
-let _lastTypingSent = 0;
-// Brouillon par salon, survivant à la fermeture de la modale : la modale peut
-// se fermer par accident (B du clavier virtuel qui remonte jusqu'au onCancel,
-// appui à côté d'un bouton…) — sans ça le message en cours de frappe était
-// PERDU (retour user : "la conv se ferme et le message n'est pas parti").
-const _draftByChannel: Record<string, string> = {};
+// Brouillon par salon et throttle "en train d'écrire" : partagés avec le
+// composer rapide du QAM — voir `draftByChannel`/`notifyTypingThrottled` dans
+// TextChat.tsx. Un texte commencé d'un côté se retrouve de l'autre, et survit
+// aux fermetures accidentelles (B du clavier virtuel qui remonte au onCancel…).
 
 // Le conteneur scrollable est en `flex-direction: column-reverse` (l'astuce
 // standard des UIs de chat, Discord inclus) : dans ce mode le navigateur ancre
@@ -112,14 +108,14 @@ const isFsNearBottom = () => {
 // n'a pas scrollé loin des derniers messages (mêmes heuristique/seuil que
 // l'ancien panneau QAM) ; dès qu'il s'en éloigne, l'auto-scroll s'arrête et un
 // bouton "revenir aux derniers messages" apparaît pour reprendre le flux.
-export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }:
-  { channelId: string; channelName: string; isDm: boolean; closeModal?: () => void }) {
+export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, onClosed }:
+  { channelId: string; channelName: string; isDm: boolean; closeModal?: () => void; onClosed?: () => void }) {
   const myId = useSteamcordState()?.me?.id;
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
-  const [draft, setDraft] = useState(_draftByChannel[channelId] || "");
+  const [draft, setDraft] = useState(draftByChannel[channelId] || "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, setFocusedInitial] = useState(false);
@@ -145,15 +141,6 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
       if (clearTimer) clearTimeout(clearTimer);
     };
   }, [channelId]);
-
-  // Signale NOTRE frappe aux autres (symétrique de l'indicateur reçu) — au
-  // plus une requête toutes les ~8s tant qu'on écrit, pas à chaque caractère.
-  const notifyTyping = () => {
-    const now = Date.now();
-    if (now - _lastTypingSent < 8000) return;
-    _lastTypingSent = now;
-    call("send_typing", channelId).catch(() => {});
-  };
 
   // `force` = 1er chargement (ou juste après un envoi) : remplace tout et
   // recolle en bas inconditionnellement. Sans `force` (poll 5s), fusionne avec
@@ -203,7 +190,13 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
   // le message n'est pas parti" — AUCUN appel send_message dans webhelper_js à
   // ce moment-là, donc la modale s'est fermée SANS que le bouton soit activé).
   // Trace le démontage pour corréler avec les inputs la prochaine fois.
-  useEffect(() => () => console.log("[Steamcord] fullscreen chat unmounted (channel " + channelId + ")"), [channelId]);
+  // `onClosed` : prévient le composer rapide du QAM resté monté derrière la
+  // modale, pour qu'il resynchronise son brouillon (envoyé ou modifié ici).
+  useEffect(() => () => {
+    console.log("[Steamcord] fullscreen chat unmounted (channel " + channelId + ")");
+    onClosed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
 
   // Push temps réel : nouveaux messages / éditions / suppressions / réactions
   // du salon suivi, poussés par le backend via l'event Decky "chat_message"
@@ -282,7 +275,7 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
     try {
       await call("send_message", channelId, text, replyTarget?.id);
       setDraft("");
-      delete _draftByChannel[channelId];
+      delete draftByChannel[channelId];
       setReplyTarget(null);
       loadMessages(true);
     } catch (e) {
@@ -399,8 +392,8 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
             onChange={(e: any) => {
               const v = e?.target?.value ?? "";
               setDraft(v);
-              _draftByChannel[channelId] = v;
-              if (v.trim()) notifyTyping();
+              draftByChannel[channelId] = v;
+              if (v.trim()) notifyTypingThrottled(channelId);
             }}
             // Entrée = envoyer (standard de toute app de chat) : la validation
             // du clavier virtuel part le message DIRECTEMENT, sans avoir à
