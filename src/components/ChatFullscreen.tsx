@@ -2,7 +2,7 @@ import { Focusable, ModalRoot, NavEntryPositionPreferences, TextField } from "@d
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
-import { Btn, ChipBtn, Message, MessageRow, draftByChannel, notifyTypingThrottled } from "./TextChat";
+import { Btn, ChipBtn, Message, MessageRow, draftByChannel, notifyTypingThrottled, isInteractingWithMessage } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
 import { IcChevronDown } from "./Icons";
 import { ActionCard, ACCENT, focusHalo } from "./Styled";
@@ -198,6 +198,16 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
+  // Notifications : tant que CE salon est ouvert en plein écran, le backend ne
+  // doit PAS émettre de notif de MESSAGE pour lui (retour David #21 — inutile
+  // d'être notifié d'un salon qu'on est en train de lire). Les notifs
+  // d'appel/stream/caméra ne sont PAS concernées (filtrage par `kind` côté
+  // backend). Rétabli au démontage de la modale.
+  useEffect(() => {
+    call("set_fullscreen_channel", channelId).catch(() => {});
+    return () => { call("set_fullscreen_channel", "").catch(() => {}); };
+  }, [channelId]);
+
   // Push temps réel : nouveaux messages / éditions / suppressions / réactions
   // du salon suivi, poussés par le backend via l'event Decky "chat_message"
   // (même canal que "typing") dès que Discord les reçoit.
@@ -219,25 +229,37 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
         // insertions → le nouveau message finissait coupé par le bord bas).
         // Plus haut dans l'historique : on n'y touche pas, le bouton
         // "revenir aux derniers messages" est là pour ça.
-        if (wasNearBottom) { scrollFsBottom(); setAtBottom(true); }
+        // …sauf si on est en train d'agir sur un message précis (react/edit/
+        // suppression) : on gèle la vue pour ne pas l'arracher (David #21).
+        if (wasNearBottom && !isInteractingWithMessage()) { scrollFsBottom(); setAtBottom(true); }
       } else if (data.op === "update" && data.message) {
         setMessages((prev) => prev?.map((m) => m.id === data.message.id ? { ...m, ...data.message } : m) ?? prev);
       } else if (data.op === "delete" && data.message_id) {
         setMessages((prev) => prev?.filter((m) => m.id !== data.message_id) ?? prev);
       } else if ((data.op === "reaction_add" || data.op === "reaction_remove") && data.message_id && data.emoji) {
-        const delta = data.op === "reaction_add" ? 1 : -1;
+        const isAdd = data.op === "reaction_add";
         setMessages((prev) => prev?.map((m) => {
           if (m.id !== data.message_id) return m;
           const reactions = [...(m.reactions || [])];
           const i = reactions.findIndex((r) => r.emoji === data.emoji);
+          const cur = i >= 0 ? reactions[i] : undefined;
+          // Écho de MA propre réaction (data.me) : l'update optimiste de
+          // MessageRow a déjà appliqué le +1/-1 et positionné `me`. Si l'état
+          // local reflète déjà l'action (me=true après un add, me=false après
+          // un remove), on NE recompte PAS — sinon la réaction affiche +1
+          // fantôme jusqu'au prochain refresh (retour David #21). Une réaction
+          // faite depuis un AUTRE appareil arrive avec me:true alors que l'état
+          // local ne l'a pas encore (cur.me=false) → là on applique bien.
+          if (data.me && cur && cur.me === isAdd) return m;
+          const delta = isAdd ? 1 : -1;
           if (i >= 0) {
             const next = {
               ...reactions[i],
               count: reactions[i].count + delta,
-              me: data.me ? delta > 0 : reactions[i].me,
+              me: data.me ? isAdd : reactions[i].me,
             };
             if (next.count <= 0) reactions.splice(i, 1); else reactions[i] = next;
-          } else if (delta > 0) {
+          } else if (isAdd) {
             reactions.push({ emoji: data.emoji, count: 1, me: !!data.me });
           }
           return { ...m, reactions };

@@ -18,6 +18,17 @@ let _textPoll: any = null;
 // fermeture accidentelle de l'un ou l'autre non plus (B du clavier virtuel
 // remontant au onCancel, cf. ChatFullscreen).
 export const draftByChannel: Record<string, string> = {};
+// Compteur des messages en cours d'interaction (édition/emoji/suppression),
+// partagé au niveau module (une seule vue chat active à la fois). Le chat plein
+// écran s'en sert pour NE PAS recoller en bas tant qu'on agit sur un message
+// précis (David #21). Fonctions plutôt qu'un `export let` : les bindings
+// exportés sont en lecture seule côté importateur.
+let _msgInteractions = 0;
+export const noteMessageInteraction = (active: boolean) => {
+  _msgInteractions += active ? 1 : -1;
+  if (_msgInteractions < 0) _msgInteractions = 0;
+};
+export const isInteractingWithMessage = () => _msgInteractions > 0;
 // Throttle du signal "en train d'écrire" sortant, partagé lui aussi : au plus
 // une requête toutes les ~8s quel que soit l'endroit où l'on tape.
 let _lastTypingSent = 0;
@@ -96,6 +107,37 @@ export const shortTime = (ts: string | null) => {
   try { const d = new Date(ts); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
 };
 
+// Discord place les emojis custom du serveur DANS le texte sous la forme
+// `<:nom:id>` (statique) ou `<a:nom:id>` (animé). Sans traitement ils
+// s'affichaient littéralement dans le message (retour David #21). On remplace
+// chaque token par l'image CDN correspondante (webp statique / gif animé), le
+// reste du texte est laissé tel quel. Marche sans charger la liste d'emojis de
+// la guilde : l'id suffit à construire l'URL.
+const CUSTOM_EMOJI_RE = /<(a)?:(\w+):(\d+)>/g;
+export function renderContent(text: string): Array<string | JSX.Element> {
+  const out: Array<string | JSX.Element> = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  CUSTOM_EMOJI_RE.lastIndex = 0;
+  while ((m = CUSTOM_EMOJI_RE.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const [, animated, name, id] = m;
+    const ext = animated ? "gif" : "webp";
+    out.push(
+      <img
+        key={`e${m.index}-${id}`}
+        src={`https://cdn.discordapp.com/emojis/${id}.${ext}?size=48`}
+        alt={`:${name}:`}
+        title={`:${name}:`}
+        style={{ height: "1.35em", width: "auto", verticalAlign: "-0.25em", objectFit: "contain" }}
+      />,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out.length ? out : [text];
+}
+
 // Émojis de réaction rapide (Unicode standard uniquement, cf. mapMsg côté JS —
 // pas d'emoji custom serveur, ça demanderait de charger la liste d'émojis de
 // la guilde, hors scope).
@@ -122,6 +164,17 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
   const [busy, setBusy] = useState(false);
   const links = extractLinks(m.content || "");
   const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
+
+  // Tant qu'on agit sur CE message (édition / choix d'emoji / confirmation de
+  // suppression), on signale une interaction en cours : le chat plein écran
+  // ne recolle plus en bas, pour ne pas arracher la vue à l'arrivée d'un
+  // nouveau message (David #21). Décrémenté à la sortie du mode ou au démontage.
+  const interacting = editing || pickingEmoji || confirmingDelete;
+  useEffect(() => {
+    if (!interacting) return;
+    noteMessageInteraction(true);
+    return () => noteMessageInteraction(false);
+  }, [interacting]);
 
   const toggleReaction = (r: MsgReaction) => {
     if (!channelId || busy) return;
@@ -196,7 +249,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
         <div style={{ display: "flex", gap: 4, fontSize: 10, opacity: 0.6, marginBottom: 2 }}>
           <span>↩</span>
           <span style={{ fontWeight: 600 }}>{m.reply_to.author}</span>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.reply_to.content}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{renderContent(m.reply_to.content)}</span>
         </div>
       )}
       {/* Avatar en taille FIXE (16px, rond) + verticalAlign négatif pour
@@ -224,7 +277,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
         </div>
       ) : (
         m.content
-          ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{m.content}</div>
+          ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{renderContent(m.content)}</div>
           : (!hasBody && <div style={{ opacity: 0.4, fontStyle: "italic" }}>—</div>)
       )}
 

@@ -750,13 +750,19 @@ function OverlayMenu() {
 
   const toggleVoice = async (next: boolean) => {
     setVoiceOn(next);
-    try { await call(next ? "start_voice_overlay" : "stop_voice_overlay"); }
-    catch { setVoiceOn(!next); }
+    try {
+      const r = await call<[], { ok: boolean }>(next ? "start_voice_overlay" : "stop_voice_overlay");
+      // Si le helper overlay n'a pas survécu au démarrage, le backend renvoie
+      // ok:false → on repasse le toggle OFF tout de suite (#22).
+      if (next && r && r.ok === false) setVoiceOn(false);
+    } catch { setVoiceOn(!next); }
   };
   const togglePov = async (next: boolean) => {
     setPovOn(next);
-    try { await call(next ? "start_pov_overlay" : "stop_pov_overlay"); }
-    catch { setPovOn(!next); }
+    try {
+      const r = await call<[], { ok: boolean }>(next ? "start_pov_overlay" : "stop_pov_overlay");
+      if (next && r && r.ok === false) setPovOn(false);
+    } catch { setPovOn(!next); }
   };
   const pushVoice = (patch: any) => { setVoice((v: any) => ({ ...v, ...patch })); call("set_voice_overlay_settings", patch).catch(() => {}); };
   const pushPov = (patch: any) => { setPov((v: any) => ({ ...v, ...patch })); call("set_pov_overlay_settings", patch).catch(() => {}); };

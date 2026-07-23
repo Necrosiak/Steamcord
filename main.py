@@ -917,6 +917,15 @@ class Plugin:
         return await cls.evt_handler.api.watch_channel(channel_id)
 
     @classmethod
+    async def set_fullscreen_channel(cls, channel_id=""):
+        # Salon actuellement ouvert dans le chat PLEIN ÉCRAN — le backend coupe
+        # les notifs de MESSAGE de ce seul salon tant qu'il est ouvert (David
+        # #21). Distinct de watch_channel (le QAM le pose aussi, mais le QAM ne
+        # doit PAS couper les notifs). "" = aucun (fermé).
+        cls.evt_handler.fullscreen_channel = str(channel_id or "")
+        return {"ok": True}
+
+    @classmethod
     async def edit_message(cls, channel_id, message_id, content):
         return await cls.evt_handler.api.edit_message(channel_id, message_id, content)
 
@@ -2166,6 +2175,20 @@ class Plugin:
                 env=env, stdout=PIPE, stderr=PIPE)
             create_task(stream_watcher(cls._overlay_proc.stdout, prefix="[overlay]"))
             create_task(stream_watcher(cls._overlay_proc.stderr, True, prefix="[overlay]"))
+            # Le spawn réussit TOUJOURS ; ce qui compte c'est la survie du
+            # helper. Sur certains OS (SteamOS n'a pas forcément WebKit2 4.1 /
+            # python-xlib) il meurt dans la seconde. On attend un court instant
+            # et on renvoie False s'il a déjà rendu la main, pour que le toggle
+            # repasse OFF tout de suite au lieu de « mentir » puis se corriger
+            # au ré-affichage du panel (#22). Le motif exact du crash est déjà
+            # loggé par stream_watcher, préfixe [overlay].
+            await sleep(0.7)
+            if cls._overlay_proc is not None and cls._overlay_proc.returncode is not None:
+                rc = cls._overlay_proc.returncode
+                cls._overlay_proc = None
+                logger.warning(
+                    f"[overlay] helper exited immediately (rc={rc}) — see [overlay] stderr above")
+                return False
             logger.info("[overlay] fenêtre overlay démarrée")
             return True
         except Exception as e:
@@ -2193,6 +2216,8 @@ class Plugin:
     async def start_voice_overlay(cls):
         cls._voice_ov_on = True
         ok = await cls._ensure_overlay_window()
+        if not ok:
+            cls._voice_ov_on = False
         cls._write_overlay_state()
         return {"ok": ok}
 
@@ -2217,6 +2242,10 @@ class Plugin:
     async def start_pov_overlay(cls):
         cls._pov_ov_on = True
         ok = await cls._ensure_overlay_window()
+        if not ok:
+            cls._pov_ov_on = False
+            cls._write_overlay_state()
+            return {"ok": ok}
         cls._write_overlay_state()
         # Lance tout de suite le relais des POV déjà actives (sans attendre le
         # prochain event de state).

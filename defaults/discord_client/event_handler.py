@@ -52,6 +52,9 @@ class EventHandler:
         self._qr_scanned = False  # QR scanné, en attente de validation sur le téléphone
         self.state_changed_event = Event()
         self.notification = None
+        # Salon ouvert dans le chat plein écran (posé par set_fullscreen_channel) :
+        # on n'émet PAS de notif de MESSAGE pour ce salon tant qu'il est lu (#21).
+        self.fullscreen_channel = ""
         # Event DÉDIÉ aux notifications. Avant, yield_notification attendait/clear()
         # le MÊME state_changed_event que yield_new_state → sous events rapprochés
         # (arrivée d'un participant : VOICE_CHANNEL_SELECT + VOICE_STATE_UPDATES +
@@ -412,9 +415,17 @@ class EventHandler:
             ctx = ", ".join(x for x in (f"#{chan}" if chan else "", guild) if x)
             if ctx:
                 title = f"{title} ({ctx})"
+        chan_id = str(data.get("channelId") or msg.get("channel_id") or "")
+        # Salon en cours de lecture plein écran → on saute la notif de message
+        # (David #21). Ne concerne QUE les messages : les appels (_call_ring) et
+        # les events stream/caméra (_notify_video_event) passent par d'autres
+        # handlers et ne sont donc pas touchés.
+        if chan_id and chan_id == self.fullscreen_channel:
+            logger.info(f"notification supprimée (salon {chan_id} ouvert en plein écran)")
+            return
         self.notification = {"title": title, "body": body, "icon": icon,
                              "kind": "dm" if dm else "group",
-                             "channel_id": str(data.get("channelId") or msg.get("channel_id") or "")}
+                             "channel_id": chan_id}
         logger.info(f"notification built: kind={self.notification['kind']} "
                     f"title={title!r} icon={'oui' if icon else 'non'} "
                     f"enrichi={'__sc_dm' in data}")

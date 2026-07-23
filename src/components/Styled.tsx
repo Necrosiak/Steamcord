@@ -135,7 +135,7 @@ export function focusHalo(color: string, focused: boolean, scale = 1.02) {
 
 // Clickable card: colored background when active, white halo + colored glow on
 // gamepad focus. Mirrors SkullKey's CardBtn.
-export function CardBtn({ active, focused, color, disabled, center, big, onClick, onFocus, onBlur, children }: any) {
+export function CardBtn({ active, focused, color, disabled, center, big, onClick, onFocus, onBlur, onGamepadFocus, onGamepadBlur, children }: any) {
   const c = color || ACCENT;
   return (
     <Btn
@@ -143,6 +143,8 @@ export function CardBtn({ active, focused, color, disabled, center, big, onClick
       onClick={onClick}
       onFocus={onFocus}
       onBlur={onBlur}
+      onGamepadFocus={onGamepadFocus}
+      onGamepadBlur={onGamepadBlur}
       style={{
         display: "flex", alignItems: "center", justifyContent: center ? "center" : "flex-start",
         gap: 8, width: "100%", minWidth: 0,
@@ -173,6 +175,8 @@ export function ActionCard({ color, active, disabled, center, big, onClick, chil
       onClick={onClick}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
     >
       {children}
     </CardBtn>
