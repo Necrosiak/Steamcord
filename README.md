@@ -98,6 +98,13 @@ every report directly shapes what gets built next. Include if you can:
 
 Feature requests and "it works!" reports on unusual setups are just as valuable.
 
+> **The UI for the newer features is not final.** The in-game voice and POV
+> overlays, the fullscreen multi-POV grid and the quick-reply panel are recent
+> additions and their layout, controls and defaults are still open to change.
+> If something feels awkward or you'd arrange it differently, please say so in
+> an issue — the same goes for anything added from here on. Suggestions shape
+> these as much as bug reports do.
+
 ## Credits
 
 - Original project: [marios8543/Deckcord](https://github.com/marios8543/Deckcord) — architecture, BrowserView setup, GStreamer screen share

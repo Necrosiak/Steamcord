@@ -5,6 +5,13 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 
 ## Planned for upcoming updates
 
+> The UI of recently added features (in-game voice/POV overlays, the
+> multi-POV grid, the quick-reply panel) is **not final** — layout, controls
+> and defaults are still open to change. Suggestions are welcome via
+> [issues](https://github.com/Necrosiak/Steamcord/issues); the same applies to
+> anything added going forward.
+
+
 - **Fullscreen multi-POV video** — when several people in a voice channel
   have their camera or stream on, open one fullscreen grid showing every
   POV at once (today only one tile can be fullscreened at a time).
