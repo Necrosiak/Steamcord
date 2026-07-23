@@ -366,6 +366,10 @@ class Plugin:
 
         async for state in cls.evt_handler.yield_new_state():
             await emit("state", state)
+            # Overlay vocal in-game : miroir du state (roster + parole) dans un
+            # JSON poll-é par la page overlay — seulement quand elle tourne.
+            if cls._voice_overlay_proc is not None and cls._voice_overlay_proc.returncode is None:
+                cls._write_voice_overlay_state(state)
 
     @classmethod
     async def _account_watcher(cls):
@@ -2039,12 +2043,142 @@ class Plugin:
     async def video_webrtc_answer(cls, user_id, answer):
         await cls.evt_handler.send_client({"type": "$VIDEO_ANSWER", "userId": user_id, "payload": answer})
 
+    # ── Overlay vocal in-game (roster type overlay Discord natif) ─────────────
+    # Fenêtre WebKitGTK transparente + atome GAMESCOPE_EXTERNAL_OVERLAY (la
+    # recette mangoapp, déjà éprouvée par l'overlay chat Twitch de BoneCast) ;
+    # la page poll voice_state.json que la boucle de state réécrit à chaque
+    # changement (parole, mute, arrivées/départs).
+    _OVERLAY_CFG = os.path.expanduser("~/.config/steamcord-overlay.json")
+    _voice_overlay_proc = None
+    _voice_overlay_settings = None
+
+    @classmethod
+    def _overlay_dir(cls):
+        return os.path.expanduser("~/.local/share/steamcord/game_overlay")
+
+    @classmethod
+    def _load_overlay_settings(cls):
+        import json as _json
+        if cls._voice_overlay_settings is None:
+            try:
+                with open(cls._OVERLAY_CFG) as f:
+                    cls._voice_overlay_settings = _json.load(f)
+            except Exception:
+                cls._voice_overlay_settings = {}
+        cls._voice_overlay_settings.setdefault(
+            "voice", {"pos": "bottom-left", "opacity": 85, "scale": 100})
+        return cls._voice_overlay_settings
+
+    @classmethod
+    def _write_voice_overlay_state(cls, state=None):
+        import json as _json
+        try:
+            st = state or cls.evt_handler.build_state_dict()
+            vc = st.get("vc") or {}
+            users = []
+            for u in vc.get("users") or []:
+                av = u.get("avatar")
+                users.append({
+                    "id": u.get("id"),
+                    "username": u.get("username"),
+                    "avatar_url": (
+                        f"https://cdn.discordapp.com/avatars/{u.get('id')}/{av}.webp?size=64"
+                        if av else "https://cdn.discordapp.com/embed/avatars/0.png"),
+                    "is_speaking": bool(u.get("is_speaking")),
+                    "is_muted": bool(u.get("is_muted")),
+                    "is_deafened": bool(u.get("is_deafened")),
+                })
+            payload = {"settings": cls._load_overlay_settings().get("voice"), "users": users}
+            d = cls._overlay_dir()
+            os.makedirs(d, exist_ok=True)
+            tmp = os.path.join(d, ".voice_state.tmp")
+            with open(tmp, "w") as f:
+                _json.dump(payload, f)
+            os.replace(tmp, os.path.join(d, "voice_state.json"))
+        except Exception as e:
+            logger.debug(f"[voverlay] write state failed: {e!r}")
+
+    @classmethod
+    async def start_voice_overlay(cls):
+        if cls._voice_overlay_proc is not None and cls._voice_overlay_proc.returncode is None:
+            return {"ok": True, "already": True}
+        script = Path(DECKY_PLUGIN_DIR) / "game_overlay" / "overlay.py"
+        if not script.exists():
+            script = Path(DECKY_PLUGIN_DIR) / "defaults" / "game_overlay" / "overlay.py"
+        cls._write_voice_overlay_state()
+        try:
+            import vesktop
+            # Env graphique de la vraie session (l'env plugin_loader n'a pas de
+            # cookie X → GTK meurt sur « Authorization required ») ; on repart
+            # de _user_env, JAMAIS d'os.environ : le LD_LIBRARY_PATH PyInstaller
+            # (/tmp/_MEI*) casse libcurl/gio dans WebKit (leçon BoneCast).
+            env = dict(vesktop._user_env())
+            try:
+                env.update(await vesktop._show_env())
+            except Exception:
+                pass
+            env.setdefault("DISPLAY", ":0")
+            if "/tmp/_MEI" in env.get("LD_LIBRARY_PATH", ""):
+                env.pop("LD_LIBRARY_PATH", None)
+            cls._voice_overlay_proc = await create_subprocess_exec(
+                sys_python(), str(script), "--state-dir", cls._overlay_dir(),
+                env=env, stdout=PIPE, stderr=PIPE)
+            create_task(stream_watcher(cls._voice_overlay_proc.stdout, prefix="[voverlay]"))
+            create_task(stream_watcher(cls._voice_overlay_proc.stderr, True, prefix="[voverlay]"))
+            logger.info("[voverlay] overlay vocal démarré")
+            return {"ok": True}
+        except Exception as e:
+            logger.warning(f"[voverlay] start failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+
+    @classmethod
+    async def stop_voice_overlay(cls):
+        proc = cls._voice_overlay_proc
+        cls._voice_overlay_proc = None
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.terminate()
+                try:
+                    await wait_for(proc.wait(), timeout=2)
+                except Exception:
+                    proc.kill()
+            except Exception:
+                pass
+        return {"ok": True}
+
+    @classmethod
+    async def get_voice_overlay_status(cls):
+        ov = cls._voice_overlay_proc
+        return {
+            "on": ov is not None and ov.returncode is None,
+            "settings": cls._load_overlay_settings().get("voice"),
+        }
+
+    @classmethod
+    async def set_voice_overlay_settings(cls, settings):
+        import json as _json
+        cur = cls._load_overlay_settings()
+        cur["voice"] = {**cur.get("voice", {}), **(settings or {})}
+        try:
+            with open(cls._OVERLAY_CFG, "w") as f:
+                _json.dump(cur, f)
+        except Exception as e:
+            logger.warning(f"[voverlay] save settings failed: {e!r}")
+        # Répercuté en live si l'overlay tourne (la page poll le state).
+        if cls._voice_overlay_proc is not None and cls._voice_overlay_proc.returncode is None:
+            cls._write_voice_overlay_state()
+        return {"ok": True, "settings": cur["voice"]}
+
     @classmethod
     async def _unload(cls):
         # Restaurer la capture voix si un Go Live sans micro était en cours
         # (sinon la source par défaut resterait le null-sink silencieux).
         try:
             await cls._golive_mic_silence(False)
+        except Exception:
+            pass
+        try:
+            await cls.stop_voice_overlay()
         except Exception:
             pass
         if hasattr(cls, "webrtc_server"):

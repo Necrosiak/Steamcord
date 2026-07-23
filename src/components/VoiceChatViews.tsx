@@ -6,7 +6,7 @@ import {
   IcCameraVideo, IcChevronDown, IcController, IcFilm, IcMic, IcMicMute, IcMicMuteFill,
   IcMonitor, IcSoundboard, IcSpeaker, IcSpeakerMuteFill,
 } from "./Icons";
-import { SliderField, DialogButton, Focusable, ModalRoot, showModal } from "@decky/ui";
+import { SliderField, DialogButton, Dropdown, Focusable, ModalRoot, showModal, ToggleField } from "@decky/ui";
 import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
 import { focusHalo, ACCENT, DANGER, ActionCard, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
@@ -720,6 +720,87 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
   );
 }
 
+const DropdownAny = Dropdown as any;
+const ToggleFieldAny = ToggleField as any;
+
+// Petit menu « Overlays en jeu » de la vue vocal (demande user) : active
+// l'overlay vocal in-game (roster type overlay Discord natif — avatars +
+// pseudos + halo de parole par-dessus le jeu, fenêtre GAMESCOPE_EXTERNAL_
+// OVERLAY côté backend) et règle position/opacité/taille, répercutés en live
+// (la page overlay poll le state). L'overlay POV vidéo rejoindra ce menu.
+function OverlayMenu() {
+  const [open, setOpen] = useState(false);
+  const [on, setOn] = useState(false);
+  const [pos, setPos] = useState("bottom-left");
+  const [opacity, setOpacity] = useState(85);
+  const [scale, setScale] = useState(100);
+
+  useEffect(() => {
+    call<[], any>("get_voice_overlay_status")
+      .then((r) => {
+        if (!r) return;
+        setOn(!!r.on);
+        const s = r.settings || {};
+        if (s.pos) setPos(s.pos);
+        if (typeof s.opacity === "number") setOpacity(s.opacity);
+        if (typeof s.scale === "number") setScale(s.scale);
+      })
+      .catch(() => {});
+  }, []);
+
+  const toggleOverlay = async (next: boolean) => {
+    setOn(next);
+    try { await call(next ? "start_voice_overlay" : "stop_voice_overlay"); }
+    catch { setOn(!next); }
+  };
+  const pushSettings = (patch: any) => { call("set_voice_overlay_settings", patch).catch(() => {}); };
+
+  return (
+    <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>
+      <ActionCard onClick={() => setOpen((v) => !v)} center>
+        <IcController /> {t("overlay_menu")} {open ? "▴" : "▾"}
+      </ActionCard>
+      {open && (
+        <div style={{ padding: "2px 2px 0" }}>
+          <ToggleFieldAny
+            label={t("overlay_voice")}
+            checked={on}
+            onChange={(v: boolean) => toggleOverlay(v)}
+            bottomSeparator="none"
+          />
+          {on && (
+            <>
+              <DropdownAny
+                strDefaultLabel={t("overlay_position")}
+                selectedOption={pos}
+                rgOptions={[
+                  { data: "top-left", label: t("overlay_pos_tl") },
+                  { data: "top-right", label: t("overlay_pos_tr") },
+                  { data: "bottom-left", label: t("overlay_pos_bl") },
+                  { data: "bottom-right", label: t("overlay_pos_br") },
+                ]}
+                onChange={(e: any) => { setPos(e.data); pushSettings({ pos: e.data }); }}
+              />
+              <SliderFieldAny
+                label={<>{t("overlay_opacity")} {opacity}%</>}
+                value={opacity} min={20} max={100} step={5}
+                onChange={(v: number) => { setOpacity(v); pushSettings({ opacity: v }); }}
+                bottomSeparator="none"
+              />
+              <SliderFieldAny
+                label={<>{t("overlay_scale")} {scale}%</>}
+                value={scale} min={60} max={180} step={10}
+                onChange={(v: number) => { setScale(v); pushSettings({ scale: v }); }}
+                bottomSeparator="none"
+              />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function VoiceChatMembers() {
   const state = useSteamcordState();
   if (!state?.vc?.users) return <div />;
@@ -730,6 +811,7 @@ export function VoiceChatMembers() {
   const anyVideo = state.vc.users.some((u: any) => u.id !== meId && (u.is_live || u.is_video));
   return (
     <>
+      <OverlayMenu />
       {anyVideo && (
         <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>
           <ActionCard onClick={() => showModal(<VideoGridModal />)} center>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<!-- Overlay vocal in-game Steamcord : roster type overlay Discord natif
+     (avatar + pseudo + halo vert quand la personne parle, badge micro coupé).
+     Poll voice_state.json (écrit par le backend à chaque changement d'état) :
+     { settings: { pos, opacity, scale }, users: [{ id, username, avatar_url,
+       is_speaking, is_muted, is_deafened }] }
+     Fond 100% transparent : seul le roster est peint, le jeu reste visible. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  #roster {
+    position: fixed;
+    display: flex; flex-direction: column; gap: 4px;
+    font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+    --scale: 1;
+  }
+  /* Les 4 coins (réglage `pos`). */
+  #roster.top-left     { top: 18px; left: 18px; }
+  #roster.top-right    { top: 18px; right: 18px; align-items: flex-end; }
+  #roster.bottom-left  { bottom: 18px; left: 18px; }
+  #roster.bottom-right { bottom: 18px; right: 18px; align-items: flex-end; }
+  .row {
+    display: flex; align-items: center; gap: calc(7px * var(--scale));
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: calc(16px * var(--scale));
+    padding: calc(3px * var(--scale)) calc(9px * var(--scale)) calc(3px * var(--scale)) calc(4px * var(--scale));
+    width: fit-content;
+  }
+  .row.right { flex-direction: row-reverse; padding: calc(3px * var(--scale)) calc(4px * var(--scale)) calc(3px * var(--scale)) calc(9px * var(--scale)); }
+  .avatar {
+    width: calc(26px * var(--scale)); height: calc(26px * var(--scale));
+    border-radius: 50%; display: block;
+    box-shadow: 0 0 0 2px transparent;
+  }
+  .row.speaking .avatar { box-shadow: 0 0 0 2px #23a55a, 0 0 8px 2px rgba(35,165,90,0.75); }
+  .name {
+    color: rgba(255, 255, 255, 0.75); font-size: calc(13px * var(--scale)); font-weight: 600;
+    max-width: calc(160px * var(--scale)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row.speaking .name { color: #fff; }
+  .mute { width: calc(13px * var(--scale)); height: calc(13px * var(--scale)); flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="roster" class="bottom-left"></div>
+<script>
+(() => {
+  const cfg = window.OVERLAY_CFG || {};
+  const roster = document.getElementById("roster");
+  // Micro barré (rouge), tracé inline pour rester 100% local.
+  const MUTE_SVG = '<svg class="mute" viewBox="0 0 16 16" fill="#ed4245">'
+    + '<path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 4.06 1.95l-5.4-5.4A2.5 2.5 0 0 1 8 1z"/>'
+    + '<path d="M3.5 6.5H2.4a5.6 5.6 0 0 0 4.85 5.05V13H5v1.5h6V13H8.75v-1.45c.77-.1 1.49-.37 2.12-.77l-1.1-1.1a4.1 4.1 0 0 1-6.27-3.18z"/>'
+    + '<path d="M12.5 6.5a4.1 4.1 0 0 1-.45 1.86l1.1 1.1a5.57 5.57 0 0 0 .85-2.96h-1.5z"/>'
+    + '<rect x="1.2" y="2.26" width="1.5" height="17" rx="0.75" transform="rotate(-45 2 3)"/>'
+    + '</svg>';
+
+  let lastJson = "";
+  const render = (st) => {
+    const s = st.settings || {};
+    const pos = ["top-left", "top-right", "bottom-left", "bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
+    roster.className = pos;
+    roster.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 85) / 100);
+    roster.style.setProperty("--scale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
+    const right = pos.endsWith("right");
+    roster.innerHTML = (st.users || []).map((u) => {
+      const cls = "row" + (u.is_speaking ? " speaking" : "") + (right ? " right" : "");
+      const mute = (u.is_muted || u.is_deafened) ? MUTE_SVG : "";
+      return '<div class="' + cls + '">'
+        + '<img class="avatar" src="' + (u.avatar_url || "") + '">'
+        + '<span class="name">' + String(u.username || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])) + '</span>'
+        + mute
+        + '</div>';
+    }).join("");
+  };
+
+  const tick = async () => {
+    try {
+      // ⚠️ Pas de query-string sur un file:// (le « fichier?t=… » n'existe
+      // pas) ; et file:// répond status 0 (r.ok=false) dans WebKitGTK alors
+      // que le contenu est là — mêmes leçons que le chat overlay BoneCast.
+      const r = await fetch(cfg.stateUrl, { cache: "no-store" });
+      if (!r.ok && r.status !== 0) return;
+      const txt = await r.text();
+      if (txt && txt !== lastJson) {
+        lastJson = txt;
+        render(JSON.parse(txt));
+      }
+    } catch (e) { /* state pas encore écrit : on retente */ }
+  };
+  tick();
+  setInterval(tick, 300);
+})();
+</script>
+</body>
+</html>
