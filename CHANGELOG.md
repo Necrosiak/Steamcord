@@ -3,6 +3,61 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## Planned for upcoming updates
+
+- **Fullscreen multi-POV video** — when several people in a voice channel
+  have their camera or stream on, open one fullscreen grid showing every
+  POV at once (today only one tile can be fullscreened at a time).
+- **Quick-reply chat in the Quick Access panel** — bring back an interactive
+  (but streamlined) conversation view directly in the QAM: read
+  photos/links and fire off a quick reply in seconds without leaving the
+  game. Advanced actions (edit/delete, reactions, screenshot upload) stay
+  exclusive to the fullscreen view.
+
+## 1.17.0 — 2026-07-23
+
+### Added
+- **Fullscreen chat view** (#20, suggested by @DavidNotProgamer with
+  mockups): open any text channel or DM in a real fullscreen Steam modal —
+  navigable history with pagination, reply composer, and a screenshot
+  picker that browses recent screenshots across games instead of always
+  sending the last one taken. The QAM panel shows a passive live preview
+  with an "Open Chat" button.
+- **Real-time messages**: new messages, edits, deletions and reactions in
+  the channel you have open now arrive the second Discord receives them,
+  pushed through the plugin's event pipeline — no more waiting for the next
+  poll (polling remains only as a 20 s reconciliation safety net). A posted
+  link's embed thumbnail also pops in as soon as Discord resolves it.
+- **Typing indicator** both ways: see "X is typing…" live, and others see
+  you typing while you compose.
+- **Reactions, edit/delete, reply**: react with common emojis (or toggle
+  existing reactions), edit or delete your own messages (two-step confirm),
+  and reply to any message with the quoted context shown above it.
+- **Author avatars** next to usernames in the conversation and in the QAM
+  preview — fixed-size round thumbnails that never disturb the layout.
+- **Reorder / hide servers in the text tab** — same mechanism as the voice
+  tab, sharing the same preferences (hide or move a server once, both tabs
+  follow). DMs are not affected.
+- **Enter sends the message** from the composer, and an unsent draft now
+  survives the modal closing — reopen the chat and your text is back.
+
+### Fixed
+- The conversation now opens anchored to the **latest** message at the
+  bottom (like every chat app) and sticks to it as new messages arrive;
+  controller navigation from the composer walks up from the newest message
+  one by one. This took a few rounds of live testing to get right across
+  Steam's gamepad navigation engine and Chromium's scroll anchoring.
+- Message action chips (add-reaction "+", Reply, Edit, Delete) rendered
+  with a zero-width flex basis, piling their labels on top of each other
+  into an unreadable overlap.
+- Messages flashing away and back every few seconds: a background poll
+  returning transiently empty replaced the whole displayed history.
+- `flow-children="horizontal"/"vertical"` is rejected by the current Steam
+  client (only `row`/`column` and variants are accepted), which broke
+  re-renders of dynamic rows — all occurrences migrated.
+- Discord system events (member joins, boosts) no longer show as blank
+  messages; history pages are filtered so "load older" keeps working.
+
 ## 1.16.9 — 2026-07-22
 
 ### Fixed
