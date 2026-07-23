@@ -11,15 +11,37 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 > [issues](https://github.com/Necrosiak/Steamcord/issues); the same applies to
 > anything added going forward.
 
+- **Screen + camera as separate POV tiles** — when someone shares both at
+  once, show them as two tiles instead of preferring the screen.
+- **Translations** for the newest labels (overlays, POV grid, quick-reply);
+  they currently fall back to English outside EN/FR.
 
-- **Fullscreen multi-POV video** — when several people in a voice channel
-  have their camera or stream on, open one fullscreen grid showing every
-  POV at once (today only one tile can be fullscreened at a time).
-- **Quick-reply chat in the Quick Access panel** — bring back an interactive
-  (but streamlined) conversation view directly in the QAM: read
-  photos/links and fire off a quick reply in seconds without leaving the
-  game. Advanced actions (edit/delete, reactions, screenshot upload) stay
-  exclusive to the fullscreen view.
+## 1.18.0 — 2026-07-23
+
+### Added
+- **In-game overlays** (new "In-game overlays" menu in the voice tab):
+  - **Voice overlay** — a Discord-style roster (avatars, names, a green
+    speaking halo, muted-mic badge) drawn over the running game via
+    gamescope's overlay plane. Adjustable corner, opacity and size.
+  - **POV overlay** — a real live video feed of up to 4 participants
+    (screen/camera) over the game, in five layouts (all right/left stacked,
+    all top/bottom in a row, or one per corner) with opacity and size.
+- **Fullscreen multi-POV grid** — when people in a call have their camera or
+  stream on, a button above the member list opens one fullscreen grid with
+  every POV at once; press A on a tile to fullscreen just that one. Speaking
+  and muted states are shown per tile, and connected non-streaming members
+  appear as avatar tiles.
+- **Quick-reply chat in the Quick Access panel** — the channel view in the
+  QAM is interactive again: a navigable message list (links and photos open
+  with A) plus a minimal composer to fire off a reply in seconds (Enter
+  sends). Advanced actions (edit/delete, reactions, screenshot upload) stay
+  exclusive to the fullscreen view, one button away. Drafts are shared
+  between the QAM and the fullscreen chat.
+
+### Fixed
+- The in-game overlays now close automatically when you leave the voice call.
+- Message rows in the QAM no longer log `Unhandled flow-children` errors on
+  the current Steam client.
 
 ## 1.17.0 — 2026-07-23
 

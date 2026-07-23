@@ -371,9 +371,17 @@ class Plugin:
             # Overlays in-game : miroir du state (roster/parole) + réalignement
             # des relais POV — seulement quand la fenêtre overlay tourne.
             if cls._overlay_running():
-                cls._write_overlay_state(state)
-                if cls._pov_ov_on:
-                    await cls._sync_pov_users(state)
+                if not state.get("vc"):
+                    # Sortie du vocal → fermer les overlays : ils sont liés à
+                    # l'appel (retour user : quitter l'appel ne fermait pas
+                    # l'overlay). Toggles remis à false = le menu QAM reflète
+                    # l'état à sa prochaine ouverture.
+                    await cls.stop_pov_overlay()
+                    await cls.stop_voice_overlay()
+                else:
+                    cls._write_overlay_state(state)
+                    if cls._pov_ov_on:
+                        await cls._sync_pov_users(state)
 
     @classmethod
     async def _account_watcher(cls):
