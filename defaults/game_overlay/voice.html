@@ -1,94 +1,246 @@
 <!DOCTYPE html>
-<!-- Overlay vocal in-game Steamcord : roster type overlay Discord natif
-     (avatar + pseudo + halo vert quand la personne parle, badge micro coupé).
-     Poll voice_state.json (écrit par le backend à chaque changement d'état) :
-     { settings: { pos, opacity, scale }, users: [{ id, username, avatar_url,
-       is_speaking, is_muted, is_deafened }] }
-     Fond 100% transparent : seul le roster est peint, le jeu reste visible. -->
+<!-- Overlay in-game Steamcord : DEUX widgets indépendants dans une seule
+     fenêtre transparente (gamescope n'a qu'un plan external-overlay).
+     ① Vocal : roster type overlay Discord natif (avatar+pseudo+halo parole+
+        badge mute). Poll voice_state.json.
+     ② POV : jusqu'à 4 flux vidéo des participants, décodés en MSE (WebM/VP8
+        poussé par le client via WS binaire — WebKit n'a pas de WebRTC).
+     Fond 100% transparent : seuls les widgets sont peints. -->
 <html>
 <head>
 <meta charset="utf-8">
 <style>
-  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden;
+    font-family: "Noto Sans", "DejaVu Sans", sans-serif; }
+
+  /* ── Roster vocal ── */
   #roster {
-    position: fixed;
-    display: flex; flex-direction: column; gap: 4px;
-    font-family: "Noto Sans", "DejaVu Sans", sans-serif;
-    --scale: 1;
+    position: fixed; display: none; flex-direction: column; gap: 4px; --scale: 1;
   }
-  /* Les 4 coins (réglage `pos`). */
+  #roster.on { display: flex; }
   #roster.top-left     { top: 18px; left: 18px; }
   #roster.top-right    { top: 18px; right: 18px; align-items: flex-end; }
   #roster.bottom-left  { bottom: 18px; left: 18px; }
   #roster.bottom-right { bottom: 18px; right: 18px; align-items: flex-end; }
   .row {
     display: flex; align-items: center; gap: calc(7px * var(--scale));
-    background: rgba(0, 0, 0, 0.55);
-    border-radius: calc(16px * var(--scale));
+    background: rgba(0,0,0,0.55); border-radius: calc(16px * var(--scale));
     padding: calc(3px * var(--scale)) calc(9px * var(--scale)) calc(3px * var(--scale)) calc(4px * var(--scale));
     width: fit-content;
   }
-  .row.right { flex-direction: row-reverse; padding: calc(3px * var(--scale)) calc(4px * var(--scale)) calc(3px * var(--scale)) calc(9px * var(--scale)); }
+  #roster.top-right .row, #roster.bottom-right .row {
+    flex-direction: row-reverse;
+    padding: calc(3px * var(--scale)) calc(4px * var(--scale)) calc(3px * var(--scale)) calc(9px * var(--scale));
+  }
   .avatar {
     width: calc(26px * var(--scale)); height: calc(26px * var(--scale));
-    border-radius: 50%; display: block;
-    box-shadow: 0 0 0 2px transparent;
+    border-radius: 50%; display: block; box-shadow: 0 0 0 2px transparent;
   }
   .row.speaking .avatar { box-shadow: 0 0 0 2px #23a55a, 0 0 8px 2px rgba(35,165,90,0.75); }
   .name {
-    color: rgba(255, 255, 255, 0.75); font-size: calc(13px * var(--scale)); font-weight: 600;
+    color: rgba(255,255,255,0.75); font-size: calc(13px * var(--scale)); font-weight: 600;
     max-width: calc(160px * var(--scale)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .row.speaking .name { color: #fff; }
   .mute { width: calc(13px * var(--scale)); height: calc(13px * var(--scale)); flex-shrink: 0; }
+
+  /* ── POV vidéo ── */
+  #pov {
+    position: fixed; display: none; gap: 8px; --pscale: 1;
+  }
+  #pov.on { display: flex; }
+  /* Empilé le long d'un bord vertical (droite/gauche) ; côte à côte le long
+     d'un bord horizontal (haut/bas). */
+  #pov.right  { top: 50%; right: 16px; transform: translateY(-50%); flex-direction: column; align-items: flex-end; }
+  #pov.left   { top: 50%; left: 16px;  transform: translateY(-50%); flex-direction: column; align-items: flex-start; }
+  #pov.top    { top: 16px; left: 50%;  transform: translateX(-50%); flex-direction: row; }
+  #pov.bottom { bottom: 16px; left: 50%; transform: translateX(-50%); flex-direction: row; }
+  /* Une tuile dans chaque coin : positionnement absolu par tuile. */
+  #pov.corners { inset: 0; display: block; }
+  .povtile {
+    width: calc(300px * var(--pscale)); background: #000; border-radius: 8px;
+    overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .povtile video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  #pov.corners .povtile { position: absolute; width: calc(280px * var(--pscale)); }
+  #pov.corners .povtile.c0 { top: 16px; left: 16px; }
+  #pov.corners .povtile.c1 { top: 16px; right: 16px; }
+  #pov.corners .povtile.c2 { bottom: 16px; left: 16px; }
+  #pov.corners .povtile.c3 { bottom: 16px; right: 16px; }
 </style>
 </head>
 <body>
 <div id="roster" class="bottom-left"></div>
+<div id="pov" class="right"></div>
 <script>
 (() => {
   const cfg = window.OVERLAY_CFG || {};
   const roster = document.getElementById("roster");
-  // Micro barré (rouge), tracé inline pour rester 100% local.
+  const povBox = document.getElementById("pov");
+  const esc = (s) => String(s || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
   const MUTE_SVG = '<svg class="mute" viewBox="0 0 16 16" fill="#ed4245">'
     + '<path d="M8 1a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 4.06 1.95l-5.4-5.4A2.5 2.5 0 0 1 8 1z"/>'
     + '<path d="M3.5 6.5H2.4a5.6 5.6 0 0 0 4.85 5.05V13H5v1.5h6V13H8.75v-1.45c.77-.1 1.49-.37 2.12-.77l-1.1-1.1a4.1 4.1 0 0 1-6.27-3.18z"/>'
-    + '<path d="M12.5 6.5a4.1 4.1 0 0 1-.45 1.86l1.1 1.1a5.57 5.57 0 0 0 .85-2.96h-1.5z"/>'
-    + '<rect x="1.2" y="2.26" width="1.5" height="17" rx="0.75" transform="rotate(-45 2 3)"/>'
-    + '</svg>';
+    + '<path d="M12.5 6.5a4.1 4.1 0 0 1-.45 1.86l1.1 1.1a5.57 5.57 0 0 0 .85-2.96h-1.5z"/></svg>';
 
-  let lastJson = "";
-  const render = (st) => {
-    const s = st.settings || {};
-    const pos = ["top-left", "top-right", "bottom-left", "bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
-    roster.className = pos;
+  // ── ① Roster vocal ─────────────────────────────────────────────────────
+  const renderVoice = (v) => {
+    if (!v || !v.enabled) { roster.className = ""; roster.innerHTML = ""; return; }
+    const s = v.settings || {};
+    const pos = ["top-left","top-right","bottom-left","bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
+    roster.className = "on " + pos;
     roster.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 85) / 100);
     roster.style.setProperty("--scale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
-    const right = pos.endsWith("right");
-    roster.innerHTML = (st.users || []).map((u) => {
-      const cls = "row" + (u.is_speaking ? " speaking" : "") + (right ? " right" : "");
+    roster.innerHTML = (v.users || []).map((u) => {
+      const cls = "row" + (u.is_speaking ? " speaking" : "");
       const mute = (u.is_muted || u.is_deafened) ? MUTE_SVG : "";
-      return '<div class="' + cls + '">'
-        + '<img class="avatar" src="' + (u.avatar_url || "") + '">'
-        + '<span class="name">' + String(u.username || "").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])) + '</span>'
-        + mute
-        + '</div>';
+      return '<div class="' + cls + '"><img class="avatar" src="' + (u.avatar_url || "") + '">'
+        + '<span class="name">' + esc(u.username) + '</span>' + mute + '</div>';
     }).join("");
   };
 
+  // ── ② POV : vrai flux vidéo H264/fMP4 en MSE, une source par user ───────
+  // Fragment WS binaire : [1o len uid][uid][1o init][payload fMP4].
+  // Le fragment init (ftyp+moov, init=1) (re)crée la MediaSource ; les
+  // fragments média (init=0) sont appendés dans l'ordre.
+  const MIME = 'video/mp4; codecs="avc1.42E01E"';
+  const sources = new Map();   // uid -> { ms, sb, queue, video, tile, appending }
+  let povSettings = {}, povEnabled = false, povOrder = [];
+
+  const pumpSb = (src) => {
+    if (src.appending || !src.sb || src.sb.updating || !src.queue.length) return;
+    src.appending = true;
+    try { src.sb.appendBuffer(src.queue.shift()); }
+    catch (e) {
+      src.appending = false;
+      if (e && e.name === "QuotaExceededError") {
+        // Fenêtre glissante : purger l'ancien pour ne pas saturer le buffer.
+        try {
+          const b = src.sb.buffered;
+          if (b.length && src.video.currentTime - b.start(0) > 6)
+            src.sb.remove(b.start(0), src.video.currentTime - 3);
+        } catch (_) {}
+      }
+    }
+  };
+
+  const resetSource = (uid) => {
+    const old = sources.get(uid);
+    if (old) { try { old.video.remove(); } catch (_) {} try { old.tile.remove(); } catch (_) {} }
+    const tile = document.createElement("div");
+    tile.className = "povtile";
+    const video = document.createElement("video");
+    video.autoplay = true; video.muted = true; video.playsInline = true;
+    tile.appendChild(video);
+    const ms = new MediaSource();
+    const src = { ms, sb: null, queue: [], video, tile, appending: false };
+    video.src = URL.createObjectURL(ms);
+    ms.addEventListener("sourceopen", () => {
+      try {
+        src.sb = ms.addSourceBuffer(MIME);
+        src.sb.mode = "sequence";
+        src.sb.addEventListener("updateend", () => {
+          src.appending = false;
+          // NE PAS sauter au bord à chaque fragment : les fragments fMP4 de
+          // MediaRecorder font ~1-3 s (keyframes espacées sur contenu statique)
+          // → un seek vers la fin sautait tout le fragment et n'affichait que
+          // sa dernière frame (~1 fps perçu, retour user). On laisse lire à 1x :
+          // fragments arrivant en temps réel = latence constante, lecture
+          // fluide. Rattrapage DOUX seulement si on décroche vraiment (>6 s de
+          // retard = accumulation anormale), vers 3 s du bord (pas la toute fin,
+          // sinon on retombe sur la frame gelée).
+          try {
+            const b = src.sb.buffered;
+            if (b.length) {
+              const end = b.end(b.length - 1);
+              if (end - src.video.currentTime > 6) src.video.currentTime = end - 3;
+              // Purge de l'historique lu pour borner la mémoire.
+              if (src.video.currentTime - b.start(0) > 8 && !src.sb.updating)
+                src.sb.remove(b.start(0), src.video.currentTime - 4);
+            }
+          } catch (_) {}
+          pumpSb(src);
+        });
+        pumpSb(src);
+      } catch (e) { console.error("[pov] addSourceBuffer KO", e); }
+    }, { once: true });
+    sources.set(uid, src);
+    return src;
+  };
+
+  const onFrame = (buf) => {
+    const view = new Uint8Array(buf);
+    const uidLen = view[0];
+    const uid = new TextDecoder().decode(view.subarray(1, 1 + uidLen));
+    const isInit = view[1 + uidLen] === 1;
+    const payload = view.subarray(2 + uidLen);
+    let src = sources.get(uid);
+    if (isInit || !src) { src = resetSource(uid); relayoutPov(); }
+    // Copie détachée (la vue pointe sur le buffer WS réutilisé).
+    src.queue.push(payload.slice());
+    pumpSb(src);
+    src.video.play && src.video.play().catch(() => {});
+  };
+
+  // Place les tuiles selon le layout choisi et le nombre de POV présentes.
+  const relayoutPov = () => {
+    const s = povSettings || {};
+    const layout = ["right","left","top","bottom","corners"].includes(s.layout) ? s.layout : "right";
+    povBox.className = (povEnabled ? "on " : "") + layout;
+    povBox.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 90) / 100);
+    povBox.style.setProperty("--pscale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
+    povOrder = povOrder.filter((u) => sources.has(u));
+    for (const uid of sources.keys()) if (!povOrder.includes(uid)) povOrder.push(uid);
+    povBox.innerHTML = "";
+    povOrder.forEach((uid, i) => {
+      const src = sources.get(uid);
+      if (!src) return;
+      src.tile.className = "povtile" + (layout === "corners" ? " c" + (i % 4) : "");
+      povBox.appendChild(src.tile);
+    });
+  };
+
+  const applyPov = (p) => {
+    povEnabled = !!(p && p.enabled);
+    povSettings = (p && p.settings) || {};
+    if (!povEnabled) {
+      for (const [, src] of sources) { try { src.tile.remove(); } catch (_) {} }
+      sources.clear(); povOrder = [];
+      if (povFeed) { try { povFeed.close(); } catch (_) {} povFeed = null; }
+    } else if (!povFeed) {
+      connectFeed(p.feed);
+    }
+    relayoutPov();
+  };
+
+  // WS binaire vers le backend (fragments fMP4). Reconnexion automatique.
+  let povFeed = null, feedUrl = null;
+  const connectFeed = (url) => {
+    feedUrl = url || feedUrl;
+    if (!feedUrl) return;
+    try {
+      povFeed = new WebSocket(feedUrl);
+      povFeed.binaryType = "arraybuffer";
+      povFeed.onmessage = (ev) => onFrame(ev.data);
+      povFeed.onclose = () => { povFeed = null; if (povEnabled) setTimeout(() => connectFeed(), 1000); };
+      povFeed.onerror = () => { try { povFeed.close(); } catch (_) {} };
+    } catch (e) { povFeed = null; if (povEnabled) setTimeout(() => connectFeed(), 1000); }
+  };
+
+  // ── Poll du state (roster + réglages + activation POV) ──────────────────
+  let lastJson = "";
   const tick = async () => {
     try {
-      // ⚠️ Pas de query-string sur un file:// (le « fichier?t=… » n'existe
-      // pas) ; et file:// répond status 0 (r.ok=false) dans WebKitGTK alors
-      // que le contenu est là — mêmes leçons que le chat overlay BoneCast.
       const r = await fetch(cfg.stateUrl, { cache: "no-store" });
       if (!r.ok && r.status !== 0) return;
       const txt = await r.text();
-      if (txt && txt !== lastJson) {
-        lastJson = txt;
-        render(JSON.parse(txt));
-      }
-    } catch (e) { /* state pas encore écrit : on retente */ }
+      if (!txt || txt === lastJson) return;
+      lastJson = txt;
+      const st = JSON.parse(txt);
+      renderVoice(st.voice);
+      applyPov(st.pov);
+    } catch (e) { /* pas encore écrit : on retente */ }
   };
   tick();
   setInterval(tick, 300);

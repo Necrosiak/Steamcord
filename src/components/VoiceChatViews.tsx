@@ -723,37 +723,43 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
 const DropdownAny = Dropdown as any;
 const ToggleFieldAny = ToggleField as any;
 
-// Petit menu « Overlays en jeu » de la vue vocal (demande user) : active
-// l'overlay vocal in-game (roster type overlay Discord natif — avatars +
-// pseudos + halo de parole par-dessus le jeu, fenêtre GAMESCOPE_EXTERNAL_
-// OVERLAY côté backend) et règle position/opacité/taille, répercutés en live
-// (la page overlay poll le state). L'overlay POV vidéo rejoindra ce menu.
+// Menu « Overlays en jeu » de la vue vocal (demande user) : active
+// indépendamment ① l'overlay VOCAL (roster type overlay Discord natif —
+// avatars + pseudos + halo de parole) et ② l'overlay POV (jusqu'à 4 flux
+// vidéo des participants), par-dessus le jeu en gamemode (fenêtre
+// GAMESCOPE_EXTERNAL_OVERLAY côté backend). Réglages répercutés en live (la
+// page overlay poll le state).
 function OverlayMenu() {
   const [open, setOpen] = useState(false);
-  const [on, setOn] = useState(false);
-  const [pos, setPos] = useState("bottom-left");
-  const [opacity, setOpacity] = useState(85);
-  const [scale, setScale] = useState(100);
+  const [voiceOn, setVoiceOn] = useState(false);
+  const [povOn, setPovOn] = useState(false);
+  const [voice, setVoice] = useState<any>({ pos: "bottom-left", opacity: 85, scale: 100 });
+  const [pov, setPov] = useState<any>({ layout: "right", opacity: 90, scale: 100 });
 
   useEffect(() => {
-    call<[], any>("get_voice_overlay_status")
+    call<[], any>("get_overlay_status")
       .then((r) => {
         if (!r) return;
-        setOn(!!r.on);
-        const s = r.settings || {};
-        if (s.pos) setPos(s.pos);
-        if (typeof s.opacity === "number") setOpacity(s.opacity);
-        if (typeof s.scale === "number") setScale(s.scale);
+        setVoiceOn(!!r.voice_on);
+        setPovOn(!!r.pov_on);
+        if (r.voice) setVoice((v: any) => ({ ...v, ...r.voice }));
+        if (r.pov) setPov((v: any) => ({ ...v, ...r.pov }));
       })
       .catch(() => {});
   }, []);
 
-  const toggleOverlay = async (next: boolean) => {
-    setOn(next);
+  const toggleVoice = async (next: boolean) => {
+    setVoiceOn(next);
     try { await call(next ? "start_voice_overlay" : "stop_voice_overlay"); }
-    catch { setOn(!next); }
+    catch { setVoiceOn(!next); }
   };
-  const pushSettings = (patch: any) => { call("set_voice_overlay_settings", patch).catch(() => {}); };
+  const togglePov = async (next: boolean) => {
+    setPovOn(next);
+    try { await call(next ? "start_pov_overlay" : "stop_pov_overlay"); }
+    catch { setPovOn(!next); }
+  };
+  const pushVoice = (patch: any) => { setVoice((v: any) => ({ ...v, ...patch })); call("set_voice_overlay_settings", patch).catch(() => {}); };
+  const pushPov = (patch: any) => { setPov((v: any) => ({ ...v, ...patch })); call("set_pov_overlay_settings", patch).catch(() => {}); };
 
   return (
     <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>
@@ -762,35 +768,71 @@ function OverlayMenu() {
       </ActionCard>
       {open && (
         <div style={{ padding: "2px 2px 0" }}>
+          {/* ① Overlay vocal */}
           <ToggleFieldAny
             label={t("overlay_voice")}
-            checked={on}
-            onChange={(v: boolean) => toggleOverlay(v)}
+            checked={voiceOn}
+            onChange={(v: boolean) => toggleVoice(v)}
             bottomSeparator="none"
           />
-          {on && (
+          {voiceOn && (
             <>
               <DropdownAny
                 strDefaultLabel={t("overlay_position")}
-                selectedOption={pos}
+                selectedOption={voice.pos}
                 rgOptions={[
                   { data: "top-left", label: t("overlay_pos_tl") },
                   { data: "top-right", label: t("overlay_pos_tr") },
                   { data: "bottom-left", label: t("overlay_pos_bl") },
                   { data: "bottom-right", label: t("overlay_pos_br") },
                 ]}
-                onChange={(e: any) => { setPos(e.data); pushSettings({ pos: e.data }); }}
+                onChange={(e: any) => pushVoice({ pos: e.data })}
               />
               <SliderFieldAny
-                label={<>{t("overlay_opacity")} {opacity}%</>}
-                value={opacity} min={20} max={100} step={5}
-                onChange={(v: number) => { setOpacity(v); pushSettings({ opacity: v }); }}
+                label={<>{t("overlay_opacity")} {voice.opacity}%</>}
+                value={voice.opacity} min={20} max={100} step={5}
+                onChange={(v: number) => pushVoice({ opacity: v })}
                 bottomSeparator="none"
               />
               <SliderFieldAny
-                label={<>{t("overlay_scale")} {scale}%</>}
-                value={scale} min={60} max={180} step={10}
-                onChange={(v: number) => { setScale(v); pushSettings({ scale: v }); }}
+                label={<>{t("overlay_scale")} {voice.scale}%</>}
+                value={voice.scale} min={60} max={180} step={10}
+                onChange={(v: number) => pushVoice({ scale: v })}
+                bottomSeparator="none"
+              />
+            </>
+          )}
+          {/* ② Overlay POV vidéo */}
+          <ToggleFieldAny
+            label={t("overlay_pov")}
+            checked={povOn}
+            onChange={(v: boolean) => togglePov(v)}
+            bottomSeparator="none"
+          />
+          {povOn && (
+            <>
+              <DropdownAny
+                strDefaultLabel={t("overlay_pov_layout")}
+                selectedOption={pov.layout}
+                rgOptions={[
+                  { data: "right", label: t("overlay_pov_right") },
+                  { data: "left", label: t("overlay_pov_left") },
+                  { data: "top", label: t("overlay_pov_top") },
+                  { data: "bottom", label: t("overlay_pov_bottom") },
+                  { data: "corners", label: t("overlay_pov_corners") },
+                ]}
+                onChange={(e: any) => pushPov({ layout: e.data })}
+              />
+              <SliderFieldAny
+                label={<>{t("overlay_opacity")} {pov.opacity}%</>}
+                value={pov.opacity} min={20} max={100} step={5}
+                onChange={(v: number) => pushPov({ opacity: v })}
+                bottomSeparator="none"
+              />
+              <SliderFieldAny
+                label={<>{t("overlay_scale")} {pov.scale}%</>}
+                value={pov.scale} min={60} max={180} step={10}
+                onChange={(v: number) => pushPov({ scale: v })}
                 bottomSeparator="none"
               />
             </>

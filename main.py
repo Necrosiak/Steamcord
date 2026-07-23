@@ -262,9 +262,11 @@ class Plugin:
                 get("/openkb", cls._openkb),
                 get("/voice_render", cls._voice_render),
                 get("/voice_hide", cls._voice_hide),
-                get("/socket", cls._websocket_handler)
+                get("/socket", cls._websocket_handler),
+                get("/pov_feed", cls._pov_feed),
             ]
         )
+        cls.evt_handler.on_pov_chunk = cls._on_pov_chunk
         for r in list(cls.server.router.routes())[:-1]:
             cls.cors.add(r)
 
@@ -366,10 +368,12 @@ class Plugin:
 
         async for state in cls.evt_handler.yield_new_state():
             await emit("state", state)
-            # Overlay vocal in-game : miroir du state (roster + parole) dans un
-            # JSON poll-é par la page overlay — seulement quand elle tourne.
-            if cls._voice_overlay_proc is not None and cls._voice_overlay_proc.returncode is None:
-                cls._write_voice_overlay_state(state)
+            # Overlays in-game : miroir du state (roster/parole) + réalignement
+            # des relais POV — seulement quand la fenêtre overlay tourne.
+            if cls._overlay_running():
+                cls._write_overlay_state(state)
+                if cls._pov_ov_on:
+                    await cls._sync_pov_users(state)
 
     @classmethod
     async def _account_watcher(cls):
@@ -2043,34 +2047,59 @@ class Plugin:
     async def video_webrtc_answer(cls, user_id, answer):
         await cls.evt_handler.send_client({"type": "$VIDEO_ANSWER", "userId": user_id, "payload": answer})
 
-    # ── Overlay vocal in-game (roster type overlay Discord natif) ─────────────
-    # Fenêtre WebKitGTK transparente + atome GAMESCOPE_EXTERNAL_OVERLAY (la
-    # recette mangoapp, déjà éprouvée par l'overlay chat Twitch de BoneCast) ;
-    # la page poll voice_state.json que la boucle de state réécrit à chaque
-    # changement (parole, mute, arrivées/départs).
+    # ── Overlays in-game (vocal + POV vidéo) ──────────────────────────────────
+    # UNE seule fenêtre WebKitGTK transparente (gamescope n'a qu'UN plan
+    # external-overlay — la recette mangoapp, éprouvée par le chat BoneCast)
+    # qui héberge les deux widgets ; chacun s'active indépendamment via le
+    # menu QAM. La page poll voice_state.json (roster + réglages, réécrit par
+    # la boucle de state) et consomme /pov_feed (WS binaire, chunks WebM du
+    # client MediaRecorder → lecture MSE : WebKit n'a PAS de WebRTC, sondé).
     _OVERLAY_CFG = os.path.expanduser("~/.config/steamcord-overlay.json")
-    _voice_overlay_proc = None
-    _voice_overlay_settings = None
+    _overlay_proc = None
+    _overlay_settings = None
+    _voice_ov_on = False
+    _pov_ov_on = False
+    _pov_users = set()          # users actuellement relayés (client MediaRecorder)
+    _pov_clients = {}           # ws overlay -> asyncio.Queue de fragments binaires
+    _pov_init = {}              # uid -> fragment d'init fMP4 (ftyp+moov) en cache
+
+    POV_MAX = 4
+    POV_FEED_URL = "ws://127.0.0.1:65123/pov_feed"
 
     @classmethod
     def _overlay_dir(cls):
         return os.path.expanduser("~/.local/share/steamcord/game_overlay")
 
     @classmethod
-    def _load_overlay_settings(cls):
-        import json as _json
-        if cls._voice_overlay_settings is None:
-            try:
-                with open(cls._OVERLAY_CFG) as f:
-                    cls._voice_overlay_settings = _json.load(f)
-            except Exception:
-                cls._voice_overlay_settings = {}
-        cls._voice_overlay_settings.setdefault(
-            "voice", {"pos": "bottom-left", "opacity": 85, "scale": 100})
-        return cls._voice_overlay_settings
+    def _overlay_running(cls):
+        return cls._overlay_proc is not None and cls._overlay_proc.returncode is None
 
     @classmethod
-    def _write_voice_overlay_state(cls, state=None):
+    def _load_overlay_settings(cls):
+        import json as _json
+        if cls._overlay_settings is None:
+            try:
+                with open(cls._OVERLAY_CFG) as f:
+                    cls._overlay_settings = _json.load(f)
+            except Exception:
+                cls._overlay_settings = {}
+        cls._overlay_settings.setdefault(
+            "voice", {"pos": "bottom-left", "opacity": 85, "scale": 100})
+        cls._overlay_settings.setdefault(
+            "pov", {"layout": "right", "opacity": 90, "scale": 100})
+        return cls._overlay_settings
+
+    @classmethod
+    def _save_overlay_settings(cls):
+        import json as _json
+        try:
+            with open(cls._OVERLAY_CFG, "w") as f:
+                _json.dump(cls._load_overlay_settings(), f)
+        except Exception as e:
+            logger.warning(f"[overlay] save settings failed: {e!r}")
+
+    @classmethod
+    def _write_overlay_state(cls, state=None):
         import json as _json
         try:
             st = state or cls.evt_handler.build_state_dict()
@@ -2088,7 +2117,11 @@ class Plugin:
                     "is_muted": bool(u.get("is_muted")),
                     "is_deafened": bool(u.get("is_deafened")),
                 })
-            payload = {"settings": cls._load_overlay_settings().get("voice"), "users": users}
+            s = cls._load_overlay_settings()
+            payload = {
+                "voice": {"enabled": cls._voice_ov_on, "settings": s.get("voice"), "users": users},
+                "pov": {"enabled": cls._pov_ov_on, "settings": s.get("pov"), "feed": cls.POV_FEED_URL},
+            }
             d = cls._overlay_dir()
             os.makedirs(d, exist_ok=True)
             tmp = os.path.join(d, ".voice_state.tmp")
@@ -2096,16 +2129,16 @@ class Plugin:
                 _json.dump(payload, f)
             os.replace(tmp, os.path.join(d, "voice_state.json"))
         except Exception as e:
-            logger.debug(f"[voverlay] write state failed: {e!r}")
+            logger.debug(f"[overlay] write state failed: {e!r}")
 
     @classmethod
-    async def start_voice_overlay(cls):
-        if cls._voice_overlay_proc is not None and cls._voice_overlay_proc.returncode is None:
-            return {"ok": True, "already": True}
+    async def _ensure_overlay_window(cls):
+        if cls._overlay_running():
+            return True
         script = Path(DECKY_PLUGIN_DIR) / "game_overlay" / "overlay.py"
         if not script.exists():
             script = Path(DECKY_PLUGIN_DIR) / "defaults" / "game_overlay" / "overlay.py"
-        cls._write_voice_overlay_state()
+        cls._write_overlay_state()
         try:
             import vesktop
             # Env graphique de la vraie session (l'env plugin_loader n'a pas de
@@ -2120,21 +2153,23 @@ class Plugin:
             env.setdefault("DISPLAY", ":0")
             if "/tmp/_MEI" in env.get("LD_LIBRARY_PATH", ""):
                 env.pop("LD_LIBRARY_PATH", None)
-            cls._voice_overlay_proc = await create_subprocess_exec(
+            cls._overlay_proc = await create_subprocess_exec(
                 sys_python(), str(script), "--state-dir", cls._overlay_dir(),
                 env=env, stdout=PIPE, stderr=PIPE)
-            create_task(stream_watcher(cls._voice_overlay_proc.stdout, prefix="[voverlay]"))
-            create_task(stream_watcher(cls._voice_overlay_proc.stderr, True, prefix="[voverlay]"))
-            logger.info("[voverlay] overlay vocal démarré")
-            return {"ok": True}
+            create_task(stream_watcher(cls._overlay_proc.stdout, prefix="[overlay]"))
+            create_task(stream_watcher(cls._overlay_proc.stderr, True, prefix="[overlay]"))
+            logger.info("[overlay] fenêtre overlay démarrée")
+            return True
         except Exception as e:
-            logger.warning(f"[voverlay] start failed: {e!r}")
-            return {"ok": False, "error": str(e)}
+            logger.warning(f"[overlay] start failed: {e!r}")
+            return False
 
     @classmethod
-    async def stop_voice_overlay(cls):
-        proc = cls._voice_overlay_proc
-        cls._voice_overlay_proc = None
+    async def _maybe_stop_overlay_window(cls):
+        if cls._voice_ov_on or cls._pov_ov_on:
+            return
+        proc = cls._overlay_proc
+        cls._overlay_proc = None
         if proc is not None and proc.returncode is None:
             try:
                 proc.terminate()
@@ -2144,30 +2179,158 @@ class Plugin:
                     proc.kill()
             except Exception:
                 pass
+
+    # ── Overlay vocal ─────────────────────────────────────────────────────────
+    @classmethod
+    async def start_voice_overlay(cls):
+        cls._voice_ov_on = True
+        ok = await cls._ensure_overlay_window()
+        cls._write_overlay_state()
+        return {"ok": ok}
+
+    @classmethod
+    async def stop_voice_overlay(cls):
+        cls._voice_ov_on = False
+        cls._write_overlay_state()
+        await cls._maybe_stop_overlay_window()
         return {"ok": True}
 
     @classmethod
-    async def get_voice_overlay_status(cls):
-        ov = cls._voice_overlay_proc
+    async def set_voice_overlay_settings(cls, settings):
+        cur = cls._load_overlay_settings()
+        cur["voice"] = {**cur.get("voice", {}), **(settings or {})}
+        cls._save_overlay_settings()
+        if cls._overlay_running():
+            cls._write_overlay_state()
+        return {"ok": True, "settings": cur["voice"]}
+
+    # ── Overlay POV ───────────────────────────────────────────────────────────
+    @classmethod
+    async def start_pov_overlay(cls):
+        cls._pov_ov_on = True
+        ok = await cls._ensure_overlay_window()
+        cls._write_overlay_state()
+        # Lance tout de suite le relais des POV déjà actives (sans attendre le
+        # prochain event de state).
+        await cls._sync_pov_users()
+        return {"ok": ok}
+
+    @classmethod
+    async def stop_pov_overlay(cls):
+        cls._pov_ov_on = False
+        for uid in list(cls._pov_users):
+            try:
+                await cls.evt_handler.send_client({"type": "$POV_STOP", "userId": uid})
+            except Exception:
+                pass
+        cls._pov_users.clear()
+        cls._pov_init.clear()
+        cls._write_overlay_state()
+        await cls._maybe_stop_overlay_window()
+        return {"ok": True}
+
+    @classmethod
+    async def set_pov_overlay_settings(cls, settings):
+        cur = cls._load_overlay_settings()
+        cur["pov"] = {**cur.get("pov", {}), **(settings or {})}
+        cls._save_overlay_settings()
+        if cls._overlay_running():
+            cls._write_overlay_state()
+        return {"ok": True, "settings": cur["pov"]}
+
+    @classmethod
+    async def get_overlay_status(cls):
+        s = cls._load_overlay_settings()
         return {
-            "on": ov is not None and ov.returncode is None,
-            "settings": cls._load_overlay_settings().get("voice"),
+            "voice_on": cls._voice_ov_on and cls._overlay_running(),
+            "pov_on": cls._pov_ov_on and cls._overlay_running(),
+            "voice": s.get("voice"),
+            "pov": s.get("pov"),
         }
 
     @classmethod
-    async def set_voice_overlay_settings(cls, settings):
-        import json as _json
-        cur = cls._load_overlay_settings()
-        cur["voice"] = {**cur.get("voice", {}), **(settings or {})}
+    async def _sync_pov_users(cls, state=None):
+        """Aligne les enregistreurs client sur les participants vidéo-actifs
+        (max POV_MAX, hors soi) — appelé à chaque changement de state tant que
+        l'overlay POV est actif."""
+        if not cls._pov_ov_on:
+            return
         try:
-            with open(cls._OVERLAY_CFG, "w") as f:
-                _json.dump(cur, f)
+            st = state or cls.evt_handler.build_state_dict()
+            me = (st.get("me") or {}).get("id")
+            vc = st.get("vc") or {}
+            want = []
+            for u in vc.get("users") or []:
+                if u.get("id") != me and (u.get("is_live") or u.get("is_video")):
+                    want.append(u["id"])
+                if len(want) >= cls.POV_MAX:
+                    break
+            want = set(want)
+            for uid in want - cls._pov_users:
+                await cls.evt_handler.send_client({"type": "$POV_START", "userId": uid})
+            for uid in cls._pov_users - want:
+                await cls.evt_handler.send_client({"type": "$POV_STOP", "userId": uid})
+                cls._pov_init.pop(uid, None)
+            cls._pov_users = want
         except Exception as e:
-            logger.warning(f"[voverlay] save settings failed: {e!r}")
-        # Répercuté en live si l'overlay tourne (la page poll le state).
-        if cls._voice_overlay_proc is not None and cls._voice_overlay_proc.returncode is None:
-            cls._write_voice_overlay_state()
-        return {"ok": True, "settings": cur["voice"]}
+            logger.debug(f"[overlay] sync pov users failed: {e!r}")
+
+    @classmethod
+    def _on_pov_chunk(cls, data):
+        """Fragment fMP4 du client (base64) → fragment binaire poussé aux pages
+        overlay connectées : [1o len uid][uid][1o init][payload]. L'init
+        (ftyp+moov, marqué `init`) est mis en CACHE par user pour être renvoyé
+        en TÊTE à tout consommateur qui se connecte après (fMP4 : un fragment
+        média n'est décodable qu'avec l'init de son flux). Une queue par
+        client + tâche d'envoi dédiée : l'ordre des fragments est vital."""
+        import base64
+        try:
+            uid = str(data.get("userId") or "")
+            payload = base64.b64decode(data.get("data") or "")
+            if not uid or not payload:
+                return
+            is_init = bool(data.get("init"))
+            frame = bytes([len(uid)]) + uid.encode() + bytes([1 if is_init else 0]) + payload
+            if is_init:
+                cls._pov_init[uid] = frame
+            for q in list(cls._pov_clients.values()):
+                # Client à la traîne : on jette les fragments média récents
+                # plutôt que d'accumuler (l'image reprendra, la latence non).
+                if q.qsize() < 120:
+                    q.put_nowait(frame)
+        except Exception as e:
+            logger.debug(f"[overlay] pov chunk relay failed: {e!r}")
+
+    @classmethod
+    async def _pov_feed(cls, request):
+        """WS binaire consommé par la page overlay (lecture MSE H264/fMP4).
+        À la connexion, on envoie d'abord l'init caché de chaque user actif
+        pour que les fragments média qui suivent soient décodables."""
+        from asyncio import Queue
+        ws = WebSocketResponse(max_msg_size=0)
+        await ws.prepare(request)
+        q = Queue()
+        for uid in list(cls._pov_users):
+            fr = cls._pov_init.get(uid)
+            if fr:
+                q.put_nowait(fr)
+        cls._pov_clients[ws] = q
+
+        async def sender():
+            try:
+                while True:
+                    await ws.send_bytes(await q.get())
+            except Exception:
+                pass
+
+        send_task = create_task(sender())
+        try:
+            async for _ in ws:
+                pass
+        finally:
+            cls._pov_clients.pop(ws, None)
+            send_task.cancel()
+        return ws
 
     @classmethod
     async def _unload(cls):
@@ -2178,7 +2341,9 @@ class Plugin:
         except Exception:
             pass
         try:
-            await cls.stop_voice_overlay()
+            cls._voice_ov_on = False
+            cls._pov_ov_on = False
+            await cls._maybe_stop_overlay_window()
         except Exception:
             pass
         if hasattr(cls, "webrtc_server"):

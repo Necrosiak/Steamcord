@@ -631,6 +631,115 @@ window.Vencord.Plugins.plugins.Steamcord = {
             } catch (e) { console.error("[Steamcord] video relay stop failed", e); }
         };
 
+        // ── Relais POV pour l'overlay in-game (H264/fMP4 → MSE) ──────────────
+        // L'overlay tourne dans WebKitGTK : PAS de WebRTC, et son MSE NE DÉCODE
+        // PAS le WebM/VP8 de MediaRecorder (sondé : démuxé mais jamais lu) —
+        // MAIS il DÉCODE le H264/MP4 fragmenté (sondé : readyState 3, lecture
+        // fluide). Donc : ICI (Chromium/Vesktop) on encode la piste en
+        // `video/mp4;codecs=avc1` avec MediaRecorder (vrai flux 30 fps, décodage
+        // matériel/logiciel efficace, contrairement au motion-JPEG) et on pousse
+        // les fragments par le WS local ; le backend les relaie à l'overlay qui
+        // les lit en MSE. Le 1er fragment (init : ftyp+moov) est marqué `init`
+        // et mis en cache backend pour tout consommateur qui se connecte après.
+        // Un encodeur par user relayé ; piste préférée = écran, sinon caméra.
+        window.STEAMCORD_POV = window.STEAMCORD_POV || {}; // userId -> entry
+
+        window.STEAMCORD_startPov = (userId) => {
+            if (window.STEAMCORD_POV[userId]) return;
+            const entry = { alive: true, streamKey: null, rec: null, kind: null };
+            window.STEAMCORD_POV[userId] = entry;
+
+            const acquire = async () => {
+                // Go Live : il faut s'ABONNER (STREAM_WATCH) pour que la piste
+                // écran arrive — même démarche que le relais WebRTC du QAM.
+                try {
+                    const WP = Vencord.Webpack;
+                    const chId = WP.findStore("SelectedChannelStore").getVoiceChannelId();
+                    const e2 = window.__sc_streamsForChannel(chId).find(x => (x.s.ownerId || x.s.userId) === userId);
+                    if (e2) {
+                        entry.streamKey = e2.key;
+                        const myId = WP.findStore("UserStore").getCurrentUser()?.id;
+                        const ASS = WP.findStore("ApplicationStreamingStore");
+                        if (!(ASS.getViewerIds?.(e2.key) || []).includes(myId)) {
+                            const watch = WP.findByCode('"STREAM_WATCH",streamKey');
+                            if (watch) watch(e2.s);
+                        }
+                    }
+                } catch (e) { /* pas de stream → cas caméra */ }
+                window.__sc_holdSinks(userId);
+                for (let i = 0; i < 50 && entry.alive; i++) {
+                    const found = window.__sc_videoTracksFor(userId);
+                    if (found.length) return found.find(x => x.kind === "screen") || found[0];
+                    await new Promise(r => setTimeout(r, 200));
+                }
+                return null;
+            };
+
+            (async () => {
+                while (entry.alive) {
+                    const sel = await acquire();
+                    if (!sel || !entry.alive) break;
+                    const track = sel.t;
+                    entry.kind = sel.kind;
+                    let rec;
+                    try {
+                        rec = new MediaRecorder(new MediaStream([track]),
+                            { mimeType: 'video/mp4;codecs=avc1.42E01E', videoBitsPerSecond: 2500000 });
+                    } catch (e) { console.error("[Steamcord] pov: MediaRecorder KO", e); break; }
+                    entry.rec = rec;
+                    let seq = 0;
+                    const stopped = new Promise((r) => { rec.onstop = r; rec.onerror = r; });
+                    rec.ondataavailable = async (ev2) => {
+                        if (!ev2.data || !ev2.data.size) return;
+                        try {
+                            const buf = new Uint8Array(await ev2.data.arrayBuffer());
+                            let bin = ""; const CH = 0x8000;
+                            for (let i = 0; i < buf.length; i += CH)
+                                bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+                            window.STEAMCORD_WS.send(JSON.stringify({
+                                type: "$pov_chunk", userId, kind: entry.kind,
+                                init: seq === 0, data: btoa(bin),
+                            }));
+                            seq++;
+                        } catch (e) { /* WS fermé : reprise au prochain start */ }
+                    };
+                    // timeslice court = faible latence (fragments fMP4 ~120 ms).
+                    rec.start(120);
+                    console.log("[Steamcord] pov: encodeur H264 " + sel.kind + " démarré pour " + userId);
+                    // Surveille la piste : morte (partage coupé) ou mutée
+                    // (caméra éteinte) → on stoppe et l'acquire suivant
+                    // re-sélectionne (nouveau fragment d'init pour l'overlay).
+                    while (entry.alive && track.readyState === "live" && !track.muted) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        window.__sc_holdSinks(userId);
+                    }
+                    try { if (rec.state !== "inactive") rec.stop(); } catch (e) {}
+                    await stopped;
+                    if (!entry.alive) break;
+                    await new Promise(r => setTimeout(r, 300));
+                }
+                delete window.STEAMCORD_POV[userId];
+                console.log("[Steamcord] pov: arrêté pour " + userId);
+            })();
+        };
+
+        window.STEAMCORD_stopPov = (userId) => {
+            const entry = window.STEAMCORD_POV[userId];
+            if (!entry) return;
+            entry.alive = false;
+            try { if (entry.rec && entry.rec.state !== "inactive") entry.rec.stop(); } catch (e) {}
+            // Ne fermer le stream Go Live / lâcher les sinks caméra que si le
+            // relais WebRTC du QAM ne regarde pas AUSSI ce user (sinon on lui
+            // couperait l'image sous le pied).
+            if (!window.STEAMCORD_VIDEO[userId]) {
+                window.__sc_releaseSinks(userId);
+                try {
+                    const close = Vencord.Webpack.findByCode('"STREAM_CLOSE",streamKey');
+                    if (close && entry.streamKey) close(entry.streamKey);
+                } catch (e) {}
+            }
+        };
+
         // Discord's MediaEngine reinitializes and OVERWRITES our getUserMedia override,
         // so it ends up calling the native one and capturing a silent CEF device →
         // nobody hears the user. Install our override resiliently (defineProperty with a
@@ -1432,6 +1541,12 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     if (entry && entry.pc) await entry.pc.setRemoteDescription(new RTCSessionDescription(data.payload));
                                     return;
                                 }
+                                case "$POV_START":
+                                    window.STEAMCORD_startPov(data.userId);
+                                    return;
+                                case "$POV_STOP":
+                                    window.STEAMCORD_stopPov(data.userId);
+                                    return;
                                 case "$login_token": {
                                     const t = data.token;
                                     if (!t) return;

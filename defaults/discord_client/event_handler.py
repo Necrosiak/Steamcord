@@ -175,6 +175,17 @@ class EventHandler:
     def _process_event(self, data):
         if data["type"] == "$ping":
             return
+        if data["type"] == "$pov_chunk":
+            # Fragments H264/fMP4 (MediaRecorder client) pour l'overlay POV,
+            # routés directement au hook du plugin sans passer par la machinerie
+            # d'events (pas un event Discord).
+            cb = getattr(self, "on_pov_chunk", None)
+            if cb:
+                try:
+                    cb(data)
+                except Exception as e:
+                    logger.debug(f"pov chunk hook failed: {e!r}")
+            return
         if data["type"] == "$diag":
             logger.info(f"[clientdiag] {data.get('m')}")
             return
