@@ -16,6 +16,31 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.18.1 — 2026-07-23
+
+Follow-up fixes for feedback on the 1.18.0 features.
+
+### Fixed
+- **In-game overlays** — the overlay toggle no longer silently reverts to off.
+  When enabling an overlay, the plugin now confirms the overlay window
+  actually stays up; if it fails to start, the toggle flips back immediately
+  instead of appearing on and then reverting the next time you open the panel.
+  (If overlays still fail to appear on your device, please attach the
+  `[overlay]` lines from `journalctl -u plugin_loader` — the underlying cause
+  on some setups is still being investigated.)
+- **Controller focus ring** now shows on the "All POV" and in-game overlay
+  buttons when navigating with a gamepad (previously the highlight only
+  appeared with touch, though the buttons were still pressable).
+- **Reaction counts** no longer briefly show one too many when you add or
+  remove your own reaction.
+- **Custom server emojis** now render inline in messages instead of showing
+  their raw `:name:` code.
+- **Notifications** are muted for the channel you have open in the fullscreen
+  chat (messages only — call, stream and camera notifications still come
+  through).
+- **Fullscreen chat** no longer scrolls to the bottom while you are acting on
+  a specific message (reacting, editing or deleting).
+
 ## 1.18.0 — 2026-07-23
 
 ### Added
