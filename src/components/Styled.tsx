@@ -3,9 +3,65 @@
 // scale on gamepad focus, one accent color per section. Keeping every
 // Steamcord control on this kit makes the three plugins read as one family.
 import { DialogButton } from "@decky/ui";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const Btn = DialogButton as any;
+
+// ── Modales « full-bleed » (grille multi-POV, plein écran vidéo) ─────────────
+// ModalRoot contraint son contenu à ~573px de large (DialogContent_InnerWidth,
+// mesuré au CDP sur écran 1500px : tuiles squelettiques). On déborde du cadre
+// en largeur viewport, centré via la marge (les % de margin se réfèrent au
+// parent). PAS de position:fixed : le dialog a un transform (animation) qui
+// devient le containing block du fixed → contenu effondré (mesuré : 612×28).
+export const FULL_BLEED = {
+  width: "96vw", marginLeft: "calc((100% - 96vw) / 2)", boxSizing: "border-box" as const,
+};
+
+// Efface le chrome du dialog Steam autour d'un contenu full-bleed (panneau
+// bleu/gris `DialogContent` rgb(14,20,27), ombre, bord — retour user : « c'est
+// pas très beau le fond ») et remplace le voile plein écran (un DÉGRADÉ,
+// background-image) par un fond sombre uni (l'UI Steam transparaissait trop).
+// ⚠️ DEUX pièges de contexte, tous deux constatés en live au CDP :
+//  • `document.getElementById` du contexte plugin NE VOIT PAS le document des
+//    modales showModal (il vit dans la fenêtre Big Picture, pas dans celle du
+//    SharedJSContext) → on part du NŒUD RÉEL fourni par le ref React du
+//    marqueur, et tout passe par SON ownerDocument ;
+//  • le `window` global du contexte plugin fait 1×1px (cf. useFillHeight) →
+//    mesures via ownerDocument.defaultView uniquement.
+// Styles inline !important : gagnent sur les classes minifiées de Steam sans
+// dépendre de leurs noms, et Steam ne re-render pas ces nœuds pendant la vie
+// de la modale (vérifié en patchant en live au CDP).
+const hideDialogChromeFrom = (marker: HTMLElement) => {
+  if (!marker.isConnected) return;
+  const win = marker.ownerDocument?.defaultView;
+  if (!win) return;
+  let p: HTMLElement | null = marker.parentElement;
+  for (let i = 0; p && i < 12; i++, p = p.parentElement) {
+    const cs = win.getComputedStyle(p);
+    const painted = cs.backgroundColor !== "rgba(0, 0, 0, 0)" || cs.backgroundImage !== "none" || cs.boxShadow !== "none";
+    if (!painted) continue;
+    if (p.getBoundingClientRect().width >= win.innerWidth * 0.98) {
+      // Premier ancêtre plein écran peint = le voile : fond sombre net, stop.
+      // (0.94 : à 0.88 les visuels clairs du magasin BPM transparaissaient
+      // encore — vu sur capture.)
+      p.style.setProperty("background", "rgba(0, 0, 0, 0.94)", "important");
+      break;
+    }
+    p.style.setProperty("background", "transparent", "important");
+    p.style.setProperty("box-shadow", "none", "important");
+    p.style.setProperty("border", "none", "important");
+  }
+};
+
+// Ref à poser sur un marqueur `<div ref={chromeHideMarkerRef} style={{display:
+// "none"}} />` dans le contenu de la modale : plusieurs passes, l'animation
+// d'ouverture bouge encore les mesures au montage (même motif que
+// useFillHeight) ; les passes sur une modale déjà fermée se voient à
+// isConnected et ne font rien.
+export const chromeHideMarkerRef = (el: HTMLDivElement | null) => {
+  if (!el) return;
+  [0, 300, 800].forEach((ms) => setTimeout(() => hideDialogChromeFrom(el), ms));
+};
 
 // Hauteur d'une liste scrollable qui remplit le QAM JUSQU'EN BAS SANS déborder,
 // quelle que soit la machine : mesurée depuis la position réelle du conteneur

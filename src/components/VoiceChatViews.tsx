@@ -9,7 +9,8 @@ import {
 import { SliderField, DialogButton, Focusable, ModalRoot, showModal } from "@decky/ui";
 import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
-import { focusHalo, ACCENT, DANGER } from "./Styled";
+import { focusHalo, ACCENT, DANGER, ActionCard, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
+import { VideoGridModal } from "./VideoGridFullscreen";
 
 // Réagit à l'arrivée du flux vidéo relayé (Vesktop→QAM) pour cet utilisateur.
 function useRemoteVideo(userId: string) {
@@ -96,7 +97,7 @@ const ModalRootAny = ModalRoot as any;
 // croyait plein écran, le user voyait une tranche). La modale, elle, est rendue
 // par Steam par-dessus tout l'écran, et le bouton B la ferme nativement
 // (onCancel) — exactement la maquette « window popup » de David (#8).
-function FullscreenVideoModal({ track, label, closeModal }:
+export function FullscreenVideoModal({ track, label, closeModal }:
   { track: MediaStreamTrack; label: ReactNode; closeModal?: () => void }) {
   const ms = useMemo(() => new MediaStream([track]), [track]);
   // La piste meurt (partage coupé pendant le plein écran) → on se referme au
@@ -108,6 +109,9 @@ function FullscreenVideoModal({ track, label, closeModal }:
   const ref = useCallback((el: HTMLVideoElement | null) => {
     if (el && el.srcObject !== ms) { el.srcObject = ms; (el as any).play?.().catch(() => {}); }
   }, [ms]);
+  // Vrai plein écran : déborde du cadre ~573px du dialog + chrome bleu/gris
+  // effacé (cf. Styled.tsx — retour user : « pas en plein écran, pas beau le
+  // fond », mêmes deux défauts que la grille multi-POV).
   return (
     <ModalRootAny
       closeModal={closeModal}
@@ -115,15 +119,16 @@ function FullscreenVideoModal({ track, label, closeModal }:
       onCancelActionDescription={t("video_exit_fullscreen")}
       bAllowFullSize
     >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, ...FULL_BLEED }}>
+        <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
         <div style={{
           fontSize: 14, fontWeight: 600, padding: "6px 12px", borderRadius: 8,
-          background: "rgba(255,255,255,0.06)",
+          background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", gap: 6,
         }}>{label}</div>
         <video
           ref={ref}
           autoPlay muted playsInline
-          style={{ width: "100%", maxHeight: "72vh", objectFit: "contain", background: "#000", borderRadius: 6, display: "block" }}
+          style={{ width: "100%", maxHeight: "78vh", objectFit: "contain", background: "#000", borderRadius: 6, display: "block" }}
         />
       </div>
     </ModalRootAny>
@@ -719,11 +724,24 @@ export function VoiceChatMembers() {
   const state = useSteamcordState();
   if (!state?.vc?.users) return <div />;
   const meId = state?.me?.id;
+  // Grille multi-POV : dès qu'au moins un participant diffuse (écran/cam), un
+  // bouton ouvre la vue plein écran avec TOUTES les POV du vocal (spec user —
+  // le plein écran par tuile individuelle reste accessible dans chaque bloc).
+  const anyVideo = state.vc.users.some((u: any) => u.id !== meId && (u.is_live || u.is_video));
   return (
-    <ul style={{ margin: 0, padding: "0 4px", boxSizing: "border-box", width: "100%", listStyle: "none", overflow: "hidden" }}>
-      {state.vc.users.map((user: any) => (
-        <UserRow key={user.id} user={user} isSelf={user.id === meId} />
-      ))}
-    </ul>
+    <>
+      {anyVideo && (
+        <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>
+          <ActionCard onClick={() => showModal(<VideoGridModal />)} center>
+            <IcFilm /> {t("video_grid_open")}
+          </ActionCard>
+        </div>
+      )}
+      <ul style={{ margin: 0, padding: "0 4px", boxSizing: "border-box", width: "100%", listStyle: "none", overflow: "hidden" }}>
+        {state.vc.users.map((user: any) => (
+          <UserRow key={user.id} user={user} isSelf={user.id === meId} />
+        ))}
+      </ul>
+    </>
   );
 }

@@ -71,15 +71,19 @@ export function initVideoRelay() {
   }) as any);
 }
 
-export function watchVideo(userId: string) {
-  // Un seul stream regardé à la fois (issue #8). Le relais capture les <video>
-  // du DOM globalement (impossible d'associer un élément à un stream précis) →
-  // deux streams regardés simultanément se recopient (bug « miroir » : le 2e
-  // affiche le 1er). En plus, le QAM est étroit : un seul stream affiché est
-  // plus lisible. On arrête donc tout autre stream avant d'ouvrir celui-ci.
-  for (const other of Array.from(watching)) {
-    if (other !== userId) stopVideo(other);
+export function watchVideo(userId: string, opts?: { exclusive?: boolean }) {
+  // Par défaut (panneau QAM) : un seul stream regardé à la fois. Historiquement
+  // une contrainte dure (capture DOM côté client → bug « miroir », issue #8),
+  // mais la capture lit depuis les pistes du moteur média PAR USER : plusieurs
+  // relais simultanés sont devenus possibles. On garde l'exclusivité dans le
+  // QAM par choix (panneau étroit + décodage logiciel : un seul flux lisible) ;
+  // la grille multi-POV plein écran passe `exclusive: false`.
+  if (opts?.exclusive !== false) {
+    for (const other of Array.from(watching)) {
+      if (other !== userId) stopVideo(other);
+    }
   }
+  if (watching.has(userId)) return;
   watching.add(userId);
   notify();
   call("watch_video", userId).catch(() => {});
