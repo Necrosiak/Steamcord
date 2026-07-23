@@ -34,8 +34,10 @@ function MemberAvatars({ members }: { members: ChannelMember[] }) {
 }
 
 // Puce icône minuscule (↑/↓/œil) — même style compact pour les 3, séparée du
-// bouton principal de la rangée pour ne pas intercepter son clic.
-function TinyIconBtn({ onClick, disabled, title, children }: { onClick: () => void; disabled?: boolean; title?: string; children: any }) {
+// bouton principal de la rangée pour ne pas intercepter son clic. Exportée :
+// l'onglet textuel réutilise le même mécanisme réordonner/masquer (mêmes prefs
+// backend, cf. main.py _apply_guild_prefs).
+export function TinyIconBtn({ onClick, disabled, title, children }: { onClick: () => void; disabled?: boolean; title?: string; children: any }) {
   return (
     <Btn
       onClick={(e: any) => { e?.stopPropagation?.(); if (!disabled) onClick(); }}

@@ -1,10 +1,11 @@
 import { DialogButton, Focusable, showModal, TextField } from "@decky/ui";
-import { call } from "@decky/api";
+import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight, focusHalo, ACCENT } from "./Styled";
-import { IcChat, IcLink, IcPaperclip } from "./Icons";
+import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 import { ChatFullscreenModal } from "./ChatFullscreen";
+import { TinyIconBtn } from "./ChannelBrowser";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -12,7 +13,7 @@ import { ChatFullscreenModal } from "./ChatFullscreen";
 let _textPoll: any = null;
 
 interface TextChannel { id: string; name: string; type: number; }
-interface Guild { id: string; name: string; icon: string | null; channels: TextChannel[]; }
+interface Guild { id: string; name: string; icon: string | null; channels: TextChannel[]; hidden?: boolean; }
 interface DMRecipient { id: string; username: string; avatar: string | null; }
 interface DMChannel {
   id: string; type: number; name: string; icon: string | null;
@@ -181,6 +182,17 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.reply_to.content}</span>
         </div>
       )}
+      {/* Avatar en taille FIXE (16px, rond) + verticalAlign négatif pour
+          s'asseoir sur la ligne du pseudo sans changer la hauteur de ligne —
+          demande user : la miniature ne doit rien déformer. size=32 CDN pour
+          rester net sur écran haute densité. */}
+      <img
+        src={m.avatar
+          ? `https://cdn.discordapp.com/avatars/${m.author_id}/${m.avatar}.webp?size=32`
+          : `https://cdn.discordapp.com/embed/avatars/0.png`}
+        width={16} height={16}
+        style={{ borderRadius: "50%", verticalAlign: "-3px", marginRight: 5 }}
+      />
       <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
       {m.bot && <span style={{ fontSize: 8, background: "#5865f2", color: "#fff", borderRadius: 3, padding: "0 3px", marginLeft: 4 }}>BOT</span>}
       <span style={{ opacity: 0.4, fontSize: 9, marginLeft: 5 }}>{shortTime(m.ts)}</span>
@@ -285,20 +297,23 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
   );
 }
 
-// `flex: "0 0 0%"` + `width: "auto"` explicites : un Btn (DialogButton) nu
+// `flex: "0 0 auto"` + `width: "auto"` explicites : un Btn (DialogButton) nu
 // dans un conteneur flex garde sinon sa largeur interne par défaut (100%) tant
 // que le flex-basis n'est pas forcé à une valeur non-"auto" — chaque puce/
 // bouton se retrouvait plein-largeur, empilé au lieu d'être côte à côte
 // (retour user #20, même famille que le bug soundboard/Envoyer déjà vu ce
 // soir). `width:"auto"` en style inline gagne toujours sur un défaut interne
 // en CSS classique, quelle que soit sa spécificité.
-// `minWidth: 0` en plus de `flex`/`width` : DialogButton a apparemment une
-// largeur minimale interne (comme TabBtn devait déjà le neutraliser avec
-// `minWidth: 0` dans index.tsx) qui l'emporte sur flex-basis:0% seul — sans
-// ça chaque puce restait large même une fois la logique flex neutralisée
-// (retour user, capture à l'appui : "+"/Répondre bien plus larges que leur
-// texte).
-const CHIP_SIZING = { flex: "0 0 0%", width: "auto", minWidth: 0 } as const;
+// ⚠️ Un essai précédent utilisait `flex-basis: "0%"` (pas "auto") pour aussi
+// neutraliser une largeur minimale interne du DialogButton — mais un
+// flex-basis EXPLICITE à 0% fixe la taille de base à zéro, et avec
+// flex-grow:0 le bouton ne peut alors JAMAIS dépasser 0 : le texte
+// (Répondre/Modifier/Supprimer) débordait sans jamais élargir sa boîte,
+// empilant le texte de plusieurs puces au même endroit (capture user,
+// texte illisible). `flex-basis: "auto"` redonne une taille de base basée
+// sur le contenu (ce qui était voulu depuis le début) tout en gardant
+// grow/shrink à 0 pour empêcher l'étirement plein-largeur.
+const CHIP_SIZING = { flex: "0 0 auto", width: "auto", minWidth: 0 } as const;
 
 function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boolean; onClick: () => void }) {
   const [focused, setFocused] = useState(false);
@@ -384,11 +399,19 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   const [channel, setChannel] = useState<{ id: string; name: string; dm: boolean } | null>(null);
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Réordonner/masquer les serveurs — même mécanisme (et mêmes prefs backend)
+  // que l'onglet vocal (ChannelBrowser). Les MP ne sont pas concernés.
+  const [showHidden, setShowHidden] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   // Charge la liste (serveurs ou MP) au montage, selon la source.
+  // `guilds` contient TOUJOURS l'ensemble complet (masqués inclus, flag
+  // `hidden`) — le filtrage pour l'affichage se fait au rendu (même piège
+  // évité que ChannelBrowser : sinon le compteur de masqués retombe à 0
+  // aussitôt un serveur masqué et ils deviennent irrécupérables).
   useEffect(() => {
     if (source === "servers") {
-      call<[], any>("get_text_channels")
+      call<[boolean], any>("get_text_channels", true)
         .then((res) => setGuilds(Array.isArray(res) ? res : []))
         .catch((e) => setError(errText(e)));
     } else {
@@ -397,6 +420,32 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         .catch((e) => setError(errText(e)));
     }
   }, [source]);
+
+  // Mêmes opérations que ChannelBrowser (prefs backend partagées) : le swap
+  // opère sur les positions RÉELLES dans `guilds` via la liste visible, pour
+  // ne jamais déplacer un masqué par accident.
+  const moveGuild = (guildId: string, delta: number) => {
+    setGuilds(prev => {
+      if (!prev) return prev;
+      const visible = prev.filter(g => !g.hidden);
+      const visIdx = visible.findIndex(g => g.id === guildId);
+      const targetVisIdx = visIdx + delta;
+      if (visIdx < 0 || targetVisIdx < 0 || targetVisIdx >= visible.length) return prev;
+      const otherId = visible[targetVisIdx].id;
+      const a = prev.findIndex(g => g.id === guildId);
+      const b = prev.findIndex(g => g.id === otherId);
+      const next = [...prev];
+      [next[a], next[b]] = [next[b], next[a]];
+      call("set_guild_order", next.map(g => g.id)).catch(() => {});
+      return next;
+    });
+  };
+
+  const toggleGuildHidden = (guild: Guild) => {
+    const nextHidden = !guild.hidden;
+    call("set_guild_hidden", guild.id, nextHidden).catch(() => {});
+    setGuilds(prev => prev?.map(g => (g.id === guild.id ? { ...g, hidden: nextHidden } : g)) ?? prev);
+  };
 
   // Preview passive du QAM : juste les derniers messages, pas d'historique ni
   // de fusion à gérer ici — la modale plein écran (ChatFullscreenModal) a son
@@ -426,19 +475,52 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     setChannel({ id, name, dm });
     setMessages(null);
     loadMessages(id);
+    // Salon suivi côté Vesktop : ses events MESSAGE_* sont poussés en temps
+    // réel (event Decky "chat_message", consommé ici ET par la modale plein
+    // écran). Le poll ne reste qu'en filet de sécurité de réconciliation
+    // (reconnexions, events manqués) — les messages arrivent à la seconde.
+    call("watch_channel", id).catch(() => {});
     if (_textPoll) clearInterval(_textPoll);
-    _textPoll = setInterval(() => loadMessages(id), 5000);
+    _textPoll = setInterval(() => loadMessages(id), 20000);
   };
 
   const closeChannel = () => {
     if (_textPoll) { clearInterval(_textPoll); _textPoll = null; }
+    call("watch_channel", "").catch(() => {});
     setChannel(null);
     setMessages(null);
   };
 
   useEffect(() => () => {
     if (_textPoll) { clearInterval(_textPoll); _textPoll = null; }
+    call("watch_channel", "").catch(() => {});
   }, []);
+
+  // Push temps réel pour l'aperçu passif : nouveaux messages / éditions /
+  // suppressions du salon ouvert (les réactions ne sont pas affichées ici).
+  useEffect(() => {
+    if (!channel) return;
+    const onChat = (data: any) => {
+      if (!data || String(data.channel_id) !== String(channel.id)) return;
+      if (data.op === "create" && data.message) {
+        setMessages((prev) => {
+          const base = prev ?? [];
+          if (base.some((m) => m.id === data.message.id)) return prev;
+          return [...base, data.message];
+        });
+        setTimeout(() => {
+          const el = document.getElementById(PREVIEW_LIST_ID);
+          if (el) el.scrollTop = el.scrollHeight;
+        }, 50);
+      } else if (data.op === "update" && data.message) {
+        setMessages((prev) => prev?.map((m) => m.id === data.message.id ? { ...m, ...data.message } : m) ?? prev);
+      } else if (data.op === "delete" && data.message_id) {
+        setMessages((prev) => prev?.filter((m) => m.id !== data.message_id) ?? prev);
+      }
+    };
+    addEventListener("chat_message", onChat);
+    return () => removeEventListener("chat_message", onChat);
+  }, [channel?.id]);
 
   // ── Vue passive d'un salon / d'une conversation : juste un aperçu des
   // derniers messages (non interactif, toujours collé aux plus récents) + un
@@ -458,6 +540,13 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
           {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_messages")}</div>}
           {preview.map((m) => (
             <div key={m.id} style={{ fontSize: 11, lineHeight: 1.35, marginBottom: 4, wordBreak: "break-word" }}>
+              <img
+                src={m.avatar
+                  ? `https://cdn.discordapp.com/avatars/${m.author_id}/${m.avatar}.webp?size=32`
+                  : `https://cdn.discordapp.com/embed/avatars/0.png`}
+                width={14} height={14}
+                style={{ borderRadius: "50%", verticalAlign: "-2px", marginRight: 4 }}
+              />
               <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
               {"  "}
               <span style={{ opacity: 0.85 }}>
@@ -500,38 +589,81 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   }
 
   // ── Vue BROWSER : serveurs → salons texte ─────────────────────────────────
+  // Réordonner/masquer : même UI que l'onglet vocal (ChannelBrowser) — puces
+  // ↑/↓/œil cachées par défaut, révélées par le bouton réorganiser ; l'œil de
+  // récupération visible dès qu'on parcourt les masqués.
+  const hiddenCount = (guilds ?? []).filter(g => g.hidden).length;
+  const visibleGuilds = (guilds ?? []).filter(g => showHidden || !g.hidden);
   return (
     <div>
       {error && <div style={{ padding: 8, color: "#ff6b6b", fontSize: 11 }}>{error}</div>}
       {guilds === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading_servers")}</div>}
       {guilds && guilds.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_channels")}</div>}
       {guilds && guilds.length > 0 && (
-        <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "auto", marginTop: 4 }}>
-          {guilds.map((guild) => (
-            <div key={guild.id} style={{ marginBottom: 3 }}>
+        <>
+          <Focusable flow-children="row" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginBottom: 4 }}>
+            {(showHidden || hiddenCount > 0) && (
               <Btn
-                onClick={() => setExpanded(expanded === guild.id ? null : guild.id)}
-                style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "5px 8px" }}
+                onClick={() => setShowHidden(s => !s)}
+                title={showHidden ? t("servers_show_visible") : t("servers_hidden_count", { count: hiddenCount })}
+                style={{ padding: "2px 6px", fontSize: 10, minHeight: 0, display: "flex", alignItems: "center", gap: 3 }}
               >
-                {guild.icon
-                  ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=32`} width={18} height={18} style={{ borderRadius: "50%", flexShrink: 0 }} />
-                  : <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#5865f2", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff" }}>{guild.name[0]}</div>}
-                <span style={{ flex: 1, textAlign: "left", fontSize: 12 }}>{guild.name}</span>
-                <span style={{ opacity: 0.4, fontSize: 10 }}>{expanded === guild.id ? "▲" : "▼"}</span>
+                {showHidden ? <IcEyeSlash /> : <IcEye />}
+                {!showHidden && <span>{hiddenCount}</span>}
               </Btn>
-              {expanded === guild.id && (
-                <div style={{ paddingLeft: 6, marginTop: 2 }}>
-                  {guild.channels.map((ch) => (
-                    <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, false)} style={{ width: "100%", padding: "4px 8px", marginBottom: 2, fontSize: 11, display: "flex", gap: 6 }}>
-                      <span style={{ opacity: 0.6, fontSize: 10 }}>#</span>
-                      <span style={{ flex: 1, textAlign: "left" }}>{ch.name}</span>
-                    </Btn>
-                  ))}
+            )}
+            <TinyIconBtn
+              onClick={() => setEditMode(m => !m)}
+              title={editMode ? t("servers_edit_done") : t("servers_edit_mode")}
+            >
+              <span style={{ color: editMode ? "#5865f2" : undefined }}><IcReorder /></span>
+            </TinyIconBtn>
+          </Focusable>
+          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "auto", marginTop: 4 }}>
+            {visibleGuilds.map((guild, i) => {
+              const rowBtn = (flex: boolean) => (
+                <Btn
+                  onClick={() => setExpanded(expanded === guild.id ? null : guild.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 7, width: flex ? undefined : "100%", flex: flex ? 1 : undefined, minWidth: 0, padding: "5px 8px" }}
+                >
+                  {guild.icon
+                    ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=32`} width={18} height={18} style={{ borderRadius: "50%", flexShrink: 0 }} />
+                    : <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#5865f2", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff" }}>{guild.name[0]}</div>}
+                  <span style={{ flex: 1, textAlign: "left", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
+                  <span style={{ opacity: 0.4, fontSize: 10 }}>{expanded === guild.id ? "▲" : "▼"}</span>
+                </Btn>
+              );
+              return (
+                <div key={guild.id} style={{ marginBottom: 3, opacity: guild.hidden ? 0.5 : 1 }}>
+                  {(editMode || showHidden) ? (
+                    <Focusable flow-children="row" style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                      {rowBtn(true)}
+                      {editMode && !showHidden && (
+                        <>
+                          <TinyIconBtn onClick={() => moveGuild(guild.id, -1)} disabled={i === 0} title={t("server_move_up")}><IcChevronUp /></TinyIconBtn>
+                          <TinyIconBtn onClick={() => moveGuild(guild.id, 1)} disabled={i === visibleGuilds.length - 1} title={t("server_move_down")}><IcChevronDown /></TinyIconBtn>
+                        </>
+                      )}
+                      <TinyIconBtn onClick={() => toggleGuildHidden(guild)} title={guild.hidden ? t("server_unhide") : t("server_hide")}>
+                        {guild.hidden ? <IcEye /> : <IcEyeSlash />}
+                      </TinyIconBtn>
+                    </Focusable>
+                  ) : rowBtn(false)}
+                  {expanded === guild.id && (
+                    <div style={{ paddingLeft: 6, marginTop: 2 }}>
+                      {guild.channels.map((ch) => (
+                        <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, false)} style={{ width: "100%", padding: "4px 8px", marginBottom: 2, fontSize: 11, display: "flex", gap: 6 }}>
+                          <span style={{ opacity: 0.6, fontSize: 10 }}>#</span>
+                          <span style={{ flex: 1, textAlign: "left" }}>{ch.name}</span>
+                        </Btn>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

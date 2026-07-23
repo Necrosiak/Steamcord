@@ -34,6 +34,7 @@ class EventHandler:
             "$VIDEO_WEBRTC": self._video_webrtc,
             "CALL_RING": self._call_ring,
             "TYPING_START": self._typing_start,
+            "CHAT_MESSAGE": self._chat_message,
         }
         self.loaded = False
         self.logged_in = False
@@ -426,6 +427,21 @@ class EventHandler:
         await emit("typing", {
             "channel_id": str(data.get("channel_id") or ""),
             "username": data.get("username") or "",
+        })
+
+    async def _chat_message(self, data):
+        # Live chat push for the channel currently watched by the QAM/fullscreen
+        # chat (the Vesktop tab only forwards MESSAGE_* events for the watched
+        # channel, see $watch_channel). op = create / update / delete /
+        # reaction_add / reaction_remove; the frontend patches its local list —
+        # messages arrive the second they are sent instead of on the next poll.
+        await emit("chat_message", {
+            "op": data.get("op") or "",
+            "channel_id": str(data.get("channel_id") or ""),
+            "message": data.get("message"),
+            "message_id": str(data.get("message_id") or ""),
+            "emoji": data.get("emoji") or "",
+            "me": bool(data.get("me")),
         })
 
     async def _mic_webrtc(self, data):

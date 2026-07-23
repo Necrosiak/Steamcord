@@ -147,6 +147,10 @@ class StoreAccess:
     async def send_typing(self, channel_id):
         return await self._store_access_request("$send_typing", id=channel_id)
 
+    async def watch_channel(self, channel_id):
+        # channel_id vide/None = plus aucun salon suivi (fermeture du chat).
+        return await self._store_access_request("$watch_channel", id=channel_id or None)
+
     async def edit_message(self, channel_id, message_id, content):
         return await self._store_access_request("$edit_message", id=channel_id, message_id=message_id, content=content)
 

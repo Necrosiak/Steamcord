@@ -48,20 +48,24 @@ const FS_MSG_FLOW_ID = "steamcord-msgflow-fs";
 // Niveau module (évite useRef, cf. TextChat.tsx) : un seul modal ouvert à la
 // fois, pas besoin d'un état par instance pour ce simple throttle.
 let _lastTypingSent = 0;
+// Brouillon par salon, survivant à la fermeture de la modale : la modale peut
+// se fermer par accident (B du clavier virtuel qui remonte jusqu'au onCancel,
+// appui à côté d'un bouton…) — sans ça le message en cours de frappe était
+// PERDU (retour user : "la conv se ferme et le message n'est pas parti").
+const _draftByChannel: Record<string, string> = {};
 
-// Plusieurs tentatives échelonnées : à l'ouverture de la modale (animation de
-// transition) ou juste après le 1er chargement, la hauteur réelle du contenu
-// (images pas encore décodées, layout pas encore stabilisé) peut ne pas être
-// définitive au 1er essai — un seul scrollTop=scrollHeight à 50ms laissait
-// parfois la vue pas tout à fait en bas (retour user #20).
-const RETRY_DELAYS = [50, 150, 300, 600];
+// Le conteneur scrollable est en `flex-direction: column-reverse` (l'astuce
+// standard des UIs de chat, Discord inclus) : dans ce mode le navigateur ancre
+// nativement la vue sur le BAS (scrollTop 0 = bas, valeurs NÉGATIVES en
+// remontant) — la conv s'ouvre donc directement sur le dernier message, sans
+// timer ni retry, même si des images se décodent après coup (l'ancrage natif
+// tient tout seul, contrairement aux anciens scrollTop=scrollHeight échelonnés
+// qui rataient dès que la hauteur bougeait encore — retour user #20, deux fois).
 const scrollFsBottom = () => {
-  for (const d of RETRY_DELAYS) {
-    setTimeout(() => {
-      const el = document.getElementById(FS_MSG_LIST_ID);
-      if (el) el.scrollTop = el.scrollHeight;
-    }, d);
-  }
+  setTimeout(() => {
+    const el = document.getElementById(FS_MSG_LIST_ID);
+    if (el) el.scrollTop = 0;
+  }, 50);
 };
 // Focus manette initial sur le DERNIER message (retour user #20) — sans ça,
 // Steam pose le focus sur le tout premier élément focusable de la modale (le
@@ -85,13 +89,15 @@ const focusLastMessage = () => {
     flow?.focus?.();
     setTimeout(() => {
       const el = document.getElementById(FS_MSG_LIST_ID);
-      if (el) el.scrollTop = el.scrollHeight;
+      if (el) el.scrollTop = 0;
     }, 50);
   }, 700);
 };
+// En column-reverse, scrollTop vaut 0 en bas et devient NÉGATIF en remontant
+// dans l'historique (sémantique Chromium standard pour ce mode).
 const isFsNearBottom = () => {
   const el = document.getElementById(FS_MSG_LIST_ID);
-  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  return !el || -el.scrollTop < NEAR_BOTTOM_PX;
 };
 
 // Vraie vue plein écran d'un salon/conversation — historique navigable,
@@ -113,7 +119,7 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(_draftByChannel[channelId] || "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, setFocusedInitial] = useState(false);
@@ -183,29 +189,85 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
 
   useEffect(() => {
     loadMessages(true);
-    const iv = setInterval(() => loadMessages(false), 5000);
+    // Poll = simple filet de sécurité de réconciliation (events manqués
+    // pendant une reconnexion WS, réactions custom…) : les nouveaux messages
+    // arrivent en TEMPS RÉEL via l'event "chat_message" ci-dessous, plus
+    // besoin d'un poll rapproché (retour user : les messages doivent arriver
+    // à la seconde, pas au prochain poll).
+    const iv = setInterval(() => loadMessages(false), 20000);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
-  // Remonte un lot plus ancien et le préfixe à la liste, en compensant le
-  // scroll pour ne pas faire sauter la vue (même recette que l'ancien panneau).
+  // Diagnostic fermeture fantôme (retour user : "j'envoie, la conv se ferme et
+  // le message n'est pas parti" — AUCUN appel send_message dans webhelper_js à
+  // ce moment-là, donc la modale s'est fermée SANS que le bouton soit activé).
+  // Trace le démontage pour corréler avec les inputs la prochaine fois.
+  useEffect(() => () => console.log("[Steamcord] fullscreen chat unmounted (channel " + channelId + ")"), [channelId]);
+
+  // Push temps réel : nouveaux messages / éditions / suppressions / réactions
+  // du salon suivi, poussés par le backend via l'event Decky "chat_message"
+  // (même canal que "typing") dès que Discord les reçoit.
+  useEffect(() => {
+    const onChat = (data: any) => {
+      if (!data || String(data.channel_id) !== String(channelId)) return;
+      if (data.op === "create" && data.message) {
+        // La personne dont le message vient d'arriver n'est plus "en train
+        // d'écrire" — Discord n'envoie pas d'event de fin de frappe.
+        setTypingUser((cur) => (cur === data.message.author ? null : cur));
+        const wasNearBottom = isFsNearBottom();
+        setMessages((prev) => {
+          if (!prev) return [data.message];
+          if (prev.some((m) => m.id === data.message.id)) return prev;
+          return [...prev, data.message];
+        });
+        // Re-colle explicitement en bas si on y était (mesuré au CDP : même
+        // en column-reverse, scrollTop dérivait de quelques px sous les
+        // insertions → le nouveau message finissait coupé par le bord bas).
+        // Plus haut dans l'historique : on n'y touche pas, le bouton
+        // "revenir aux derniers messages" est là pour ça.
+        if (wasNearBottom) { scrollFsBottom(); setAtBottom(true); }
+      } else if (data.op === "update" && data.message) {
+        setMessages((prev) => prev?.map((m) => m.id === data.message.id ? { ...m, ...data.message } : m) ?? prev);
+      } else if (data.op === "delete" && data.message_id) {
+        setMessages((prev) => prev?.filter((m) => m.id !== data.message_id) ?? prev);
+      } else if ((data.op === "reaction_add" || data.op === "reaction_remove") && data.message_id && data.emoji) {
+        const delta = data.op === "reaction_add" ? 1 : -1;
+        setMessages((prev) => prev?.map((m) => {
+          if (m.id !== data.message_id) return m;
+          const reactions = [...(m.reactions || [])];
+          const i = reactions.findIndex((r) => r.emoji === data.emoji);
+          if (i >= 0) {
+            const next = {
+              ...reactions[i],
+              count: reactions[i].count + delta,
+              me: data.me ? delta > 0 : reactions[i].me,
+            };
+            if (next.count <= 0) reactions.splice(i, 1); else reactions[i] = next;
+          } else if (delta > 0) {
+            reactions.push({ emoji: data.emoji, count: 1, me: !!data.me });
+          }
+          return { ...m, reactions };
+        }) ?? prev);
+      }
+    };
+    addEventListener("chat_message", onChat);
+    return () => removeEventListener("chat_message", onChat);
+  }, [channelId]);
+
+  // Remonte un lot plus ancien et le préfixe à la liste. Pas de compensation
+  // de scroll : en column-reverse la position est mesurée depuis le BAS, donc
+  // du contenu ajouté en haut ne fait pas sauter la vue (ancrage natif).
   const loadOlder = () => {
     if (!messages || messages.length === 0 || loadingOlder || !hasMore) return;
     setLoadingOlder(true);
     const oldestId = messages[0].id;
-    const el = document.getElementById(FS_MSG_LIST_ID);
-    const prevScrollHeight = el?.scrollHeight ?? 0;
     call<[string, string], any>("get_messages", channelId, oldestId)
       .then((res) => {
         const older: Message[] = Array.isArray(res) ? res : [];
         setHasMore(older.length >= PAGE_SIZE);
         if (older.length > 0) {
           setMessages((prev) => [...older, ...(prev || [])]);
-          setTimeout(() => {
-            const el2 = document.getElementById(FS_MSG_LIST_ID);
-            if (el2) el2.scrollTop += el2.scrollHeight - prevScrollHeight;
-          }, 50);
         }
       })
       .catch(() => {})
@@ -214,14 +276,19 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
 
   const send = async () => {
     const text = draft.trim();
+    console.log("[Steamcord] fullscreen chat send() text.len=" + text.length + " sending=" + sending);
     if (!text || sending) return;
     setSending(true);
     try {
       await call("send_message", channelId, text, replyTarget?.id);
       setDraft("");
+      delete _draftByChannel[channelId];
       setReplyTarget(null);
       loadMessages(true);
-    } catch (e) { setError(String(e)); }
+    } catch (e) {
+      console.error("[Steamcord] fullscreen chat send FAILED", e);
+      setError(String(e));
+    }
     setSending(false);
   };
 
@@ -242,31 +309,49 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
           {isDm ? channelName : `#${channelName}`}
         </div>
 
+        {/* Ancrage bas type chat : le SCROLLER est en flex column-reverse →
+            le navigateur ancre nativement la vue en bas (scrollTop 0 = bas,
+            valeurs négatives en remontant), la conv s'ouvre sur le dernier
+            message et y reste collée, sans timers.
+            ⚠️ Trois pièges rencontrés en vrai (retours user en direct) :
+            ① Le scroller ne doit avoir qu'UN SEUL enfant (le Focusable, avec
+            flexShrink:0) : un conteneur flex à hauteur contrainte COMPRESSE
+            ses enfants avant de laisser déborder — avec les messages en
+            enfants directs, tous écrasés à ~0 de haut, texte superposé ET nav
+            morte (une cible à hauteur nulle n'est plus un arrêt de nav).
+            ② overflow-anchor: none — le scroll-anchoring de Chromium se bat
+            avec column-reverse à chaque insertion de message : mesuré au CDP,
+            scrollTop dérivait de 0 à -10px et le nouveau message glissait
+            SOUS le bord bas du scroller ("le message arrive en dessous de la
+            zone de saisie"). L'ancrage column-reverse suffit, celui de
+            Chromium ne fait que parasiter.
+            ③ Le flow interne reste un "column" NORMAL (chronologique, plus
+            ancien en premier, "charger les plus anciens" tout en haut du DOM
+            comme du visuel) : un flow-children="column-reverse" a un ordre de
+            nav ambigu côté Steam — l'entrée depuis le composer atterrissait
+            sur le message le PLUS ANCIEN. Avec column + navEntryPreferPosition
+            =LAST, l'entrée vise le DERNIER enfant = le message le plus récent
+            (en bas, adjacent au composer), puis chaque cran remonte d'un
+            message. Le Focusable n'ayant pas de hauteur contrainte, ses
+            enfants gardent leur vraie taille (cf. ①). */}
         <div
           id={FS_MSG_LIST_ID}
-          style={{ flex: 1, overflowY: "auto", paddingRight: 4 }}
+          style={{ flex: 1, overflowY: "auto", paddingRight: 4, display: "flex", flexDirection: "column-reverse", overflowAnchor: "none" }}
           onScroll={() => setAtBottom(isFsNearBottom())}
         >
-          {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading_messages")}</div>}
-          {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 13 }}>{t("no_messages")}</div>}
-          {messages !== null && messages.length > 0 && hasMore && (
-            <div style={{ marginBottom: 8 }}>
+          <Focusable
+            id={FS_MSG_FLOW_ID}
+            flow-children="column"
+            navEntryPreferPosition={NavEntryPositionPreferences.LAST}
+            style={{ flexShrink: 0 }}
+          >
+            {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading_messages")}</div>}
+            {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 13 }}>{t("no_messages")}</div>}
+            {messages !== null && messages.length > 0 && hasMore && (
               <ActionCard disabled={loadingOlder} onClick={loadOlder} center>
                 {loadingOlder ? t("loading_older") : t("load_older")}
               </ActionCard>
-            </div>
-          )}
-          {/* flow-children="column" (PAS "vertical" — le module Steam lui-même,
-              inspecté en direct au CDP, n'accepte que row/row-reverse/column/
-              column-reverse/grid/geometric ; "horizontal"/"vertical"
-              déclenchaient "Unhandled flow-children" à CHAQUE re-render de
-              cette liste, un vrai plantage React récurrent qui empêchait même
-              les nouveaux messages de s'afficher — cf. commit de ce soir).
-              navEntryPreferPosition=LAST : retour user #20 ("les plus anciens
-              en premier, contre-productif") — Steam pose sinon le focus sur le
-              PREMIER enfant à chaque entrée dans ce conteneur (comportement
-              par défaut de FooterLegend). */}
-          <Focusable id={FS_MSG_FLOW_ID} flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.LAST}>
+            )}
             {messages?.map((m) => (
               <MessageRow
                 key={m.id}
@@ -314,7 +399,20 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal }
             onChange={(e: any) => {
               const v = e?.target?.value ?? "";
               setDraft(v);
+              _draftByChannel[channelId] = v;
               if (v.trim()) notifyTyping();
+            }}
+            // Entrée = envoyer (standard de toute app de chat) : la validation
+            // du clavier virtuel part le message DIRECTEMENT, sans avoir à
+            // naviguer jusqu'au bouton Envoyer — c'est aussi la parade au bug
+            // "j'envoie, la conv se ferme et le message n'est pas parti"
+            // (webhelper_js : AUCUN appel send_message au moment du clic, la
+            // modale s'était fermée avant que le bouton soit réellement activé).
+            onKeyDown={(e: any) => {
+              if (e?.key === "Enter" && !e?.shiftKey) {
+                e.preventDefault?.();
+                send();
+              }
             }}
             style={{ fontSize: 13, width: "100%" }}
           />

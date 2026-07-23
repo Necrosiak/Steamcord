@@ -836,17 +836,17 @@ class Plugin:
         return True
 
     @classmethod
-    async def get_guilds_vc(cls, include_hidden=False):
-        guilds = await cls.evt_handler.api.get_guilds_vc()
-        if not isinstance(guilds, list):
-            return guilds
-        hidden = cls._hidden_guilds_set()
-        order = cls._guild_order_list()
+    def _apply_guild_prefs(cls, guilds, include_hidden):
+        # Ordre + masquage PARTAGÉS entre l'onglet vocal et l'onglet textuel
+        # (mêmes fichiers de prefs) : cacher/déplacer un serveur agit sur les
+        # deux listes d'un coup — ce sont les mêmes serveurs.
         # Un serveur PAS dans `order` (nouveau, jamais réordonné, ou qu'on a
         # quitté depuis) atterrit après ceux explicitement ordonnés, dans son
         # ordre naturel Discord — jamais perdu, jamais planté par une entrée
         # périmée (le dict `present` filtre silencieusement les ids qui ne
         # correspondent plus à un serveur actuel).
+        hidden = cls._hidden_guilds_set()
+        order = cls._guild_order_list()
         present = {g.get("id"): g for g in guilds if isinstance(g, dict) and g.get("id")}
         ordered = [present[gid] for gid in order if gid in present]
         ordered_ids = {g.get("id") for g in ordered}
@@ -855,6 +855,13 @@ class Plugin:
         for g in merged:
             g["hidden"] = g.get("id") in hidden
         return merged if include_hidden else [g for g in merged if not g["hidden"]]
+
+    @classmethod
+    async def get_guilds_vc(cls, include_hidden=False):
+        guilds = await cls.evt_handler.api.get_guilds_vc()
+        if not isinstance(guilds, list):
+            return guilds
+        return cls._apply_guild_prefs(guilds, include_hidden)
 
     @classmethod
     async def join_vc(cls, channel_id, guild_id):
@@ -869,8 +876,13 @@ class Plugin:
         return await cls.evt_handler.api.dm_call(channel_id, join_existing)
 
     @classmethod
-    async def get_text_channels(cls):
-        return await cls.evt_handler.api.get_text_channels()
+    async def get_text_channels(cls, include_hidden=False):
+        guilds = await cls.evt_handler.api.get_text_channels()
+        if not isinstance(guilds, list):
+            return guilds
+        # Mêmes prefs ordre/masquage que l'onglet vocal (les MP ne sont pas
+        # concernés — liste séparée, get_dm_channels).
+        return cls._apply_guild_prefs(guilds, include_hidden)
 
     @classmethod
     async def get_messages(cls, channel_id, before=None):
@@ -883,6 +895,10 @@ class Plugin:
     @classmethod
     async def send_typing(cls, channel_id):
         return await cls.evt_handler.api.send_typing(channel_id)
+
+    @classmethod
+    async def watch_channel(cls, channel_id=None):
+        return await cls.evt_handler.api.watch_channel(channel_id)
 
     @classmethod
     async def edit_message(cls, channel_id, message_id, content):

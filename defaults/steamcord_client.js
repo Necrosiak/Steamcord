@@ -7,6 +7,57 @@ window.STEAMCORD_IS_VESKTOP = window.STEAMCORD_IS_VESKTOP
     || !!window.VesktopNative
     || (navigator.userAgent || "").toLowerCase().includes("vesktop");
 
+// ── Mapping message Discord → forme attendue par le frontend QAM ─────────────
+// Partagé entre $get_messages (chargement/pagination) et l'intercepteur Flux
+// MESSAGE_CREATE/UPDATE (push temps réel du salon suivi) — même forme des deux
+// côtés, sinon un message poussé en direct n'aurait pas le même rendu qu'un
+// message chargé.
+window.__sc_isImg = (a) => (a?.content_type || "").startsWith("image/")
+    || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(a?.filename || a?.url || "");
+window.__sc_mapMsg = (m) => {
+    const isImg = window.__sc_isImg;
+    const atts = Array.isArray(m.attachments) ? m.attachments : [];
+    // Images = pièces jointes image + images d'embeds (liens d'images
+    // postés deviennent des embeds). proxy_url = CDN média redimensionnable.
+    const images = [];
+    for (const a of atts) {
+        if (isImg(a)) images.push({ url: a.url, proxy_url: a.proxy_url || a.url, w: a.width || 0, h: a.height || 0 });
+    }
+    for (const e of (Array.isArray(m.embeds) ? m.embeds : [])) {
+        const im = e?.image || e?.thumbnail;
+        if (im && im.url) images.push({ url: im.url, proxy_url: im.proxy_url || im.url, w: im.width || 0, h: im.height || 0 });
+    }
+    // Réactions : uniquement les emojis Unicode standards pour l'instant (pas
+    // les emojis custom du serveur — il faudrait charger la liste des emojis
+    // de la guilde pour les afficher, hors scope). `emoji.id` non-null =
+    // emoji custom → ignoré.
+    const reactions = (Array.isArray(m.reactions) ? m.reactions : [])
+        .filter(r => !r.emoji?.id)
+        .map(r => ({ emoji: r.emoji?.name || "", count: r.count || 0, me: !!r.me }));
+    // Contexte de citation si CE message est une réponse. Discord résout
+    // `referenced_message` en même temps que le message qui répond (null si
+    // le message cité a été supprimé depuis).
+    const ref = m.referenced_message;
+    const reply_to = ref ? {
+        author: ref.author?.global_name || ref.author?.username || "?",
+        content: (ref.content || "").slice(0, 80),
+    } : null;
+    return {
+        id: String(m.id),
+        author: m.author?.global_name || m.author?.username || "?",
+        author_id: String(m.author?.id || ""),
+        avatar: m.author?.avatar || null,
+        bot: !!m.author?.bot,
+        content: m.content ?? "",
+        ts: m.timestamp || null,
+        images,
+        files: atts.filter(a => !isImg(a)).length,
+        reactions,
+        reply_to,
+        _hasBody: !!(m.content) || images.length > 0 || atts.length > 0,
+    };
+};
+
 // CEF only: override Page Visibility API so Discord audio/WebRTC stays active in a
 // hidden BrowserView (Chrome throttles background tabs). Not needed in Vesktop.
 if (!window.STEAMCORD_IS_VESKTOP) try {
@@ -1283,50 +1334,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // MessageStore est vide pour un salon non ouvert → RestAPI (newest-first,
                                     // on inverse pour l'ordre de lecture). Timestamps ISO. `before` = pagination
                                     // vers l'historique (id du plus vieux message déjà chargé côté frontend).
-                                    const isImg = (a) => (a?.content_type || "").startsWith("image/")
-                                        || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(a?.filename || a?.url || "");
-                                    const mapMsg = (m) => {
-                                        const atts = Array.isArray(m.attachments) ? m.attachments : [];
-                                        // Images = pièces jointes image + images d'embeds (liens d'images
-                                        // postés deviennent des embeds). proxy_url = CDN média redimensionnable.
-                                        const images = [];
-                                        for (const a of atts) {
-                                            if (isImg(a)) images.push({ url: a.url, proxy_url: a.proxy_url || a.url, w: a.width || 0, h: a.height || 0 });
-                                        }
-                                        for (const e of (Array.isArray(m.embeds) ? m.embeds : [])) {
-                                            const im = e?.image || e?.thumbnail;
-                                            if (im && im.url) images.push({ url: im.url, proxy_url: im.proxy_url || im.url, w: im.width || 0, h: im.height || 0 });
-                                        }
-                                        // Réactions : uniquement les emojis Unicode standards pour
-                                        // l'instant (pas les emojis custom du serveur — il faudrait
-                                        // charger la liste des emojis de la guilde pour les afficher,
-                                        // hors scope). `emoji.id` non-null = emoji custom → ignoré.
-                                        const reactions = (Array.isArray(m.reactions) ? m.reactions : [])
-                                            .filter(r => !r.emoji?.id)
-                                            .map(r => ({ emoji: r.emoji?.name || "", count: r.count || 0, me: !!r.me }));
-                                        // Contexte de citation si CE message est une réponse. Discord
-                                        // résout `referenced_message` en même temps que le message qui
-                                        // répond (null si le message cité a été supprimé depuis).
-                                        const ref = m.referenced_message;
-                                        const reply_to = ref ? {
-                                            author: ref.author?.global_name || ref.author?.username || "?",
-                                            content: (ref.content || "").slice(0, 80),
-                                        } : null;
-                                        return {
-                                            id: String(m.id),
-                                            author: m.author?.global_name || m.author?.username || "?",
-                                            author_id: String(m.author?.id || ""),
-                                            avatar: m.author?.avatar || null,
-                                            bot: !!m.author?.bot,
-                                            content: m.content ?? "",
-                                            ts: m.timestamp || null,
-                                            images,
-                                            files: atts.filter(a => !isImg(a)).length,
-                                            reactions,
-                                            reply_to,
-                                            _hasBody: !!(m.content) || images.length > 0 || atts.length > 0,
-                                        };
-                                    };
+                                    const mapMsg = window.__sc_mapMsg;
                                     // Discord compte les événements système (arrivée de membre, boost…)
                                     // parmi les "messages" du salon — sans filtre, les 30 derniers peuvent
                                     // n'être QUE ça sur un salon peu actif (vu en vrai #20 : plein d'écran
@@ -1398,6 +1406,16 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     try {
                                         await Vencord.Webpack.Common.RestAPI.post({ url: `/channels/${data.id}/typing` });
                                     } catch (_) {}
+                                    result = true;
+                                    break;
+                                }
+                                case "$watch_channel": {
+                                    // Salon actuellement ouvert dans le QAM/plein écran : seuls
+                                    // les events MESSAGE_* de CE salon sont poussés en temps réel
+                                    // (cf. intercepteur Flux) — sans ce filtre on relayerait tout
+                                    // le trafic de toutes les guildes par le WS local pour rien.
+                                    // id vide/absent = plus aucun salon suivi (fermeture).
+                                    window.__sc_watched_channel = data.id ? String(data.id) : null;
                                     result = true;
                                     break;
                                 }
@@ -1603,6 +1621,47 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     username: u?.global_name || u?.username || "…",
                                 }));
                             }
+                        } else if ((e.type === "MESSAGE_CREATE" || e.type === "MESSAGE_UPDATE")
+                                   && window.__sc_watched_channel && e.message
+                                   && String(e.message.channel_id || e.channelId) === window.__sc_watched_channel) {
+                            // Push temps réel du salon suivi (retour user : les messages
+                            // doivent arriver à la seconde, pas au prochain poll). Même
+                            // mapping que $get_messages pour un rendu identique.
+                            // MESSAGE_UPDATE couvre aussi les embeds résolus après coup
+                            // (un lien posté devient une vignette quelques instants plus
+                            // tard via un UPDATE). Les events système sans corps (arrivée
+                            // de membre…) sont filtrés comme au chargement.
+                            const mapped = window.__sc_mapMsg(e.message);
+                            if (mapped._hasBody) {
+                                delete mapped._hasBody;
+                                window.STEAMCORD_WS.send(JSON.stringify({
+                                    type: "CHAT_MESSAGE",
+                                    op: e.type === "MESSAGE_CREATE" ? "create" : "update",
+                                    channel_id: window.__sc_watched_channel,
+                                    message: mapped,
+                                }));
+                            }
+                        } else if (e.type === "MESSAGE_DELETE" && window.__sc_watched_channel && e.id
+                                   && String(e.channelId) === window.__sc_watched_channel) {
+                            window.STEAMCORD_WS.send(JSON.stringify({
+                                type: "CHAT_MESSAGE",
+                                op: "delete",
+                                channel_id: window.__sc_watched_channel,
+                                message_id: String(e.id),
+                            }));
+                        } else if ((e.type === "MESSAGE_REACTION_ADD" || e.type === "MESSAGE_REACTION_REMOVE")
+                                   && window.__sc_watched_channel && e.messageId
+                                   && String(e.channelId) === window.__sc_watched_channel
+                                   && e.emoji && !e.emoji.id) { // Unicode uniquement, cf. mapMsg
+                            const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
+                            window.STEAMCORD_WS.send(JSON.stringify({
+                                type: "CHAT_MESSAGE",
+                                op: e.type === "MESSAGE_REACTION_ADD" ? "reaction_add" : "reaction_remove",
+                                channel_id: window.__sc_watched_channel,
+                                message_id: String(e.messageId),
+                                emoji: e.emoji.name || "",
+                                me: String(e.userId) === String(me?.id),
+                            }));
                         }
                     } catch (_) {}
 
