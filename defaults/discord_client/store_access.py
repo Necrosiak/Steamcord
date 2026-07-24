@@ -91,6 +91,15 @@ class StoreAccess:
             raise Exception("discord_reconnecting")
         finally:
             self.requests.pop(increment, None)
+        # Échec côté onglet Discord : le dispatcher répond quand même, avec une
+        # enveloppe `__sc_error` (voir le catch de steamcord_client.js). Sans ce
+        # relais, l'appel Decky réussissait avec un résultat vide et le frontend
+        # croyait l'action passée — une édition ratée fermait son éditeur et
+        # affichait le nouveau texte jusqu'au rafraîchissement suivant, sans
+        # rien signaler à personne (David #21). Clé dédiée : un simple `error`
+        # est un avertissement doux légitime pour d'autres commandes.
+        if isinstance(response.result, dict) and response.result.get("__sc_error"):
+            raise Exception(str(response.result["__sc_error"]))
         return response.result
 
     async def get_user(self, id):

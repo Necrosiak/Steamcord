@@ -1,8 +1,8 @@
 import { Focusable, ModalRoot, NavEntryPositionPreferences, TextField } from "@decky/ui";
 import { addEventListener, call, removeEventListener } from "@decky/api";
-import { useEffect, useState } from "react";
-import { t } from "../i18n";
-import { Btn, ChipBtn, Message, MessageRow, draftByChannel, notifyTypingThrottled, isInteractingWithMessage } from "./TextChat";
+import { useEffect, useRef, useState } from "react";
+import { errText, t } from "../i18n";
+import { Btn, ChipBtn, Message, MessageRow, draftByChannel, failReason, notifyTypingThrottled, isInteractingWithMessage, onMessageFocus, qamWatchedChannel } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
 import { IcChevronDown } from "./Icons";
 import { ActionCard, ACCENT, focusHalo } from "./Styled";
@@ -122,6 +122,24 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string } | null>(null);
 
+  // Suit-on encore le flux ? Faux dès que l'utilisateur SÉLECTIONNE un message
+  // qui n'est pas le dernier — la vue se fige alors sur ce qu'il regarde
+  // jusqu'à ce qu'il redescende ou utilise "revenir aux derniers messages"
+  // (David #21). En lecture passive, aucune prise de focus ne survient : le
+  // drapeau reste vrai et le chat continue de défiler comme avant.
+  const liveEdgeRef = useRef(true);
+  // Miroir des messages pour les callbacks non-React (focus, events) : leur
+  // closure capturerait sinon le tableau du rendu où elle a été créée.
+  const messagesRef = useRef<Message[] | null>(null);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  useEffect(() => onMessageFocus((id) => {
+    const list = messagesRef.current;
+    const atEdge = !list || !list.length || id === list[list.length - 1].id;
+    liveEdgeRef.current = atEdge;
+    if (!atEdge) setAtBottom(false); // fait apparaître "revenir aux derniers messages"
+  }), []);
+
   // "X is typing…" (#20) — poussé en direct par le backend (event Decky
   // "typing", pas de polling) dès qu'un TYPING_START Discord arrive pour ce
   // salon. Discord n'a pas d'event "a arrêté d'écrire" (juste des TYPING_START
@@ -149,7 +167,12 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
     call<[string], any>("get_messages", channelId)
       .then((res) => {
         const fresh: Message[] = Array.isArray(res) ? res : [];
-        const stick = force || isFsNearBottom();
+        // Le poll de réconciliation obéit aux mêmes gardes que l'arrivée d'un
+        // message en direct — sinon il suffisait d'attendre 20s pour que la vue
+        // soit arrachée sous un message sélectionné ou en cours d'édition.
+        if (force) liveEdgeRef.current = true;
+        const stick = force
+          || (isFsNearBottom() && liveEdgeRef.current && !isInteractingWithMessage());
         setMessages((prev) => {
           if (!prev) return fresh;
           // Un poll (force=false) qui revient vide est un aléa passager (API,
@@ -181,9 +204,25 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
     // arrivent en TEMPS RÉEL via l'event "chat_message" ci-dessous, plus
     // besoin d'un poll rapproché (retour user : les messages doivent arriver
     // à la seconde, pas au prochain poll).
-    const iv = setInterval(() => loadMessages(false), 20000);
+    const iv = setInterval(() => {
+      // Re-revendique le salon suivi à chaque tour : le direct repose sur une
+      // variable qui vit dans l'onglet Vesktop, et elle repart à zéro dès qu'il
+      // redémarre. La réaffirmer périodiquement fait repartir le direct tout
+      // seul au lieu de laisser la conversation sur le seul poll (David #21).
+      call("watch_channel", channelId).catch(() => {});
+      loadMessages(false);
+    }, 20000);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId]);
+
+  // Le direct de CE salon appartient à la modale tant qu'elle est ouverte : le
+  // QAM en pose un lui aussi, mais il se démonte derrière la modale et
+  // relâchait alors le suivi (voir `qamWatchedChannel` dans TextChat). À la
+  // fermeture, on rend la main au salon que le QAM avait ouvert, s'il y en a un.
+  useEffect(() => {
+    call("watch_channel", channelId).catch(() => {});
+    return () => { call("watch_channel", qamWatchedChannel() || "").catch(() => {}); };
   }, [channelId]);
 
   // Diagnostic fermeture fantôme (retour user : "j'envoie, la conv se ferme et
@@ -230,8 +269,14 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
         // Plus haut dans l'historique : on n'y touche pas, le bouton
         // "revenir aux derniers messages" est là pour ça.
         // …sauf si on est en train d'agir sur un message précis (react/edit/
-        // suppression) : on gèle la vue pour ne pas l'arracher (David #21).
-        if (wasNearBottom && !isInteractingWithMessage()) { scrollFsBottom(); setAtBottom(true); }
+        // suppression) ou si l'utilisateur en a simplement SÉLECTIONNÉ un plus
+        // haut : on gèle la vue pour ne pas l'arracher (David #21).
+        if (wasNearBottom && !isInteractingWithMessage() && liveEdgeRef.current) {
+          scrollFsBottom();
+          setAtBottom(true);
+        } else {
+          setAtBottom(false); // "revenir aux derniers messages" pour reprendre le flux
+        }
       } else if (data.op === "update" && data.message) {
         setMessages((prev) => prev?.map((m) => m.id === data.message.id ? { ...m, ...data.message } : m) ?? prev);
       } else if (data.op === "delete" && data.message_id) {
@@ -295,19 +340,28 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
     if (!text || sending) return;
     setSending(true);
     try {
-      await call("send_message", channelId, text, replyTarget?.id);
-      setDraft("");
-      delete draftByChannel[channelId];
-      setReplyTarget(null);
-      loadMessages(true);
+      const res = await call("send_message", channelId, text, replyTarget?.id);
+      // Refus explicite : le brouillon et la cible de réponse sont CONSERVÉS,
+      // sinon le message s'évanouirait en donnant l'illusion d'un envoi.
+      const bad = failReason(res);
+      if (bad) {
+        console.error("[Steamcord] fullscreen chat send refused:", bad);
+        setError(errText(bad));
+      } else {
+        setDraft("");
+        delete draftByChannel[channelId];
+        setReplyTarget(null);
+        loadMessages(true);
+      }
     } catch (e) {
       console.error("[Steamcord] fullscreen chat send FAILED", e);
-      setError(String(e));
+      setError(errText(e));
     }
     setSending(false);
   };
 
-  const jumpToLatest = () => { scrollFsBottom(); setAtBottom(true); };
+  // Reprend explicitement le flux : c'est la sortie de la sélection figée.
+  const jumpToLatest = () => { liveEdgeRef.current = true; scrollFsBottom(); setAtBottom(true); };
 
   return (
     <ModalRootAny

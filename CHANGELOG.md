@@ -16,6 +16,73 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.18.4 — 2026-07-24
+
+Bugfix release, entirely from @DavidNotProgamer2's chat report
+([#21](https://github.com/Necrosiak/Steamcord/issues/21)): the fullscreen chat
+stays where you put it, messages arrive live every time, and actions that fail
+now say why instead of pretending to have worked.
+
+> Updating from v1.18.2 or later works normally from the plugin — this release
+> adds no new top-level files.
+
+### Fixed
+
+- **Fullscreen chat no longer jumps to the newest message while you are reading
+  an older one** ([#21](https://github.com/Necrosiak/Steamcord/issues/21)). The
+  v1.18.1 fix only froze the view while you were *acting* on a message —
+  editing, reacting, deleting — and simply *selecting* one did not count. Worse,
+  the "are you still at the bottom?" test measured the scroll position, which is
+  blind to this case: selecting a message already on screen scrolls nothing, so
+  the list still looked pinned to the bottom and the next incoming message
+  yanked it away regardless. The view now follows which message your cursor is
+  on. Select anything that is not the newest and it holds still, with the "jump
+  to latest" button to resume. Passive reading still follows the conversation.
+- **Messages sometimes took 20 seconds to appear, or seemed never to arrive**
+  ([#21](https://github.com/Necrosiak/Steamcord/issues/21)). Live message events
+  are only pushed for the one channel the plugin declares it is watching, and
+  that declaration was made solely by the quick-access panel — which unmounts
+  behind the fullscreen window and released the channel on its way out. So
+  depending on how you got into fullscreen, the live feed was switched off
+  underneath it and messages only surfaced on the 20-second reconciliation poll.
+  That is why it looked random and had nothing to do with servers or DMs. The
+  fullscreen view now claims its own channel, re-claims it periodically (so it
+  also recovers by itself if the Discord tab restarts), and hands it back when
+  it closes.
+- **The quick-access chat preview showed the oldest messages instead of the
+  newest** ([#21](https://github.com/Necrosiak/Steamcord/issues/21)). It was
+  still using the delayed "scroll to the bottom" that loses the race whenever an
+  image finishes decoding after the fact, leaving you parked at the top of the
+  conversation with one or two messages visible. It is now anchored to the
+  bottom the same way the fullscreen list is.
+- **Editing, deleting or reacting could fail silently.** When one of these was
+  refused, the reason was thrown away in three separate places: the error was
+  serialised to an empty object on its way back from the Discord tab, the
+  backend read that empty result as a success, and the interface applied its
+  optimistic update anyway. A failed edit therefore closed the editor and
+  displayed your new text until the next refresh quietly replaced it — visually
+  identical to nothing having happened, with nothing in the logs either. These
+  failures are now visible: the reason appears in red under the message and in
+  the plugin log, the editor stays open with your text intact, and the
+  optimistic update is rolled back. The reason is the one Discord gives —
+  message, error code and HTTP status — not a generic placeholder.
+- **A message that could not be sent no longer disappears.** A refused send was
+  treated as a success: the draft was cleared and the conversation reloaded, so
+  the text vanished without ever reaching Discord. The draft — and the reply
+  you were answering — are now kept, with Discord's own reason shown.
+- **The quick-access message list no longer jumps to the oldest message when
+  you scroll down into it.** Entering the list from above landed on its first
+  child — the oldest message on screen — which tore the view away from the
+  recent messages it had just settled on. Entry now targets the newest message
+  whichever direction you come from, and each step up walks back through the
+  conversation.
+
+### Changed
+
+- **Overlay logs are now in English.** The `[overlay]` lines printed by the
+  helper and the backend were still partly in French, which is awkward given
+  that these are exactly the lines people paste into bug reports.
+
 ## 1.18.3 — 2026-07-24
 
 Bugfix release. In-game overlays finally work on a stock Steam Deck: the
@@ -138,7 +205,7 @@ Follow-up fixes for feedback on the 1.18.0 features.
 ## 1.17.0 — 2026-07-23
 
 ### Added
-- **Fullscreen chat view** (#20, suggested by @DavidNotProgamer with
+- **Fullscreen chat view** (#20, suggested by @DavidNotProgamer2 with
   mockups): open any text channel or DM in a real fullscreen Steam modal —
   navigable history with pagination, reply composer, and a screenshot
   picker that browses recent screenshots across games instead of always
@@ -455,7 +522,7 @@ Follow-up fixes for feedback on the 1.18.0 features.
   — a leftover gate from when Go Live could only work under KWin. The button
   is now always available while in voice; the virtual-camera ("game mode
   share") button remains as the gamescope fallback. Reported by
-  @DavidNotProgamer right after the v1.15.0 release (#8).
+  @DavidNotProgamer2 right after the v1.15.0 release (#8).
 - On stock SteamOS, the screen-share error toast now points to Go Live
   (which needs no kernel module) instead of dead-ending on v4l2loopback
   being unavailable. (all 9 languages)
@@ -523,7 +590,7 @@ Follow-up fixes for feedback on the 1.18.0 features.
   re-asserting it while the relay is alive: switching between two
   cameras, watching camera + screen while the share is restarted, and
   coming back to a previously-watched camera should all keep the picture
-  live. Reported by @DavidNotProgamer with meticulous multi-account
+  live. Reported by @DavidNotProgamer2 with meticulous multi-account
   testing — thanks again.
 
 ## 1.14.6 — 2026-07-18

@@ -959,7 +959,12 @@ class Plugin:
 
     @classmethod
     async def send_message(cls, channel_id, content, reply_to=None):
-        return await cls.evt_handler.api.send_message(channel_id, content, reply_to)
+        # Même traitement que les actions sur un message : un envoi refusé est
+        # l'échec le plus visible du plugin, il ne peut pas se contenter du
+        # « Python Exception » que Decky substitue au vrai motif.
+        return await cls._msg_action(
+            "send_message",
+            cls.evt_handler.api.send_message(channel_id, content, reply_to))
 
     @classmethod
     async def send_typing(cls, channel_id):
@@ -979,20 +984,47 @@ class Plugin:
         return {"ok": True}
 
     @classmethod
+    async def _msg_action(cls, label, coro):
+        """Exécute une action sur un message en RAMENANT le motif d'un échec.
+
+        Une exception qui traverse Decky perd son texte en route : le loader la
+        rend au frontend sous la forme d'un « Python Exception » générique, et
+        elle n'apparaît dans aucun log de plugin. C'est précisément le
+        brouillard du #21 — vérifié en simulant un refus d'édition, où l'erreur
+        rouge s'affichait sans le moindre motif, ici comme dans les logs.
+        Le motif est donc tracé côté plugin ET renvoyé comme VALEUR de retour,
+        seul canal que la couche Decky ne réécrit pas.
+        """
+        try:
+            return await coro
+        except Exception as e:
+            reason = str(e) or e.__class__.__name__
+            logger.warning(f"[msg] {label} refused: {reason}")
+            return {"ok": False, "error": reason}
+
+    @classmethod
     async def edit_message(cls, channel_id, message_id, content):
-        return await cls.evt_handler.api.edit_message(channel_id, message_id, content)
+        return await cls._msg_action(
+            "edit_message",
+            cls.evt_handler.api.edit_message(channel_id, message_id, content))
 
     @classmethod
     async def delete_message(cls, channel_id, message_id):
-        return await cls.evt_handler.api.delete_message(channel_id, message_id)
+        return await cls._msg_action(
+            "delete_message",
+            cls.evt_handler.api.delete_message(channel_id, message_id))
 
     @classmethod
     async def add_reaction(cls, channel_id, message_id, emoji):
-        return await cls.evt_handler.api.add_reaction(channel_id, message_id, emoji)
+        return await cls._msg_action(
+            "add_reaction",
+            cls.evt_handler.api.add_reaction(channel_id, message_id, emoji))
 
     @classmethod
     async def remove_reaction(cls, channel_id, message_id, emoji):
-        return await cls.evt_handler.api.remove_reaction(channel_id, message_id, emoji)
+        return await cls._msg_action(
+            "remove_reaction",
+            cls.evt_handler.api.remove_reaction(channel_id, message_id, emoji))
 
     @classmethod
     async def get_soundboard_sounds(cls):
@@ -2165,9 +2197,9 @@ class Plugin:
             out, _err = await wait_for(proc.communicate(), timeout=15)
             caps = _json.loads(out.decode().strip().splitlines()[-1])
         except Exception as e:
-            logger.warning(f"[overlay] probe KO: {e!r}")
+            logger.warning(f"[overlay] probe failed: {e!r}")
         cls._overlay_caps_cache = caps
-        logger.info(f"[overlay] capacités: {caps}")
+        logger.info(f"[overlay] capabilities: {caps}")
         return caps
 
     @classmethod
@@ -2270,7 +2302,7 @@ class Plugin:
                 logger.warning(
                     f"[overlay] helper exited immediately (rc={rc}) — see [overlay] stderr above")
                 return False
-            logger.info("[overlay] fenêtre overlay démarrée")
+            logger.info("[overlay] overlay window started")
             return True
         except Exception as e:
             logger.warning(f"[overlay] start failed: {e!r}")
@@ -2325,7 +2357,7 @@ class Plugin:
         # ne peut pas être décodé (le roster vocal, lui, marche — backend cairo).
         caps = await cls._overlay_caps()
         if not caps.get("pov", True):
-            logger.info("[overlay] POV refusé : backend %s sans MediaSource"
+            logger.info("[overlay] POV refused: backend %s has no MediaSource"
                         % caps.get("backend"))
             return {"ok": False, "reason": "pov_unsupported"}
         cls._pov_ov_on = True

@@ -99,7 +99,7 @@ def _set_atoms_ctypes(xid):
 
     d = x.XOpenDisplay(None)
     if not d:
-        raise RuntimeError("XOpenDisplay a échoué")
+        raise RuntimeError("XOpenDisplay failed")
     try:
         XA_ATOM, XA_CARDINAL, REPLACE = 4, 6, 0
         one = (c_ulong * 1)(1)
@@ -125,7 +125,7 @@ def set_overlay_atom(xid):
             fn(xid)
             return name
         except Exception as e:
-            print("[overlay] atomes via %s KO: %s" % (name, e), flush=True)
+            print("[overlay] atoms via %s failed: %s" % (name, e), flush=True)
     return False
 
 
@@ -156,7 +156,7 @@ def build_window():
         if geo.width > 0 and geo.height > 0:
             sw, sh = geo.width, geo.height
     except Exception as e:
-        print("[overlay] géométrie moniteur KO, fallback 1920x1080:", e, flush=True)
+        print("[overlay] monitor geometry failed, falling back to 1920x1080:", e, flush=True)
     win.set_default_size(sw, sh)
     win.set_size_request(sw, sh)
     win.move(0, 0)
@@ -177,7 +177,7 @@ def build_window():
             passthrough = True
         except Exception as e:
             passthrough = False
-            print("[overlay] input passthrough KO:", e, flush=True)
+            print("[overlay] input passthrough failed:", e, flush=True)
         print("[overlay] mapped xid=%s atom=%s passthrough=%s"
               % (hex(xid), ok, passthrough), flush=True)
 
@@ -282,7 +282,7 @@ class RosterArea(Gtk.DrawingArea):
                     f.write(data)
                 os.replace(tmp, path)
         except Exception as e:
-            print("[overlay] avatar KO (%s): %s" % (url, e), flush=True)
+            print("[overlay] avatar fetch failed (%s): %s" % (url, e), flush=True)
         GLib.idle_add(self._store_avatar, url, data)
 
     def _store_avatar(self, url, data):
@@ -294,7 +294,7 @@ class RosterArea(Gtk.DrawingArea):
                 loader.close()
                 pb = loader.get_pixbuf() or False
             except Exception as e:
-                print("[overlay] avatar décodage KO: %s" % e, flush=True)
+                print("[overlay] avatar decode failed: %s" % e, flush=True)
         self._avatars[url] = pb
         self._inflight.discard(url)
         self.queue_draw()
@@ -466,8 +466,8 @@ def run_cairo(state_dir, state_path):
     win = build_window()
     area = RosterArea(state_dir)
     win.add(area)
-    print("[overlay] backend=cairo (aucun binding WebKit2 sur ce système) — "
-          "roster vocal OK, POV vidéo indisponible", flush=True)
+    print("[overlay] backend=cairo (no WebKit2 binding on this system) — "
+          "voice roster OK, video POV unavailable", flush=True)
     win.show_all()
 
     state = {"json": "", "warned_pov": False}
@@ -488,8 +488,8 @@ def run_cairo(state_dir, state_path):
         area.set_voice(st.get("voice"))
         if (st.get("pov") or {}).get("enabled") and not state["warned_pov"]:
             state["warned_pov"] = True
-            print("[overlay] POV vidéo demandé mais indisponible sans WebKit2 "
-                  "— seul le roster vocal est affiché", flush=True)
+            print("[overlay] video POV requested but unavailable without WebKit2 "
+                  "— showing the voice roster only", flush=True)
         return True
 
     tick()
@@ -521,7 +521,7 @@ def main():
     if args.backend == "cairo" and HAVE_CAIRO and HAVE_PANGO:
         backend = "cairo"
     elif args.backend == "webkit" and not WEBKIT_VER:
-        print("[overlay] backend webkit demandé mais indisponible — repli", flush=True)
+        print("[overlay] webkit backend requested but unavailable — falling back", flush=True)
     if backend == "webkit":
         run_webkit(state_dir, state_path)
     elif backend == "cairo":
@@ -532,8 +532,8 @@ def main():
             missing.append("pycairo")
         if not HAVE_PANGO:
             missing.append("PangoCairo (gobject-introspection)")
-        print("[overlay] aucun backend de rendu disponible — ni WebKit2-GTK3, "
-              "ni %s" % " + ".join(missing), flush=True)
+        print("[overlay] no rendering backend available — neither WebKit2-GTK3 "
+              "nor %s" % " + ".join(missing), flush=True)
         raise SystemExit(1)
 
 

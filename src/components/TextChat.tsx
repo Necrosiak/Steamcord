@@ -12,6 +12,18 @@ import { TinyIconBtn } from "./ChannelBrowser";
 // une instance distincte par source via `key`).
 let _textPoll: any = null;
 
+// Salon suivi côté Vesktop (`$watch_channel`) : c'est LUI qui décide des events
+// MESSAGE_* poussés en temps réel, et il est unique pour tout le plugin. On
+// mémorise ici qui l'a posé pour pouvoir le rendre : la modale plein écran
+// revendique le sien à l'ouverture, et rétablit celui du QAM en se fermant.
+// Sans ça, le QAM qui se démonte derrière la modale (ou une conversation
+// fermée dans le QAM) coupait le direct de la modale restée ouverte, et ses
+// messages n'arrivaient plus qu'au poll de réconciliation — d'où les messages
+// "qui mettent des secondes" ou "qui ne viennent pas" alors que tout va bien
+// une fois sur deux (David #21).
+let _qamChannel: string | null = null;
+export const qamWatchedChannel = () => _qamChannel;
+
 // Brouillon par salon, PARTAGÉ entre le composer rapide du QAM et la modale
 // plein écran (ChatFullscreen) : commencer une réponse dans le QAM puis ouvrir
 // le plein écran (ou l'inverse) ne perd jamais le texte en cours — et une
@@ -29,6 +41,36 @@ export const noteMessageInteraction = (active: boolean) => {
   if (_msgInteractions < 0) _msgInteractions = 0;
 };
 export const isInteractingWithMessage = () => _msgInteractions > 0;
+
+// Message actuellement SÉLECTIONNÉ (focus manette), partagé de la même façon.
+// Agir sur un message n'est pas la seule raison de ne pas vouloir que la vue
+// bouge : le simple fait d'en sélectionner un plus haut suffit (David #21 —
+// "select a specific message, it doesnt stop the chat, making it go up"). Le
+// seuil en pixels ne peut PAS détecter ce cas : sélectionner un message déjà
+// visible ne scrolle rien, la liste reste collée en bas et le message suivant
+// l'arrache quand même.
+//
+// Seules les PRISES de focus notifient (`_focusListener`), jamais les pertes :
+// c'est le déplacement volontaire du curseur qui informe, alors qu'un blur
+// arrive aussi quand le message focusé se démonte. Sans ça, l'auto-scroll se
+// couperait tout seul en lecture passive : le focus reste sur le message qui
+// était le dernier au moment de l'ouverture, la liste grandit dessous, et il
+// suffirait de comparer les identifiants pour croire à tort que l'utilisateur
+// est remonté dans l'historique.
+let _focusedMsgId: string | null = null;
+let _focusListener: ((id: string) => void) | null = null;
+export const noteMessageFocus = (id: string, active: boolean) => {
+  if (active) {
+    _focusedMsgId = id;
+    _focusListener?.(id);
+  } else if (_focusedMsgId === id) {
+    _focusedMsgId = null;
+  }
+};
+export const onMessageFocus = (cb: (id: string) => void) => {
+  _focusListener = cb;
+  return () => { if (_focusListener === cb) _focusListener = null; };
+};
 // Throttle du signal "en train d'écrire" sortant, partagé lui aussi : au plus
 // une requête toutes les ~8s quel que soit l'endroit où l'on tape.
 let _lastTypingSent = 0;
@@ -143,6 +185,22 @@ export function renderContent(text: string): Array<string | JSX.Element> {
 // la guilde, hors scope).
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
+// Motif d'un échec d'action sur un message, ou null si l'appel a réussi.
+//
+// Le motif arrive dans la VALEUR de retour (`{ok:false, error}` posé par
+// `_msg_action` côté main.py) et non dans une exception : Decky réécrit le
+// texte des exceptions Python en un « Python Exception » générique avant de
+// le rendre au frontend. Vérifié en simulant un refus d'édition — l'erreur
+// rouge s'affichait sans aucun motif, ni à l'écran ni dans les logs, ce qui
+// laissait le #21 exactement aussi opaque qu'avant. Une exception reste
+// possible (backend injoignable, onglet Discord mort) : les appelants
+// gardent donc leur `.catch`, et les deux chemins finissent en rouge.
+export const failReason = (res: unknown): string | null => {
+  const r = res as { ok?: boolean; error?: unknown } | null;
+  if (!r || typeof r !== "object" || r.ok !== false) return null;
+  return String(r.error ?? "") || "?";
+};
+
 // Un message. `Btn` (DialogButton), PAS un `Focusable` brut : un simple
 // Focusable avec onFocus/onGamepadFocus perd son statut d'arrêt de nav dès
 // qu'un autre vrai composant interactif (lien Btn, image Focusable+onActivate)
@@ -150,8 +208,21 @@ const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 // (retour user, régression du 1er essai). DialogButton est le SEUL composant
 // utilisé pour le tracking de focus custom partout ailleurs dans ce fichier/
 // VoiceChatViews (`focusHalo`) : on suit exactement le même pattern ici.
-export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete, onReply }: {
+export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUpdate, onLocalDelete, onReply }: {
   m: Message; channelId?: string; isMine?: boolean;
+  // `passive` : la ligne reste un arrêt de nav (on doit pouvoir remonter le fil
+  // depuis le QAM) mais ne contient AUCUN arrêt interne — ni lien ni image
+  // focusable. Un seul cran = un message, jamais un sous-élément, ce qui rend
+  // l'aperçu prévisible au stick ; liens et images s'ouvrent en plein écran.
+  passive?: boolean;
+  // `preferred` : cible d'entrée du conteneur (cf. PREFERRED_CHILD). Posée sur
+  // le message le PLUS RÉCENT de l'aperçu QAM. Sans elle, l'entrée par le haut
+  // — en descendant depuis la liste des salons — atterrissait sur le message le
+  // plus ANCIEN et arrachait la vue vers le haut, alors que l'aperçu venait de
+  // se caler sur les récents (retour user 24/07). `navEntryPreferPosition=LAST`
+  // ne corrigeait que l'entrée par le BAS (le cas du plein écran, où l'on
+  // arrive depuis le champ de saisie) ; PREFERRED_CHILD vaut dans les DEUX sens.
+  preferred?: boolean;
   onLocalUpdate?: (patch: Partial<Message>) => void;
   onLocalDelete?: () => void;
   onReply?: () => void;
@@ -162,6 +233,10 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pickingEmoji, setPickingEmoji] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Motif du dernier échec d'action sur CE message (édition, suppression,
+  // réaction). Ces appels avalaient leur erreur en silence : l'utilisateur
+  // voyait "rien ne se passe" et aucun log ne disait pourquoi (David #21).
+  const [actionError, setActionError] = useState<string | null>(null);
   const links = extractLinks(m.content || "");
   const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
 
@@ -176,38 +251,74 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
     return () => noteMessageInteraction(false);
   }, [interacting]);
 
+  // Sélection (focus) de CE message — le chat plein écran s'en sert pour savoir
+  // si le curseur est resté sur le dernier message ou si l'utilisateur est
+  // remonté dans l'historique. Branché sur l'état `focused` déjà tenu pour le
+  // halo, donc valable quelle que soit la variante de ligne rendue plus bas
+  // (Btn focusable ou <div> qui reçoit le focus d'un enfant par bubbling).
+  useEffect(() => {
+    if (!focused) return;
+    noteMessageFocus(m.id, true);
+    return () => noteMessageFocus(m.id, false);
+  }, [focused, m.id]);
+
+  // Les trois actions ci-dessous appliquent leur effet AVANT la réponse (la
+  // manette doit rester nerveuse), mais REVIENNENT en arrière si l'appel
+  // échoue : afficher un état que le serveur a refusé est pire que l'attente,
+  // puisque le prochain rafraîchissement le reprend sans explication.
   const toggleReaction = (r: MsgReaction) => {
     if (!channelId || busy) return;
     setBusy(true);
+    setActionError(null);
     const method = r.me ? "remove_reaction" : "add_reaction";
-    call(method, channelId, m.id, r.emoji)
-      .catch(() => {})
-      .finally(() => setBusy(false));
+    const before = m.reactions || [];
     onLocalUpdate?.({
-      reactions: (m.reactions || []).map((x) => x.emoji === r.emoji
+      reactions: before.map((x) => x.emoji === r.emoji
         ? { ...x, me: !x.me, count: x.count + (x.me ? -1 : 1) }
         : x),
     });
+    call(method, channelId, m.id, r.emoji)
+      .then((res) => {
+        const bad = failReason(res);
+        if (bad) { onLocalUpdate?.({ reactions: before }); setActionError(errText(bad)); }
+      })
+      .catch((e) => { onLocalUpdate?.({ reactions: before }); setActionError(errText(e)); })
+      .finally(() => setBusy(false));
   };
 
   const addQuickReaction = (emoji: string) => {
     if (!channelId || busy) return;
     setPickingEmoji(false);
     setBusy(true);
-    call("add_reaction", channelId, m.id, emoji).catch(() => {}).finally(() => setBusy(false));
-    const existing = (m.reactions || []).find((x) => x.emoji === emoji);
+    setActionError(null);
+    const before = m.reactions || [];
+    const existing = before.find((x) => x.emoji === emoji);
     const reactions = existing
-      ? (m.reactions || []).map((x) => x.emoji === emoji ? { ...x, me: true, count: x.count + (x.me ? 0 : 1) } : x)
-      : [...(m.reactions || []), { emoji, count: 1, me: true }];
+      ? before.map((x) => x.emoji === emoji ? { ...x, me: true, count: x.count + (x.me ? 0 : 1) } : x)
+      : [...before, { emoji, count: 1, me: true }];
     onLocalUpdate?.({ reactions });
+    call("add_reaction", channelId, m.id, emoji)
+      .then((res) => {
+        const bad = failReason(res);
+        if (bad) { onLocalUpdate?.({ reactions: before }); setActionError(errText(bad)); }
+      })
+      .catch((e) => { onLocalUpdate?.({ reactions: before }); setActionError(errText(e)); })
+      .finally(() => setBusy(false));
   };
 
+  // L'éditeur reste OUVERT sur échec, avec le texte saisi et le motif : le
+  // fermer ferait disparaître la saisie en plus de l'erreur.
   const saveEdit = () => {
     if (!channelId || busy || !editDraft.trim()) return;
     setBusy(true);
+    setActionError(null);
     call("edit_message", channelId, m.id, editDraft.trim())
-      .then(() => { onLocalUpdate?.({ content: editDraft.trim() }); setEditing(false); })
-      .catch(() => {})
+      .then((res) => {
+        const bad = failReason(res);
+        if (bad) { setActionError(errText(bad)); return; }
+        onLocalUpdate?.({ content: editDraft.trim() }); setEditing(false);
+      })
+      .catch((e) => setActionError(errText(e)))
       .finally(() => setBusy(false));
   };
 
@@ -219,7 +330,14 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
       return;
     }
     setBusy(true);
-    call("delete_message", channelId, m.id).then(() => onLocalDelete?.()).catch(() => setBusy(false));
+    setActionError(null);
+    call("delete_message", channelId, m.id)
+      .then((res) => {
+        const bad = failReason(res);
+        if (bad) { setActionError(errText(bad)); setBusy(false); return; }
+        onLocalDelete?.();
+      })
+      .catch((e) => { setActionError(errText(e)); setBusy(false); });
   };
 
   // Un message avec lien(s)/image(s) — ou la rangée réactions/édition, toujours
@@ -232,7 +350,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
   // RIEN d'autre de focusable : les messages plats du mode rapide QAM (sans
   // `channelId`, donc sans puces d'action) — sans quoi ils ne seraient pas des
   // arrêts de nav du tout et le stick les sauterait (bug d'origine de #17).
-  const hasInteractiveChild = !!channelId || links.length > 0 || (m.images?.length ?? 0) > 0;
+  const hasInteractiveChild = !passive && (!!channelId || links.length > 0 || (m.images?.length ?? 0) > 0);
 
   const rowStyle = {
     display: "block", textAlign: "left" as const, width: "100%", color: "#fff",
@@ -281,33 +399,56 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
           : (!hasBody && <div style={{ opacity: 0.4, fontStyle: "italic" }}>—</div>)
       )}
 
+      {/* Motif d'échec de la dernière action sur ce message. Reste affiché
+          jusqu'à la tentative suivante : c'est la seule trace que l'utilisateur
+          (et nous, via une capture) ait de ce qui a été refusé. */}
+      {actionError && (
+        <div style={{ marginTop: 3, fontSize: 10, color: "#f23f43", wordBreak: "break-word" }}>{actionError}</div>
+      )}
+
       {/* Miniatures d'images : ne se chargent que lorsque ce salon est
           ouvert (la vue messages n'est montée qu'à ce moment). Clic →
           image en grand dans le navigateur du gamemode Steam. */}
       {m.images?.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
-          {m.images.map((img, i) => (
-            <Focusable
-              key={i}
-              onActivate={() => openUrl(img.url)}
-              onClick={() => openUrl(img.url)}
-              style={{ display: "inline-block", borderRadius: 6, padding: 0, margin: 0 }}
-            >
+          {m.images.map((img, i) => {
+            const thumb = (
               <img
                 src={thumbUrl(img)}
                 style={{ width: 120, height: "auto", maxHeight: 160, display: "block", borderRadius: 6 }}
               />
-            </Focusable>
-          ))}
+            );
+            // En aperçu QAM : la vignette se regarde, elle ne se focus pas.
+            return passive ? (
+              <div key={i} style={{ display: "inline-block", borderRadius: 6 }}>{thumb}</div>
+            ) : (
+              <Focusable
+                key={i}
+                onActivate={() => openUrl(img.url)}
+                onClick={() => openUrl(img.url)}
+                style={{ display: "inline-block", borderRadius: 6, padding: 0, margin: 0 }}
+              >
+                {thumb}
+              </Focusable>
+            );
+          })}
         </div>
       )}
 
-      {/* Liens cliquables → navigateur gamemode Steam. */}
-      {links.map((u, i) => (
-        <Btn key={`l${i}`} onClick={() => openUrl(u)} style={{ width: "100%", padding: "3px 8px", marginTop: 3, fontSize: 11, display: "flex", gap: 6, alignItems: "center" }}>
-          <span><IcLink /></span><span style={{ flex: 1, textAlign: "left", color: "#00a8fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLink(u)}</span>
-        </Btn>
-      ))}
+      {/* Liens cliquables → navigateur gamemode Steam. En aperçu QAM, le lien
+          reste VISIBLE (on doit voir qu'il y en a un) mais n'est plus un arrêt
+          de nav : on l'ouvre depuis le chat plein écran. */}
+      {links.map((u, i) => {
+        const label = (
+          <>
+            <span><IcLink /></span><span style={{ flex: 1, textAlign: "left", color: "#00a8fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortLink(u)}</span>
+          </>
+        );
+        const linkStyle = { width: "100%", padding: "3px 8px", marginTop: 3, fontSize: 11, display: "flex", gap: 6, alignItems: "center" } as const;
+        return passive
+          ? <div key={`l${i}`} style={{ ...linkStyle, opacity: 0.85 }}>{label}</div>
+          : <Btn key={`l${i}`} onClick={() => openUrl(u)} style={linkStyle}>{label}</Btn>;
+      })}
 
       {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
 
@@ -356,6 +497,7 @@ export function MessageRow({ m, channelId, isMine, onLocalUpdate, onLocalDelete,
 
   return (
     <Btn
+      preferredFocus={preferred}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onGamepadFocus={() => setFocused(true)}
@@ -461,12 +603,20 @@ function DMAvatar({ ch }: { ch: DMChannel }) {
 const PREVIEW_LIST_ID = "steamcord-msg-preview";
 // La liste du QAM est désormais navigable (mode rapide) : on ne recolle en bas
 // que si l'utilisateur y était déjà, pour ne pas lui arracher la vue pendant
-// qu'il remonte lire un lien/une photo (même heuristique que le plein écran,
-// mais en scroll "normal" : la distance au bas se mesure par différence).
+// qu'il remonte lire un lien/une photo. Le scroller étant en column-reverse
+// (voir le rendu plus bas), scrollTop vaut 0 en bas et devient NÉGATIF en
+// remontant — exactement comme la liste plein écran.
 const isPreviewNearBottom = () => {
   const el = document.getElementById(PREVIEW_LIST_ID);
-  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  return !el || -el.scrollTop < 80;
 };
+// Recolle au dernier message. En column-reverse l'ancrage est natif : ce
+// rappel ne sert qu'à rattraper les quelques pixels de dérive que Chromium
+// laisse parfois après une insertion (même constat qu'en plein écran).
+const scrollPreviewBottom = () => setTimeout(() => {
+  const el = document.getElementById(PREVIEW_LIST_ID);
+  if (el) el.scrollTop = 0;
+}, 50);
 
 export function TextChat({ source }: { source: "servers" | "dms" }) {
   const fillList = useFillHeight();
@@ -550,10 +700,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         // afficher "aucun message".
         const stick = isPreviewNearBottom();
         setMessages((prev) => (fresh.length > 0 || prev === null) ? fresh : prev);
-        if (stick) setTimeout(() => {
-          const el = document.getElementById(PREVIEW_LIST_ID);
-          if (el) el.scrollTop = el.scrollHeight;
-        }, 50);
+        if (stick) scrollPreviewBottom();
       })
       .catch(() => {}); // un poll raté garde le dernier aperçu affiché
   };
@@ -569,6 +716,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     // réel (event Decky "chat_message", consommé ici ET par la modale plein
     // écran). Le poll ne reste qu'en filet de sécurité de réconciliation
     // (reconnexions, events manqués) — les messages arrivent à la seconde.
+    _qamChannel = id;
     call("watch_channel", id).catch(() => {});
     if (_textPoll) clearInterval(_textPoll);
     _textPoll = setInterval(() => loadMessages(id), 20000);
@@ -576,6 +724,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
 
   const closeChannel = () => {
     if (_textPoll) { clearInterval(_textPoll); _textPoll = null; }
+    _qamChannel = null;
     call("watch_channel", "").catch(() => {});
     setChannel(null);
     setMessages(null);
@@ -592,7 +741,12 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     setSending(true);
     setSendError(null);
     call("send_message", chId, text)
-      .then(() => {
+      .then((res) => {
+        // Un envoi refusé revient en `{ok:false}` : sans ce test on viderait
+        // le brouillon et on rechargerait la liste comme si le message était
+        // parti — le texte disparaîtrait sans jamais avoir été envoyé.
+        const bad = failReason(res);
+        if (bad) { setSendError(errText(bad)); return; }
         setDraft("");
         delete draftByChannel[chId];
         loadMessages(chId);
@@ -601,9 +755,14 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
       .finally(() => setSending(false));
   };
 
+  // Démontage du QAM : on ne relâche le salon suivi QUE s'il est toujours le
+  // nôtre. Ouvrir la modale plein écran démonte le panneau derrière elle, et
+  // relâcher aveuglément coupait le direct de la modale (David #21).
   useEffect(() => () => {
     if (_textPoll) { clearInterval(_textPoll); _textPoll = null; }
-    call("watch_channel", "").catch(() => {});
+    const mine = _qamChannel;
+    _qamChannel = null;
+    if (mine) call("watch_channel", "").catch(() => {});
   }, []);
 
   // Push temps réel pour l'aperçu passif : nouveaux messages / éditions /
@@ -621,10 +780,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
           if (base.some((m) => m.id === data.message.id)) return prev;
           return [...base, data.message];
         });
-        if (stick) setTimeout(() => {
-          const el = document.getElementById(PREVIEW_LIST_ID);
-          if (el) el.scrollTop = el.scrollHeight;
-        }, 50);
+        if (stick) scrollPreviewBottom();
       } else if (data.op === "update" && data.message) {
         setMessages((prev) => prev?.map((m) => m.id === data.message.id ? { ...m, ...data.message } : m) ?? prev);
       } else if (data.op === "delete" && data.message_id) {
@@ -670,15 +826,46 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
           <span>←</span><span style={{ flex: 1, textAlign: "left" }}>{channel.dm ? channel.name : `#${channel.name}`}</span>
         </Btn>
 
-        <div id={PREVIEW_LIST_ID} ref={fillPreview.ref} style={{ maxHeight: fillPreview.height, overflowY: "auto", marginBottom: 6 }}>
-          {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 12 }}>{t("loading_messages")}</div>}
-          {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_messages")}</div>}
-          {/* Entrée de nav sur le DERNIER message (adjacent au composer en
-              dessous), chaque cran remonte d'un message — même réglage que la
-              liste plein écran. */}
-          <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.LAST}>
-            {preview.map((m) => (
-              <MessageRow key={m.id} m={m} />
+        {/* Même ancrage bas que la liste plein écran (#20), pour les mêmes
+            raisons : le scroller est en column-reverse, donc le navigateur
+            colle la vue au DERNIER message tout seul, y compris quand une
+            image finit de se décoder après coup. Le `scrollTop = scrollHeight`
+            différé qu'il y avait ici ratait exactement dans ce cas et laissait
+            l'aperçu sur les messages les plus ANCIENS : dans un panneau QAM
+            qui n'affiche que deux ou trois lignes, ça revenait à ne jamais
+            voir le message qui vient d'arriver sans naviguer à la main
+            (David #21 — "i need to select manually the latest message and i
+            can only see 1 or 2 messages").
+            Mêmes pièges qu'en plein écran : un SEUL enfant dans le scroller
+            (sinon un conteneur flex à hauteur contrainte écrase ses enfants),
+            overflow-anchor désactivé, et flow de nav en column NORMAL avec
+            entrée sur le dernier message. */}
+        <div
+          id={PREVIEW_LIST_ID}
+          ref={fillPreview.ref}
+          style={{
+            maxHeight: fillPreview.height, overflowY: "auto", marginBottom: 6,
+            display: "flex", flexDirection: "column-reverse", overflowAnchor: "none",
+          }}
+        >
+          {/* Entrée de nav sur le message le PLUS RÉCENT, dans les deux sens.
+              `LAST` ne suffisait pas : il ne vise le dernier enfant que quand
+              l'entrée se fait par le BAS (le cas du plein écran, où l'on vient
+              du champ de saisie). En descendant depuis la liste des salons, on
+              entre par le HAUT, Steam prenait le premier enfant — le message le
+              plus ancien — et la vue, calée sur les récents, remontait d'un coup
+              (retour user 24/07). PREFERRED_CHILD + `preferredFocus` sur le
+              dernier message vaut quel que soit le sens : on arrive toujours
+              sur le plus récent, et chaque cran vers le haut remonte le fil. */}
+          <Focusable
+            flow-children="column"
+            navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+            style={{ flexShrink: 0 }}
+          >
+            {messages === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 12 }}>{t("loading_messages")}</div>}
+            {messages !== null && messages.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_messages")}</div>}
+            {preview.map((m, i) => (
+              <MessageRow key={m.id} m={m} passive preferred={i === preview.length - 1} />
             ))}
           </Focusable>
         </div>

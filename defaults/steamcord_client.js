@@ -7,6 +7,36 @@ window.STEAMCORD_IS_VESKTOP = window.STEAMCORD_IS_VESKTOP
     || !!window.VesktopNative
     || (navigator.userAgent || "").toLowerCase().includes("vesktop");
 
+// ── Description lisible d'un échec de commande ───────────────────────────────
+// `String(e)` ne convient QUE pour une Error. Un rejet de `RestAPI` n'en est
+// pas une : c'est un objet {status, body:{message, code}} et `String()` en tire
+// "[object Object]" — sondé le 24/07 en tentant d'éditer un message inexistant,
+// où le motif rendu était littéralement "[object Object]". Aussi inutile que
+// l'ancien silence : c'est le cas RÉEL que rencontre un utilisateur (le mien,
+// simulé avec `new Error`, ne le montrait pas). On extrait donc le motif Discord
+// (`body.message`, code, statut HTTP) avant de se rabattre sur une sérialisation.
+window.__sc_describeError = (e) => {
+    if (e == null) return "unknown error";
+    if (typeof e === "string") return e;
+    const parts = [];
+    if (e.message) parts.push(String(e.message));
+    const b = e.body;
+    if (b && typeof b === "object") {
+        if (b.message && b.message !== e.message) parts.push(String(b.message));
+        if (b.code !== undefined) parts.push("code " + b.code);
+    } else if (typeof b === "string" && b) {
+        parts.push(b);
+    }
+    if (e.status !== undefined) parts.push("HTTP " + e.status);
+    if (!parts.length) {
+        try {
+            const j = JSON.stringify(e);
+            if (j && j !== "{}") parts.push(j.slice(0, 300));
+        } catch (_) { /* structure cyclique : on se rabat sur String() */ }
+    }
+    return parts.join(" — ") || String(e);
+};
+
 // ── Mapping message Discord → forme attendue par le frontend QAM ─────────────
 // Partagé entre $get_messages (chargement/pagination) et l'intercepteur Flux
 // MESSAGE_CREATE/UPDATE (push temps réel du salon suivi) — même forme des deux
@@ -1631,7 +1661,21 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 }
                             }
                         } catch (error) {
-                            result = { error: error }
+                            // `JSON.stringify(new Error("x"))` vaut "{}" : renvoyer l'objet
+                            // Error tel quel effaçait le motif de l'échec sur le fil, et le
+                            // backend recevait une réponse d'apparence valide — donc un
+                            // SUCCÈS côté frontend, qui appliquait sa mise à jour optimiste
+                            // avant que le prochain rafraîchissement la reprenne. Vu de
+                            // l'utilisateur : "j'ai édité et rien ne s'est passé", sans une
+                            // ligne de log nulle part (David #21).
+                            //
+                            // Clé DÉDIÉE `__sc_error` et pas `error` : plusieurs commandes
+                            // renvoient légitimement un champ `error` en avertissement DOUX
+                            // à côté d'un résultat exploitable (`$set_noise_cancellation` et
+                            // consorts : "le réglage n'a pas pris"). Les confondre ferait
+                            // échouer ces commandes-là alors qu'elles ont répondu.
+                            result = { __sc_error: window.__sc_describeError(error) };
+                            console.error("[Steamcord] " + data.type + " failed:", error);
                             if (data.increment == undefined) return;
                         }
                         const payload = {
