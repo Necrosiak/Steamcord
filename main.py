@@ -473,13 +473,24 @@ class Plugin:
     @classmethod
     async def _toast(cls, title, body):
         try:
-            # API NATIVE Steam (DisplayClientNotification, type 1) au lieu du toaster
-            # Decky : ce dernier crée des notifs sans `notification_type` qui ne font
-            # pas de popup ET font planter le panneau de notifs Steam sur ce build.
-            payload = dumps({"title": title, "body": body, "state": "active"}).replace("\\", "\\\\").replace("'", "\\'")
+            # On passe par le dispatcher du frontend (notify.ts) : il fabrique un
+            # persona factice à partir du titre, donc la notif s'affiche au nom
+            # « Steamcord » avec le logo Discord, comme les notifs de messages.
+            # Sans ça on retombait sur DisplayClientNotification avec le SteamID
+            # de l'utilisateur COURANT → la notif portait son pseudo et son
+            # avatar Steam, comme s'il se l'était envoyée (retour user).
+            payload = dumps({"title": title, "body": body, "kind": "plugin"})
+            payload = payload.replace("\\", "\\\\").replace("'", "\\'")
             await cls.shared_js_tab.ensure_open()
             await cls.shared_js_tab.evaluate(
-                "(()=>{const o=JSON.parse('" + payload + "');"
+                "(()=>{const p=JSON.parse('" + payload + "');"
+                "const S=window.STEAMCORD;"
+                "if(S&&S.dispatchNotification){S.dispatchNotification(p);return;}"
+                # Repli si le frontend n'est pas encore monté : ancien chemin brut
+                # (API native Steam ; le toaster Decky, lui, crée des notifs sans
+                # `notification_type` qui ne popent pas ET font planter le panneau
+                # de notifs Steam sur ce build).
+                "const o={title:p.title,body:p.body,state:'active'};"
                 "const A=window.App;o.steamid=A&&A.GetCurrentUser&&A.GetCurrentUser()?A.GetCurrentUser().strSteamID:'';"
                 "window.SteamClient&&window.SteamClient.ClientNotifications&&"
                 "window.SteamClient.ClientNotifications.DisplayClientNotification(1,JSON.stringify(o),function(){});})()"
@@ -489,30 +500,34 @@ class Plugin:
 
     @classmethod
     async def _autoupdate_check(cls):
-        # Non-blocking release check at boot. If a newer release exists:
-        # auto-update ON  → download + unpack over the plugin dir + restart loader;
-        # auto-update OFF → just toast that an update is available (before, the
-        # user was never told anything and had to open the QAM to find out).
+        # Vérification non bloquante au démarrage. Une maj disponible est TOUJOURS
+        # notifiée (avant, le toast n'existait que si l'auto-update était off, or
+        # il était on par défaut → l'utilisateur n'était jamais prévenu, il voyait
+        # juste une install se déclencher ou échouer).
         try:
             info = await updater.check()
             if not info.get("update_available"):
                 return
+            # Toasts en ANGLAIS : même règle que le script v4l2 — ils partent
+            # chez tous les users, quelle que soit la langue du QAM.
+            await cls._toast(
+                "Steamcord",
+                f"Update {info['latest']} available — install it from the Quick Access Menu",
+            )
             if not updater.is_autoupdate_enabled():
                 logger.info(
                     f"[updater] {info['latest']} available (have {info['current']}); "
                     "autoupdate off — notifying only"
                 )
-                # Toasts en ANGLAIS : même règle que le script v4l2 — ils partent
-                # chez tous les users, quelle que soit la langue du QAM.
-                await cls._toast(
-                    "Steamcord",
-                    f"Update {info['latest']} available — install it from the Quick Access Menu",
-                )
                 return
             logger.info(
                 f"[updater] {info['latest']} available (have {info['current']}); auto-applying"
             )
-            await cls._toast("Steamcord", f"Updating to {info['latest']}…")
+            if await cls._delegate_install(info["url"], info["latest"]):
+                # Decky prend le relais : il affiche sa modale de confirmation,
+                # décompresse en root et recharge le plugin lui-même.
+                return
+            # Repli si le loader n'expose pas l'installeur (version trop ancienne).
             # apply() renvoie un dict {"ok": bool, "error"?} — un simple `if` était
             # toujours vrai (dict non vide), donc un échec toastait « installée » et
             # redémarrait le loader pour rien.
@@ -525,6 +540,44 @@ class Plugin:
                 await cls._toast("Steamcord", f"Update failed: {res.get('error', '?')}")
         except Exception as e:
             logger.warning(f"[updater] auto-check error: {e}")
+
+    @classmethod
+    async def _delegate_install(cls, url: str, version: str) -> bool:
+        """Confie l'install à l'installeur natif de Decky, exposé par le loader.
+
+        Le loader tourne en root, nous non : le dossier top-level du plugin (et
+        plugin.json) lui appartient et il le re-chown à chaque chargement, donc
+        notre backend ne peut jamais y créer une nouvelle entrée — toute release
+        ajoutant un fichier ou un dossier à la racine échouait en Permission
+        denied (cf #16). Le loader, lui, décompresse en root puis rétablit les
+        droits (set_plugin_dir_permissions) : c'est le chemin qu'emprunte le
+        Store Decky. `DeckyBackend` n'existe que côté JS → on passe par l'onglet
+        partagé, comme pour les toasts. Renvoie False si la route est absente.
+        """
+        try:
+            args = dumps([url, "Steamcord", version, "", 2])  # 2 = InstallType.UPDATE
+            args = args.replace("\\", "\\\\").replace("'", "\\'")
+            await cls.shared_js_tab.ensure_open()
+            # evaluate() n'attend pas les promesses : on ne peut pas `await` le
+            # call côté JS (on récupérerait un objet Promise). On le lance sans
+            # l'attendre — c'est le loader qui affiche la modale et fait le
+            # travail — et on ne renvoie ici que « la route existe-t-elle ».
+            res = await cls.shared_js_tab.evaluate(
+                "(()=>{const b=window.DeckyBackend;"
+                "if(!b||!b.call)return 'no-backend';"
+                "try{b.call('utilities/install_plugin',...JSON.parse('" + args + "'))"
+                ".catch(e=>console.warn('[Steamcord] install_plugin:',e));"
+                "return 'ok';}catch(e){return 'err:'+e;}})()",
+                wait=True,
+            )
+            out = (((res or {}).get("result") or {}).get("result") or {}).get("value")
+            if out != "ok":
+                logger.warning(f"[updater] delegated install unavailable: {out}")
+                return False
+            return True
+        except Exception as e:
+            logger.warning(f"[updater] delegated install failed: {e}")
+            return False
 
     @classmethod
     async def check_update(cls):

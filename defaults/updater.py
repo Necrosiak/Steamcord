@@ -73,10 +73,14 @@ def get_current_version() -> str:
 
 
 def is_autoupdate_enabled() -> bool:
+    # Défaut OFF : une mise à jour passe désormais par l'installeur natif de
+    # Decky, qui demande toujours une confirmation à l'écran. Déclencher ça tout
+    # seul au démarrage ferait surgir une modale non sollicitée — on se contente
+    # de notifier, et l'utilisateur active l'auto-update s'il le veut.
     try:
-        return bool(json.loads(SETTINGS_FILE.read_text()).get("autoupdate", True))
+        return bool(json.loads(SETTINGS_FILE.read_text()).get("autoupdate", False))
     except Exception:
-        return True  # default ON
+        return False  # default OFF
 
 
 def set_autoupdate_enabled(enabled: bool) -> bool:

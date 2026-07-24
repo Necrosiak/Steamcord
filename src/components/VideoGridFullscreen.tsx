@@ -4,7 +4,7 @@ import { t } from "../i18n";
 import { getStream, getTrackKind, isWatching, stopVideo, subscribe, watchVideo } from "../videoRelay";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { IcCameraVideo, IcFilm, IcMicMuteFill, IcMonitor } from "./Icons";
-import { focusHalo, ACCENT, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
+import { ACCENT, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
 import { FullscreenVideoModal } from "./VoiceChatViews";
 
 const ModalRootAny = ModalRoot as any;
@@ -79,6 +79,18 @@ function VideoTile({ user, kind, track }: { user: any; kind: string; track: Medi
       <div style={{ position: "absolute", top: 6, left: 6, right: 6, display: "flex" }}>
         <TileLabel user={user} kind={kind} />
       </div>
+      {/* Ring de focus/parole redessiné PAR-DESSUS la vidéo : un flux portrait
+          letterboxé (object-fit contain) remplit tout l'élément <video> et se
+          peignait au-dessus du boxShadow inset du conteneur → la « ligne bleue »
+          disparaissait sur les bords (cf. #22). Cet overlay au premier plan la
+          garde toujours visible. pointerEvents:none = la nav manette intacte. */}
+      <div style={{
+        position: "absolute", inset: 0, borderRadius: 8, pointerEvents: "none",
+        boxShadow: [
+          user.is_speaking ? "inset 0 0 0 3px #23a55a" : "",
+          focused ? "inset 0 0 0 2px " + ACCENT : "",
+        ].filter(Boolean).join(", ") || undefined,
+      }} />
     </Btn>
   );
 }

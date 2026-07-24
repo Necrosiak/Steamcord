@@ -16,6 +16,43 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.18.2 — 2026-07-24
+
+Bugfix release. The in-plugin updater now works on every install, and in-game
+overlays start on Decks that only ship the older WebKit binding.
+
+### Fixed
+
+- **Plugin updates no longer fail with "Permission denied"**
+  ([#16](https://github.com/Necrosiak/Steamcord/issues/16)). Decky re-owns the
+  plugin's top-level directory as root on every load and only hands the contents
+  to your user, so the backend could never create a *new* top-level file or
+  directory — any release that added one failed, and no amount of `chmod` or
+  `chown` made it stick. Updates are now handed to Decky's own installer, which
+  runs as root and restores permissions afterwards. Decky shows its usual
+  confirmation prompt, and the update button follows the install through to the
+  end instead of hanging.
+- **In-game overlays did nothing on some Decks**
+  ([#22](https://github.com/Necrosiak/Steamcord/issues/22)). The overlay helper
+  required the WebKit2 **4.1** GObject binding and exited immediately when only
+  **4.0** was available. It now probes both, and says so clearly if neither is
+  installed.
+- **The speaking / focus ring was invisible on portrait streams**
+  ([#22](https://github.com/Necrosiak/Steamcord/issues/22)). A letterboxed video
+  still fills its whole element and painted over the ring; the ring is now drawn
+  above the video.
+- **A failed update check reported "up to date"**. A network error or an
+  exhausted GitHub API rate limit now shows the real reason instead of claiming
+  you are on the latest version.
+- **Plugin notifications used your own Steam name and avatar**, as if you had
+  sent them to yourself. They now show as *Steamcord*.
+
+### Changed
+
+- **Auto-update is off by default.** An available update is always announced with
+  a notification; installing it stays your call. Installing goes through Decky's
+  confirmation prompt, so it is never triggered silently in the background.
+
 ## 1.18.1 — 2026-07-23
 
 Follow-up fixes for feedback on the 1.18.0 features.

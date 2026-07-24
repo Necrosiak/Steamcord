@@ -14,8 +14,24 @@ os.environ["GDK_BACKEND"] = "x11"  # window X11 sous XWayland → XID + atome se
 
 import gi
 gi.require_version("Gtk", "3.0")
-gi.require_version("WebKit2", "4.1")
 gi.require_version("Gdk", "3.0")
+# Le binding GIR de WebKit2-GTK3 change de version selon l'OS : 4.1 (libsoup3,
+# distros récentes) ou 4.0 (libsoup2, plus ancien). Certains Decks n'exposent
+# pas 4.1 → on sonde les deux avant d'abandonner. Avant ce fallback, le helper
+# mourait sur `ValueError: Namespace WebKit2 not available` et l'overlay ne
+# s'affichait jamais (cf. #22).
+_WK_OK = False
+for _wk_ver in ("4.1", "4.0"):
+    try:
+        gi.require_version("WebKit2", _wk_ver)
+        _WK_OK = True
+        break
+    except ValueError:
+        continue
+if not _WK_OK:
+    print("[overlay] aucun binding WebKit2-GTK3 trouvé (essayé 4.1 et 4.0) — "
+          "installe webkit2gtk-4.1 (ou 4.0)", flush=True)
+    raise SystemExit(1)
 from gi.repository import Gtk, WebKit2, Gdk
 
 HERE = os.path.dirname(os.path.abspath(__file__))

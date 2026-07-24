@@ -14,7 +14,7 @@ import {
   findModuleExport,
   SteamSpinner,
 } from "@decky/ui";
-import { Component, Suspense, useState, useEffect } from "react";
+import { Component, Suspense, useState, useEffect, useRef } from "react";
 import { FaDiscord } from "react-icons/fa";
 import {
   IcBell, IcCheckCircle, IcChat, IcController, IcFolder, IcGear, IcGithub,
@@ -463,18 +463,85 @@ const NotifStyleToggle = () => {
 };
 
 const UpdaterSection = () => {
-  const [auto, setAuto] = useState(true);
+  // Défaut OFF, aligné sur le backend : une install passe par la modale de
+  // confirmation de Decky, on ne la fait pas surgir sans que l'user l'ait voulu.
+  const [auto, setAuto] = useState(false);
   const [status, setStatus] = useState<
-    "idle" | "checking" | "available" | "uptodate" | "installing" | "failed"
+    "idle" | "checking" | "available" | "uptodate" | "installing" | "confirm" | "checkfailed" | "failed"
   >("idle");
   const [updErr, setUpdErr] = useState("");
   const [latest, setLatest] = useState("");
   const [current, setCurrent] = useState("");
   const [url, setUrl] = useState("");
   const [focused, setFocused] = useState<string | null>(null);
+  const confirmTimer = useRef<any>(null);
+  const latestRef = useRef("");
+  latestRef.current = latest;
+
+  // Une annulation de la modale Decky n'émet AUCUN événement côté loader. En
+  // revanche le frontend de Decky, lui, appelle `utilities/cancel_plugin_install`
+  // : on enveloppe `DeckyBackend.call` le temps de la confirmation pour le voir
+  // passer et rendre le bouton tout de suite, au lieu d'attendre l'expiration du
+  // garde-fou (retour user : le libellé doit partir dès que la fenêtre part).
+  // `call` vit sur le prototype → notre wrapper est une propriété propre qu'un
+  // simple `delete` retire ; on n'enveloppe que pendant l'attente.
+  const cancelHooked = useRef(false);
+  const unhookCancel = () => {
+    const backend: any = (window as any).DeckyBackend;
+    if (!cancelHooked.current || !backend) return;
+    cancelHooked.current = false;
+    try { delete backend.call; } catch {}
+  };
+  const hookCancel = () => {
+    const backend: any = (window as any).DeckyBackend;
+    if (!backend?.call || cancelHooked.current) return;
+    const orig = backend.call.bind(backend);
+    backend.call = (name: string, ...args: any[]) => {
+      if (name === "utilities/cancel_plugin_install") {
+        unhookCancel();
+        if (confirmTimer.current) { clearTimeout(confirmTimer.current); confirmTimer.current = null; }
+        setStatus((s) => (s === "confirm" ? "available" : s));
+      }
+      return orig(name, ...args);
+    };
+    cancelHooked.current = true;
+  };
+
+  useEffect(() => () => {
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    unhookCancel();
+  }, []);
 
   useEffect(() => {
     call<[], boolean>("get_autoupdate").then((v) => setAuto(!!v)).catch(() => {});
+  }, []);
+
+  // Suivi d'une install déléguée au loader. Sans ça le bouton restait figé sur
+  // « confirmez dans la fenêtre Decky » même après validation, puisqu'on ne
+  // récupère aucun retour de l'appel (retour user).
+  useEffect(() => {
+    const backend: any = (window as any).DeckyBackend;
+    if (!backend?.addEventListener) return;
+    const onStart = (name: string) => {
+      if (name !== "Steamcord") return;
+      if (confirmTimer.current) { clearTimeout(confirmTimer.current); confirmTimer.current = null; }
+      unhookCancel();
+      setStatus("installing");
+    };
+    const onFinish = (name: string) => {
+      if (name !== "Steamcord") return;
+      unhookCancel();
+      // Decky recharge le plugin dans la foulée ; on remet quand même l'état au
+      // propre au cas où le panneau resterait monté.
+      setCurrent((c) => latestRef.current || c);
+      setStatus("uptodate");
+    };
+    backend.addEventListener("loader/plugin_download_start", onStart);
+    backend.addEventListener("loader/plugin_download_finish", onFinish);
+    return () => {
+      backend.removeEventListener("loader/plugin_download_start", onStart);
+      backend.removeEventListener("loader/plugin_download_finish", onFinish);
+    };
   }, []);
 
   const doCheck = async () => {
@@ -482,6 +549,15 @@ const UpdaterSection = () => {
     try {
       const info: any = await call<[], any>("check_update");
       setCurrent(info?.current || "");
+      if (info?.error) {
+        // Une vérification qui ÉCHOUE (réseau coupé, quota API GitHub épuisé,
+        // GitHub en rade) renvoie update_available:false + error. Sans ce test on
+        // annonçait « vous êtes à jour » alors qu'on n'en savait rien (retour
+        // user : quota épuisé, plugin en 1.18.0, et le QAM affichait « à jour »).
+        setUpdErr(String(info.error));
+        setStatus("checkfailed");
+        return;
+      }
       if (info?.update_available) {
         setLatest(info.latest);
         setUrl(info.url);
@@ -496,9 +572,43 @@ const UpdaterSection = () => {
 
   const doInstall = async () => {
     setStatus("installing");
-    // The backend unpacks the release and restarts plugin_loader on success.
-    // On failure it now returns {ok:false, error} — surface it instead of
-    // leaving the button on "installing…" forever.
+    setUpdErr("");
+    // Decky re-chown le dossier top-level du plugin (et plugin.json) à root à
+    // CHAQUE chargement, et n'attribue à l'utilisateur que le contenu. Notre
+    // backend tourne en utilisateur : il peut réécrire les fichiers existants,
+    // mais jamais créer une nouvelle entrée top-level. Toute release qui ajoute
+    // un fichier ou un dossier à la racine échouait donc en Permission denied
+    // (cf #16 — c'est game_overlay/ qui bloquait en 1.18.x).
+    //
+    // On délègue donc à l'installeur natif de Decky, exposé par le loader qui,
+    // lui, tourne en root : il télécharge l'artefact, le décompresse et rétablit
+    // les droits derrière lui (set_plugin_dir_permissions). C'est exactement le
+    // chemin qu'emprunte le Store Decky. Decky affiche sa propre modale de
+    // confirmation puis recharge le plugin.
+    const backend: any = (window as any).DeckyBackend;
+    if (backend?.call) {
+      try {
+        // (artifact, name, version, hash, install_type) — 2 = InstallType.UPDATE
+        await backend.call("utilities/install_plugin", url, "Steamcord", latest, "", 2);
+        setStatus("confirm");
+        hookCancel();
+        // Garde-fou si l'annulation nous échappe (modale fermée autrement) :
+        // sans lui le bouton resterait inutilisable jusqu'à la réouverture du
+        // QAM. `plugin_download_start` annule le minuteur.
+        if (confirmTimer.current) clearTimeout(confirmTimer.current);
+        confirmTimer.current = setTimeout(() => {
+          confirmTimer.current = null;
+          unhookCancel();
+          setStatus((s) => (s === "confirm" ? "available" : s));
+        }, 30000);
+        return;
+      } catch {
+        // Loader trop ancien / route absente → on retombe sur l'ancien chemin.
+      }
+    }
+    // Repli : le backend décompresse lui-même et redémarre plugin_loader.
+    // En cas d'échec il renvoie {ok:false, error} — on le remonte au lieu de
+    // laisser le bouton bloqué sur « installation… » pour toujours.
     try {
       const r: any = await call<[string], any>("apply_update", url);
       if (!(r === true || r?.ok)) {
@@ -518,8 +628,10 @@ const UpdaterSection = () => {
   const label =
     status === "checking" ? t("update_checking")
     : status === "installing" ? t("update_installing")
+    : status === "confirm" ? t("update_confirm_prompt")
     : status === "available" ? t("update_install", { v: latest })
     : status === "uptodate" ? t("update_up_to_date", { v: current })
+    : status === "checkfailed" ? t("update_check_failed")
     : status === "failed" ? t("update_failed")
     : t("update_check");
 
@@ -543,7 +655,7 @@ const UpdaterSection = () => {
           {status === "failed" ? <IcWarn /> : <IcRefresh />} {label}
         </WideBtn>
       </SR>
-      {status === "failed" && updErr ? (
+      {(status === "failed" || status === "checkfailed") && updErr ? (
         <SR>
           <div style={{ fontSize: "11px", opacity: 0.8, padding: "2px 4px", wordBreak: "break-word" }}>
             {updErr}
@@ -1136,6 +1248,22 @@ export default definePlugin(() => {
             ? `🖥️ ${t("notif_stream_started")}`
             : `📷 ${t("notif_camera_started")}`,
           sender: payload.body || "Discord",
+          avatar: payload.icon,
+          dm: true,
+        });
+      } else if (payload.kind === "plugin") {
+        // Notif émise par le plugin lui-même (mise à jour disponible, erreurs) :
+        // sender = "Steamcord", donc persona factice à ce nom + logo Discord.
+        // `dm: true` → DisplayClientNotification type 2 : l'entrée du panneau de
+        // notifs Steam s'intitule alors « Message » au lieu de « Message de
+        // groupe ». Ce header est un token figé PAR TYPE côté Steam
+        // (`#Notification_GroupMessage_Title`) : aucun des renderers du bundle ne
+        // le prend depuis nos données, on ne peut donc pas y écrire « Mise à
+        // jour » sans patcher un composant minifié de Steam (retour user).
+        notify({
+          title: payload.title,
+          body: payload.body,
+          sender: payload.title,
           avatar: payload.icon,
           dm: true,
         });
