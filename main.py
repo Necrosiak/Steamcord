@@ -2127,6 +2127,7 @@ class Plugin:
     _OVERLAY_CFG = os.path.expanduser("~/.config/steamcord-overlay.json")
     _overlay_proc = None
     _overlay_settings = None
+    _overlay_caps_cache = None
     _voice_ov_on = False
     _pov_ov_on = False
     _pov_users = set()          # users actuellement relayés (client MediaRecorder)
@@ -2139,6 +2140,35 @@ class Plugin:
     @classmethod
     def _overlay_dir(cls):
         return os.path.expanduser("~/.local/share/steamcord/game_overlay")
+
+    @classmethod
+    def _overlay_script(cls):
+        script = Path(DECKY_PLUGIN_DIR) / "game_overlay" / "overlay.py"
+        if not script.exists():
+            script = Path(DECKY_PLUGIN_DIR) / "defaults" / "game_overlay" / "overlay.py"
+        return script
+
+    @classmethod
+    async def _overlay_caps(cls):
+        """Ce que le helper sait rendre ICI. SteamOS n'a AUCUN binding GIR
+        WebKit2 → le helper y peint le roster vocal en GTK/Cairo, mais le POV
+        (décodage fMP4 en MediaSource) reste hors de portée sans moteur web
+        (#22). Sondé une fois, puis mémorisé."""
+        if cls._overlay_caps_cache is not None:
+            return cls._overlay_caps_cache
+        import json as _json
+        caps = {"backend": "unknown", "voice": True, "pov": True}
+        try:
+            proc = await create_subprocess_exec(
+                sys_python(), str(cls._overlay_script()), "--probe",
+                stdout=PIPE, stderr=PIPE)
+            out, _err = await wait_for(proc.communicate(), timeout=15)
+            caps = _json.loads(out.decode().strip().splitlines()[-1])
+        except Exception as e:
+            logger.warning(f"[overlay] probe KO: {e!r}")
+        cls._overlay_caps_cache = caps
+        logger.info(f"[overlay] capacités: {caps}")
+        return caps
 
     @classmethod
     def _overlay_running(cls):
@@ -2205,9 +2235,7 @@ class Plugin:
     async def _ensure_overlay_window(cls):
         if cls._overlay_running():
             return True
-        script = Path(DECKY_PLUGIN_DIR) / "game_overlay" / "overlay.py"
-        if not script.exists():
-            script = Path(DECKY_PLUGIN_DIR) / "defaults" / "game_overlay" / "overlay.py"
+        script = cls._overlay_script()
         cls._write_overlay_state()
         try:
             import vesktop
@@ -2293,6 +2321,13 @@ class Plugin:
     # ── Overlay POV ───────────────────────────────────────────────────────────
     @classmethod
     async def start_pov_overlay(cls):
+        # Échec HONNÊTE plutôt qu'un toggle qui ment : sans moteur web, le POV
+        # ne peut pas être décodé (le roster vocal, lui, marche — backend cairo).
+        caps = await cls._overlay_caps()
+        if not caps.get("pov", True):
+            logger.info("[overlay] POV refusé : backend %s sans MediaSource"
+                        % caps.get("backend"))
+            return {"ok": False, "reason": "pov_unsupported"}
         cls._pov_ov_on = True
         ok = await cls._ensure_overlay_window()
         if not ok:
@@ -2331,11 +2366,16 @@ class Plugin:
     @classmethod
     async def get_overlay_status(cls):
         s = cls._load_overlay_settings()
+        caps = await cls._overlay_caps()
         return {
             "voice_on": cls._voice_ov_on and cls._overlay_running(),
             "pov_on": cls._pov_ov_on and cls._overlay_running(),
             "voice": s.get("voice"),
             "pov": s.get("pov"),
+            # Le menu masque le POV là où il ne peut pas fonctionner (SteamOS).
+            "pov_supported": bool(caps.get("pov", True)),
+            "voice_supported": bool(caps.get("voice", True)),
+            "backend": caps.get("backend"),
         }
 
     @classmethod

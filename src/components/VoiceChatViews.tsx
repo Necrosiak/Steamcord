@@ -735,6 +735,9 @@ function OverlayMenu() {
   const [povOn, setPovOn] = useState(false);
   const [voice, setVoice] = useState<any>({ pos: "bottom-left", opacity: 85, scale: 100 });
   const [pov, setPov] = useState<any>({ layout: "right", opacity: 90, scale: 100 });
+  // Le POV a besoin d'un moteur web (décodage MediaSource) ; sur SteamOS le
+  // helper se replie sur un rendu GTK/Cairo qui n'affiche que le vocal (#22).
+  const [povSupported, setPovSupported] = useState(true);
 
   useEffect(() => {
     call<[], any>("get_overlay_status")
@@ -742,6 +745,7 @@ function OverlayMenu() {
         if (!r) return;
         setVoiceOn(!!r.voice_on);
         setPovOn(!!r.pov_on);
+        setPovSupported(r.pov_supported !== false);
         if (r.voice) setVoice((v: any) => ({ ...v, ...r.voice }));
         if (r.pov) setPov((v: any) => ({ ...v, ...r.pov }));
       })
@@ -808,14 +812,21 @@ function OverlayMenu() {
               />
             </>
           )}
-          {/* ② Overlay POV vidéo */}
-          <ToggleFieldAny
-            label={t("overlay_pov")}
-            checked={povOn}
-            onChange={(v: boolean) => togglePov(v)}
-            bottomSeparator="none"
-          />
-          {povOn && (
+          {/* ② Overlay POV vidéo — masqué là où il ne peut pas fonctionner,
+              avec la raison, plutôt qu'un interrupteur qui retombe tout seul. */}
+          {!povSupported ? (
+            <div style={{ padding: "6px 8px", fontSize: 12, opacity: 0.6 }}>
+              {t("overlay_pov")} — {t("overlay_pov_unsupported")}
+            </div>
+          ) : (
+            <ToggleFieldAny
+              label={t("overlay_pov")}
+              checked={povOn}
+              onChange={(v: boolean) => togglePov(v)}
+              bottomSeparator="none"
+            />
+          )}
+          {povSupported && povOn && (
             <>
               <DropdownAny
                 strDefaultLabel={t("overlay_pov_layout")}

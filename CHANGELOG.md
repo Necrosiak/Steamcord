@@ -16,6 +16,28 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.18.3 — 2026-07-24
+
+Bugfix release. In-game overlays finally work on a stock Steam Deck: the
+overlay no longer needs a web engine to draw the voice roster.
+
+### Fixed
+
+- **In-game overlays now work on SteamOS**
+  ([#22](https://github.com/Necrosiak/Steamcord/issues/22)). SteamOS ships no
+  WebKitGTK GObject binding at all — neither 4.1 nor 4.0 — so the overlay
+  helper died on startup and no overlay ever appeared on a Steam Deck. The
+  helper now picks its renderer at launch: WebKitGTK where it exists, and
+  otherwise a native GTK/Cairo renderer that draws the voice roster itself
+  (avatars, speaking ring, mute badge, position/opacity/size settings — same
+  look as before). The POV video overlay still needs a web engine to decode
+  the stream, so it is hidden from the menu, with the reason, on systems
+  without one instead of offering a switch that cannot work.
+- **Overlay window no longer depends on python-xlib.** Setting the
+  `GAMESCOPE_EXTERNAL_OVERLAY` atom — what makes gamescope paint the window
+  over the game — fell back silently when the module was missing. It now calls
+  libX11 directly if python-xlib is unavailable.
+
 ## 1.18.2 — 2026-07-24
 
 Bugfix release. The in-plugin updater now works on every install, and in-game
