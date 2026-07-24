@@ -21,6 +21,14 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 Bugfix release. The in-plugin updater now works on every install, and in-game
 overlays start on Decks that only ship the older WebKit binding.
 
+> **⚠️ Updating from v1.17.0 or older requires a manual reinstall.** The fix
+> ships *inside* the updater, so it cannot repair an update performed by an older
+> one — and those installs are missing the `game_overlay` folder, which the old
+> updater cannot create. Uninstall the plugin from Decky and install v1.18.2
+> fresh. Coming from v1.18.0 or v1.18.1, update normally: this release adds no
+> new top-level files. **From v1.18.2 onwards, updating from the plugin always
+> works.**
+
 ### Fixed
 
 - **Plugin updates no longer fail with "Permission denied"**
