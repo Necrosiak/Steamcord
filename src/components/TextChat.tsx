@@ -1,6 +1,6 @@
 import { DialogButton, Focusable, NavEntryPositionPreferences, showModal, TextField } from "@decky/ui";
 import { addEventListener, call, removeEventListener } from "@decky/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight, focusHalo, ACCENT } from "./Styled";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
@@ -36,11 +36,19 @@ export const draftByChannel: Record<string, string> = {};
 // précis (David #21). Fonctions plutôt qu'un `export let` : les bindings
 // exportés sont en lecture seule côté importateur.
 let _msgInteractions = 0;
+// Date du dernier changement d'état d'interaction. Entrer ou SORTIR d'une
+// édition / d'un sélecteur d'emoji démonte l'élément qui avait le focus : Steam
+// ré-entre alors dans la liste et pose le focus sur le dernier message, sans
+// que l'utilisateur ait rien fait. Le chat plein écran s'en sert pour ne pas
+// confondre ce rebond avec un vrai déplacement du curseur (David #21).
+let _lastInteractionAt = 0;
 export const noteMessageInteraction = (active: boolean) => {
   _msgInteractions += active ? 1 : -1;
   if (_msgInteractions < 0) _msgInteractions = 0;
+  _lastInteractionAt = Date.now();
 };
 export const isInteractingWithMessage = () => _msgInteractions > 0;
+export const lastMessageInteractionAt = () => _lastInteractionAt;
 
 // Message actuellement SÉLECTIONNÉ (focus manette), partagé de la même façon.
 // Agir sur un message n'est pas la seule raison de ne pas vouloir que la vue
@@ -606,15 +614,18 @@ const PREVIEW_LIST_ID = "steamcord-msg-preview";
 // qu'il remonte lire un lien/une photo. Le scroller étant en column-reverse
 // (voir le rendu plus bas), scrollTop vaut 0 en bas et devient NÉGATIF en
 // remontant — exactement comme la liste plein écran.
-const isPreviewNearBottom = () => {
-  const el = document.getElementById(PREVIEW_LIST_ID);
-  return !el || -el.scrollTop < 80;
-};
+// ⚠️ Le NŒUD est passé en paramètre : `document.getElementById` renvoyait
+// toujours `null` ici. Mesuré au CDP le 26/07 — le DOM du panneau vit dans la
+// fenêtre QuickAccess, celui de la modale dans la fenêtre Big Picture, alors que
+// le code du plugin tourne dans SharedJSContext. C'est le pendant, pour les
+// RECHERCHES d'éléments, du piège déjà documenté sur les MESURES dans
+// useFillHeight (Styled.tsx). Conséquence ici : `!el` était toujours vrai, donc
+// `stick` toujours vrai — le QAM se recollait en bas quoi qu'il arrive.
+const isPreviewNearBottom = (el: HTMLElement | null) => !el || -el.scrollTop < 80;
 // Recolle au dernier message. En column-reverse l'ancrage est natif : ce
 // rappel ne sert qu'à rattraper les quelques pixels de dérive que Chromium
 // laisse parfois après une insertion (même constat qu'en plein écran).
-const scrollPreviewBottom = () => setTimeout(() => {
-  const el = document.getElementById(PREVIEW_LIST_ID);
+const scrollPreviewBottom = (el: HTMLElement | null) => setTimeout(() => {
   if (el) el.scrollTop = 0;
 }, 50);
 
@@ -623,6 +634,37 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   // Réserve sous la liste : composer rapide (TextField + rangée Envoyer/plein
   // écran) en plus de la marge d'origine.
   const fillPreview = useFillHeight(80, 116);
+  // On garde le nœud du scroller d'aperçu : voir isPreviewNearBottom.
+  const previewElRef = useRef<HTMLDivElement | null>(null);
+  // Descendre depuis la liste des salons doit arriver DIRECTEMENT sur la zone de
+  // saisie (retour user 26/07). Mesuré au CDP : `PREFERRED_CHILD` fonctionne bien
+  // — on atterrit sur le message le PLUS RÉCENT — mais ça fait quand même un
+  // arrêt de trop avant le composer. On ne supprime cet arrêt QUE dans le sens
+  // descendant : en remontant depuis la saisie, on veut au contraire entrer sur
+  // le dernier message puis remonter le fil un par un.
+  // Le sens se lit sur `relatedTarget` (vérifié utilisable ici) : s'il vient de
+  // la saisie, on ne touche à rien ; s'il vient d'ailleurs (donc du dessus), on
+  // renvoie le focus sur la saisie.
+  const previewRef = (el: HTMLDivElement | null) => {
+    previewElRef.current = el;
+    fillPreview.ref(el);
+    if (!el || (el as any).__scNavFwd) return;
+    (el as any).__scNavFwd = true;
+    el.addEventListener("focusin", (e: any) => {
+      const from = e?.relatedTarget as HTMLElement | null;
+      if (!from || el.contains(from)) return; // déplacement interne, ou entrée initiale
+      // `parentElement.querySelector` et pas `document.…` : le panneau vit dans
+      // la fenêtre QuickAccess, pas dans le document du plugin.
+      const input = el.parentElement?.querySelector("input") as HTMLElement | null;
+      if (!input || from === input) return;   // on vient d'en bas → on reste sur le dernier message
+      // ⚠️ Au TICK SUIVANT, pas dans le focusin : voler le focus pendant que
+      // Steam enregistre encore l'enfant courant du conteneur laisse sa mémoire
+      // de focus incomplète — remonter d'un cran depuis la saisie retombait
+      // alors sur l'AVANT-dernier message au lieu du dernier (mesuré au CDP le
+      // 26/07). Même recette que le raccourci du plein écran.
+      setTimeout(() => { try { input.focus(); } catch {} }, 0);
+    });
+  };
   const [guilds, setGuilds] = useState<Guild[] | null>(null);
   const [dms, setDms] = useState<DMChannel[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -698,9 +740,9 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         // retiré"). Seul le tout premier chargement (messages encore null,
         // avant que quoi que ce soit ait été affiché) peut légitimement
         // afficher "aucun message".
-        const stick = isPreviewNearBottom();
+        const stick = isPreviewNearBottom(previewElRef.current);
         setMessages((prev) => (fresh.length > 0 || prev === null) ? fresh : prev);
-        if (stick) scrollPreviewBottom();
+        if (stick) scrollPreviewBottom(previewElRef.current);
       })
       .catch(() => {}); // un poll raté garde le dernier aperçu affiché
   };
@@ -774,13 +816,13 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
       if (data.op === "create" && data.message) {
         // L'auteur de ce message n'est plus "en train d'écrire".
         setTypingUser((cur) => (cur === data.message.author ? null : cur));
-        const stick = isPreviewNearBottom();
+        const stick = isPreviewNearBottom(previewElRef.current);
         setMessages((prev) => {
           const base = prev ?? [];
           if (base.some((m) => m.id === data.message.id)) return prev;
           return [...base, data.message];
         });
-        if (stick) scrollPreviewBottom();
+        if (stick) scrollPreviewBottom(previewElRef.current);
       } else if (data.op === "update" && data.message) {
         setMessages((prev) => prev?.map((m) => m.id === data.message.id ? { ...m, ...data.message } : m) ?? prev);
       } else if (data.op === "delete" && data.message_id) {
@@ -842,7 +884,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
             entrée sur le dernier message. */}
         <div
           id={PREVIEW_LIST_ID}
-          ref={fillPreview.ref}
+          ref={previewRef}
           style={{
             maxHeight: fillPreview.height, overflowY: "auto", marginBottom: 6,
             display: "flex", flexDirection: "column-reverse", overflowAnchor: "none",

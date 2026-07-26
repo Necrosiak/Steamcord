@@ -1,7 +1,7 @@
 from discord_client.remote_auth import RemoteAuth
 from discord_client.store_access import StoreAccess, User
 from aiohttp.web import WebSocketResponse  # type: ignore
-from asyncio import Task, create_task, Event
+from asyncio import Task, create_task, Event, Queue
 from json import loads
 from aiohttp import WSMsgType  # type: ignore
 from decky import emit  # type: ignore
@@ -51,18 +51,21 @@ class EventHandler:
         self.streaming_users = set()
         self._qr_scanned = False  # QR scanné, en attente de validation sur le téléphone
         self.state_changed_event = Event()
-        self.notification = None
         # Salon ouvert dans le chat plein écran (posé par set_fullscreen_channel) :
         # on n'émet PAS de notif de MESSAGE pour ce salon tant qu'il est lu (#21).
         self.fullscreen_channel = ""
-        # Event DÉDIÉ aux notifications. Avant, yield_notification attendait/clear()
-        # le MÊME state_changed_event que yield_new_state → sous events rapprochés
-        # (arrivée d'un participant : VOICE_CHANNEL_SELECT + VOICE_STATE_UPDATES +
-        # reconcile en rafale) un consommateur clear() l'event posé pour l'autre →
-        # une mise à jour d'ÉTAT était AVALÉE (le frontend restait figé sur le mute
-        # transitoire du début). Découplé : state_changed_event n'a plus qu'UN seul
-        # consommateur (yield_new_state).
-        self.notification_event = Event()
+        # FILE dédiée aux notifications. Deux raisons de ne pas repasser par un
+        # Event + un slot unique :
+        # 1. state_changed_event était partagé avec yield_new_state → sous events
+        #    rapprochés (arrivée d'un participant : VOICE_CHANNEL_SELECT +
+        #    VOICE_STATE_UPDATES + reconcile en rafale) un consommateur clear()
+        #    l'event posé pour l'autre → une mise à jour d'ÉTAT était AVALÉE.
+        # 2. Le slot unique qui a remplacé ça perdait les notifs en RAFALE : le
+        #    dispatch CDP (main.py) dure plusieurs centaines de ms, et toute notif
+        #    arrivée pendant écrasait la précédente puis était effacée par le
+        #    `self.notification = None` d'après-yield. 2 messages coup sur coup =
+        #    1 seul toast. Une Queue conserve l'ordre et ne perd rien.
+        self.notifications: Queue = Queue()
         self.remote_auth = RemoteAuth()
         # Posé par Plugin : ré-assertion de réglages (ex. prefs micro) à chaque
         # login du client — la persistance Discord seule ne suffit pas (#14).
@@ -159,11 +162,7 @@ class EventHandler:
 
     async def yield_notification(self):
         while True:
-            await self.notification_event.wait()
-            self.notification_event.clear()
-            if self.notification:
-                yield self.notification
-                self.notification = None
+            yield await self.notifications.get()
 
     async def main(self, ws):
         logger.info("Received WS Connection. Starting event processing loop")
@@ -423,22 +422,22 @@ class EventHandler:
         if chan_id and chan_id == self.fullscreen_channel:
             logger.info(f"notification supprimée (salon {chan_id} ouvert en plein écran)")
             return
-        self.notification = {"title": title, "body": body, "icon": icon,
-                             "kind": "dm" if dm else "group",
-                             "channel_id": chan_id}
-        logger.info(f"notification built: kind={self.notification['kind']} "
+        notification = {"title": title, "body": body, "icon": icon,
+                        "kind": "dm" if dm else "group",
+                        "channel_id": chan_id}
+        logger.info(f"notification built: kind={notification['kind']} "
                     f"title={title!r} icon={'oui' if icon else 'non'} "
                     f"enrichi={'__sc_dm' in data}")
-        self.notification_event.set()
+        self.notifications.put_nowait(notification)
 
     async def _call_ring(self, data):
         # Incoming DM call → notify. The frontend localizes the title via kind="call".
         # channel_id lets a click on the notification answer the call directly
         # (dm_call(channel_id, join_existing=True) — same call already ringing).
-        self.notification = {"title": "", "body": data.get("caller") or "Discord",
-                             "kind": "call", "icon": data.get("caller_avatar") or "",
-                             "channel_id": data.get("channel_id") or ""}
-        self.notification_event.set()
+        self.notifications.put_nowait(
+            {"title": "", "body": data.get("caller") or "Discord",
+             "kind": "call", "icon": data.get("caller_avatar") or "",
+             "channel_id": data.get("channel_id") or ""})
 
     async def _typing_start(self, data):
         # "X is typing…" for whichever conversation is open in the fullscreen
@@ -541,9 +540,8 @@ class EventHandler:
         icon = user.avatar or ""
         if icon and not icon.startswith("http"):
             icon = f"https://cdn.discordapp.com/avatars/{user.id}/{icon}.png?size=64"
-        self.notification = {"title": "", "body": user.name or "",
-                             "kind": kind, "icon": icon}
-        self.notification_event.set()
+        self.notifications.put_nowait(
+            {"title": "", "body": user.name or "", "kind": kind, "icon": icon})
 
     async def _stream_start(self, data):
         # Reflect Go Live state in the QAM. Discord emits STREAM_START for any

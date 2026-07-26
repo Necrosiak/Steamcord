@@ -16,6 +16,57 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.19.0 — 2026-07-26
+
+Follow-up to @DavidNotProgamer2's reports. The jump-to-latest button is gone,
+replaced by a controller shortcut and by the composer itself; the first
+notification of a session no longer disappears; and a whole class of silent
+failures is fixed — several DOM helpers had been looking for elements in the
+wrong document and quietly doing nothing.
+
+> Updating from v1.18.2 or later works normally from the plugin — this release
+> adds no new top-level files.
+
+### Changed
+
+- **Fullscreen chat: no more "Jump to latest" button.** Moving down onto the
+  message box is what resumes the live feed now, which is the gesture most
+  people already used. The button also flickered while scrolling, because its
+  state was recomputed on every scroll event.
+- **Controller shortcut in the fullscreen chat** — **Y** (or **X**) puts the
+  selection back on the message box and returns to the bottom of the
+  conversation in one press. The action is shown in the footer legend.
+- **Quick chat: moving down from the channel list now lands directly on the
+  message box**, instead of stopping on the most recent message first. Moving
+  back up still enters the list on the most recent message and walks the
+  history one message at a time.
+
+### Fixed
+
+- **The very first message notification of a session never popped**
+  ([#23](https://github.com/Necrosiak/Steamcord/issues/23)). The toast window
+  subscribes to Steam's notification store; when a notification arrives before
+  that window is mounted, nothing renders it and the notification is silently
+  lost — the entry still reached the tray, which is why it looked like a
+  display glitch. Steamcord now checks that the first toast of a session was
+  actually rendered and re-issues it once if it was not.
+- **Notifications arriving in quick succession were dropped.** The backend held
+  a single notification slot: anything that arrived while the previous one was
+  being dispatched overwrote it and was then cleared. Two messages in a row
+  produced one notification. It is now a proper queue, preserving order.
+- **Only one screen share was visible at a time**
+  ([#24](https://github.com/Necrosiak/Steamcord/issues/24)). Stream detection
+  relied on a registry that can be empty even when someone is sharing, so
+  neither the LIVE badge nor the Watch button appeared; and watching a second
+  share cut the first one off. Detection now also reads the voice state, and
+  watching no longer stops the stream already playing.
+- **Several UI behaviours silently did nothing at all.** The fullscreen view
+  and the quick chat both looked up their scroll containers by element id, but
+  the plugin does not run in the same document as the panel (quick chat) or the
+  modal (fullscreen) — every lookup returned nothing. Sticking to the bottom,
+  restoring focus on the most recent message, and holding the view still on the
+  selected message were all affected. They now work on the real nodes.
+
 ## 1.18.4 — 2026-07-24
 
 Bugfix release, entirely from @DavidNotProgamer2's chat report

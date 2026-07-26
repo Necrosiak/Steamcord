@@ -123,6 +123,45 @@ function primeSenderPersona(sid64: string, accountid: number, name: string, avat
   } catch {}
 }
 
+// ── #23 : le TOUT PREMIER toast d'une session Steam n'est jamais rendu ──
+// Reproduit de façon fiable : l'entrée arrive bien dans le tray, mais rien ne
+// s'affiche ; les suivantes popent normalement. Le rendu passe par
+// `NotificationStore.m_valueCurrentToast`, auquel la fenêtre de toasts
+// s'ABONNE — si elle n'est pas encore montée quand la 1re notif arrive, la
+// valeur est posée dans le vide et personne ne la rend.
+//
+// On ne peut pas deviner de façon fiable si la fenêtre est prête ; on VÉRIFIE
+// donc après coup. Signal mesuré au CDP le 26/07 : `BAnyContextRenderingToasts()`
+// passe à true ~170 ms après une notif RÉELLEMENT rendue et le reste pendant
+// tout l'affichage (`m_valueCurrentToast.m_currentValue`, lui, reste vide —
+// ne pas s'en servir). Si rien n'a été rendu au bout de la fenêtre d'attente,
+// on ré-émet UNE fois.
+//
+// ⚠️ Compromis assumé : si un AUTRE toast (Steam, autre plugin) occupe le
+// rendu pile à ce moment, on croit à tort que le nôtre est passé et on ne
+// ré-émet pas. À l'inverse le risque de doublon est borné à une seule notif
+// par démarrage. Perdre une notif est pire qu'en voir une en double.
+const TOAST_RENDER_SIGNAL_MS = 900;
+let firstToastVerified = false;
+
+function verifyFirstToastRendered(resend: () => void) {
+  if (firstToastVerified) return;
+  firstToastVerified = true;
+  const ns = (window as any).NotificationStore;
+  if (typeof ns?.BAnyContextRenderingToasts !== "function") return;
+  const t0 = Date.now();
+  const iv = setInterval(() => {
+    let rendered = false;
+    try { rendered = !!ns.BAnyContextRenderingToasts(); } catch {}
+    if (rendered) { clearInterval(iv); return; }
+    if (Date.now() - t0 >= TOAST_RENDER_SIGNAL_MS) {
+      clearInterval(iv);
+      console.log("[Steamcord] 1er toast jamais rendu (#23) → ré-émission");
+      try { resend(); } catch (e) { console.error("[Steamcord] re-emission toast failed", e); }
+    }
+  }, 60);
+}
+
 function chatStyleNotification(title: string, body: string, sender?: string, avatar?: string, dm?: boolean, onClick?: () => void) {
   try {
     const name = sender || title || "Steamcord";
@@ -137,11 +176,13 @@ function chatStyleNotification(title: string, body: string, sender?: string, ava
     // (doc SteamClient : "executed when the user interacts with the notification")
     // — jusqu'ici toujours un no-op, donc cliquer une notif ne faisait rien
     // (retour user : « répondre à l'appel/aller à la conv » demandés).
-    (window as any).SteamClient?.ClientNotifications?.DisplayClientNotification?.(
+    const send = () => (window as any).SteamClient?.ClientNotifications?.DisplayClientNotification?.(
       dm ? 2 : 1,
       JSON.stringify({ title: title === name ? "" : title, body, state: "active", steamid: sid64 }),
       () => { try { onClick?.(); } catch (e) { console.error("[Steamcord] notification onClick failed", e); } },
     );
+    send();
+    verifyFirstToastRendered(send); // #23, voir plus haut
   } catch (e) {
     console.error("[Steamcord] notification failed", e);
   }

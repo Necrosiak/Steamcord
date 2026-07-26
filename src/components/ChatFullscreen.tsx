@@ -1,10 +1,9 @@
 import { Focusable, ModalRoot, NavEntryPositionPreferences, TextField } from "@decky/ui";
 import { addEventListener, call, removeEventListener } from "@decky/api";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errText, t } from "../i18n";
-import { Btn, ChipBtn, Message, MessageRow, draftByChannel, failReason, notifyTypingThrottled, isInteractingWithMessage, onMessageFocus, qamWatchedChannel } from "./TextChat";
+import { Btn, ChipBtn, Message, MessageRow, draftByChannel, failReason, notifyTypingThrottled, isInteractingWithMessage, lastMessageInteractionAt, onMessageFocus, qamWatchedChannel } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
-import { IcChevronDown } from "./Icons";
 import { ActionCard, ACCENT, focusHalo } from "./Styled";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 
@@ -43,8 +42,17 @@ export function SendBtn({ disabled, onClick, children }: { disabled?: boolean; o
 // juste d'heuristique pour savoir si un lot plein = probablement encore de l'historique.
 const PAGE_SIZE = 30;
 const NEAR_BOTTOM_PX = 80;
+// Pas de bouton « revenir aux derniers messages » : la sortie du gel, c'est le
+// COMPOSER (retour user 26/07). Descendre sur la zone de saisie = « j'ai fini de
+// lire l'historique » → on dégèle et on recolle en bas, exactement le geste qu'il
+// faisait déjà avant le fix #21. Un bouton dédié en barre du bas était à la fois
+// clignotant (deux états recalculés à chaque event de scroll) et inatteignable
+// sans traverser toute la liste, et le raccourci manette qui devait le remplacer
+// a cassé la navigation (cf. plus bas).
 const FS_MSG_LIST_ID = "steamcord-msglist-fs";
 const FS_MSG_FLOW_ID = "steamcord-msgflow-fs";
+const FS_COMPOSER_ID = "steamcord-composer-fs";
+const FS_ROOT_ID = "steamcord-root-fs";
 // Brouillon par salon et throttle "en train d'écrire" : partagés avec le
 // composer rapide du QAM — voir `draftByChannel`/`notifyTypingThrottled` dans
 // TextChat.tsx. Un texte commencé d'un côté se retrouve de l'autre, et survit
@@ -57,10 +65,16 @@ const FS_MSG_FLOW_ID = "steamcord-msgflow-fs";
 // timer ni retry, même si des images se décodent après coup (l'ancrage natif
 // tient tout seul, contrairement aux anciens scrollTop=scrollHeight échelonnés
 // qui rataient dès que la hauteur bougeait encore — retour user #20, deux fois).
-const scrollFsBottom = () => {
+// ⚠️ Ces helpers reçoivent le NŒUD en paramètre, ils ne le cherchent plus par
+// `document.getElementById`. Mesuré au CDP le 26/07 (`el.ownerDocument === document`
+// → **false**) : la modale est rendue dans le document de la fenêtre Big Picture
+// alors que le code du plugin tourne dans un autre contexte — ces recherches
+// renvoyaient donc `null` EN SILENCE, et tout le gel de vue de #21 (ancre,
+// repin, recollage bas) n'a jamais pu s'exécuter une seule fois.
+// Les nœuds viennent des refs de callback posées sur les <div> bruts du JSX.
+const scrollFsBottom = (list: HTMLElement | null) => {
   setTimeout(() => {
-    const el = document.getElementById(FS_MSG_LIST_ID);
-    if (el) el.scrollTop = 0;
+    if (list) list.scrollTop = 0;
   }, 50);
 };
 // Focus manette initial sur le DERNIER message (retour user #20) — sans ça,
@@ -79,22 +93,19 @@ const scrollFsBottom = () => {
 // DOM focusables au sens natif, un `.focus()` dessus ne fait rien ; c'est le
 // conteneur qui l'est et qui délègue ensuite en interne selon
 // navEntryPreferPosition).
-const focusLastMessage = () => {
+const focusLastMessage = (list: HTMLElement | null) => {
   setTimeout(() => {
-    const flow = document.getElementById(FS_MSG_FLOW_ID);
-    flow?.focus?.();
+    // Le Focusable de la liste ne transmet pas de ref : on le récupère depuis le
+    // scroller, ce qui interroge le BON document par construction.
+    list?.querySelector<HTMLElement>(`#${FS_MSG_FLOW_ID}`)?.focus?.();
     setTimeout(() => {
-      const el = document.getElementById(FS_MSG_LIST_ID);
-      if (el) el.scrollTop = 0;
+      if (list) list.scrollTop = 0;
     }, 50);
   }, 700);
 };
 // En column-reverse, scrollTop vaut 0 en bas et devient NÉGATIF en remontant
 // dans l'historique (sémantique Chromium standard pour ce mode).
-const isFsNearBottom = () => {
-  const el = document.getElementById(FS_MSG_LIST_ID);
-  return !el || -el.scrollTop < NEAR_BOTTOM_PX;
-};
+const isFsNearBottom = (list: HTMLElement | null) => !list || -list.scrollTop < NEAR_BOTTOM_PX;
 
 // Vraie vue plein écran d'un salon/conversation — historique navigable,
 // réponse et partage de capture, dans une vraie modale Steam (même mécanisme
@@ -114,7 +125,6 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [atBottom, setAtBottom] = useState(true);
   const [draft, setDraft] = useState(draftByChannel[channelId] || "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,11 +143,96 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
   const messagesRef = useRef<Message[] | null>(null);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
+  // ── Gel de la vue (David #21, le bug tenace) ───────────────────────────────
+  // NE PAS recoller en bas ne fige RIEN. Le scroller est en column-reverse et
+  // reste collé à scrollTop=0 (le bas) : dans ce mode, un message inséré pousse
+  // nativement tout le contenu déjà affiché vers le HAUT. S'abstenir d'appeler
+  // scrollFsBottom() ne changeait donc strictement rien tant que l'utilisateur
+  // était près du bas — c'est-à-dire précisément dans le cas de David, qui
+  // sélectionne un message VISIBLE. Ça n'a "parfois marché" que quand il était
+  // déjà remonté loin dans l'historique, le seul cas où l'absence de recollage
+  // suffit. Figer demande donc un geste ACTIF : compenser la hauteur insérée.
+  //
+  // On s'ancre sur l'élément réellement focusé (une puce du message sélectionné)
+  // plutôt que sur une hauteur mesurée : c'est littéralement ce que l'utilisateur
+  // regarde, et ça reste juste même quand une image finit de se décoder après
+  // coup et change la hauteur du nouveau message (d'où les repasses différées).
+  // Nœuds DOM gardés tels quels (voir le bloc « deux pièges cumulés » plus bas) :
+  // déclarés AVANT holdAnchor/repinAnchor qui s'en servent, pour ne pas laisser
+  // de zone morte temporelle si un jour ils sont appelés pendant le rendu.
+  const composerElRef = useRef<HTMLDivElement | null>(null);
+  const listElRef = useRef<HTMLDivElement | null>(null);
+  const anchorRef = useRef<{ el: HTMLElement; top: number } | null>(null);
+  const repinTimersRef = useRef<any[]>([]);
+  // Dernier scrollTop écrit par NOUS : permet à onScroll de distinguer nos
+  // propres corrections d'un vrai scroll de l'utilisateur (qui, lui, doit
+  // annuler l'ancrage — sinon on lutterait contre son stick).
+  const selfScrollTopRef = useRef<number | null>(null);
+  // Dernière mutation de la liste (arrivée, édition, réaction optimiste…).
+  const lastMutationAtRef = useRef(0);
+  useEffect(() => { lastMutationAtRef.current = Date.now(); }, [messages]);
+
+  const dropAnchor = () => {
+    repinTimersRef.current.forEach(clearTimeout);
+    repinTimersRef.current = [];
+    anchorRef.current = null;
+  };
+
+  // Mémorise ce que l'utilisateur regarde, JUSTE AVANT l'insertion.
+  const holdAnchor = () => {
+    const list = listElRef.current;
+    // `document.activeElement` viserait le document du plugin, pas celui de la
+    // modale : on passe par ownerDocument du nœud qu'on tient réellement.
+    const active = (list?.ownerDocument?.activeElement ?? null) as HTMLElement | null;
+    if (!list || !active || !list.contains(active)) { dropAnchor(); return; }
+    dropAnchor();
+    anchorRef.current = { el: active, top: active.getBoundingClientRect().top };
+  };
+
+  // Remet l'ancre exactement là où elle était. En column-reverse, scrollTop
+  // baisse (devient plus négatif) quand on remonte dans l'historique, ce qui
+  // fait redescendre le contenu à l'écran : l'ancre ayant été poussée vers le
+  // haut de `delta` (négatif), `scrollTop += delta` la remet à sa place.
+  const repinAnchor = () => {
+    const list = listElRef.current;
+    const a = anchorRef.current;
+    if (!list || !a || !a.el.isConnected) return;
+    const delta = a.el.getBoundingClientRect().top - a.top;
+    if (!delta) return;
+    list.scrollTop += delta;
+    selfScrollTopRef.current = list.scrollTop;
+  };
+
+  // Une seule passe ne suffit pas : les images du message qui vient d'arriver
+  // se décodent après le layout et repoussent encore le contenu. Quelques
+  // repasses courtes rattrapent ça ; toute action de l'utilisateur les annule.
+  // useLayoutEffect et pas useEffect : la correction doit partir AVANT le
+  // rendu à l'écran, sinon la vue saute d'une image puis revient.
+  useLayoutEffect(() => {
+    if (!anchorRef.current) return;
+    repinAnchor();
+    repinTimersRef.current = [120, 350, 900].map((ms) => setTimeout(repinAnchor, ms));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
+
+  useEffect(() => () => dropAnchor(), []);
+
   useEffect(() => onMessageFocus((id) => {
     const list = messagesRef.current;
     const atEdge = !list || !list.length || id === list[list.length - 1].id;
+    // Un focus qui atterrit sur le DERNIER message dans la foulée d'une mutation
+    // de la liste n'est PAS un déplacement de l'utilisateur : c'est Steam qui
+    // ré-entre dans le conteneur par navEntryPreferPosition=LAST après que
+    // l'élément focusé s'est démonté sous lui — typiquement le sélecteur
+    // d'emoji qui se referme quand on réagit, ou une puce Modifier/Supprimer.
+    // Le prendre pour un vrai déplacement ré-armait le suivi du direct et la
+    // vue repartait de plus belle (David #21 : "même en réagissant"). On ignore
+    // donc ce seul sens (ré-armement) ; se figer à tort resterait visible et
+    // rattrapable d'un bouton, alors qu'un arrachement de vue, non.
+    const churn = Math.max(lastMutationAtRef.current, lastMessageInteractionAt());
+    if (atEdge && Date.now() - churn < 400) return;
     liveEdgeRef.current = atEdge;
-    if (!atEdge) setAtBottom(false); // fait apparaître "revenir aux derniers messages"
+    dropAnchor(); // vrai déplacement : on se réancrera sur la prochaine insertion
   }), []);
 
   // "X is typing…" (#20) — poussé en direct par le backend (event Decky
@@ -172,7 +267,10 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
         // soit arrachée sous un message sélectionné ou en cours d'édition.
         if (force) liveEdgeRef.current = true;
         const stick = force
-          || (isFsNearBottom() && liveEdgeRef.current && !isInteractingWithMessage());
+          || (isFsNearBottom(listElRef.current) && liveEdgeRef.current && !isInteractingWithMessage());
+        // Le poll peut rapatrier plusieurs messages d'un coup : si on est figé,
+        // on ancre la vue avant l'insertion comme pour une arrivée en direct.
+        if (!stick) holdAnchor();
         setMessages((prev) => {
           if (!prev) return fresh;
           // Un poll (force=false) qui revient vide est un aléa passager (API,
@@ -189,9 +287,9 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
           return [...preserved, ...fresh];
         });
         setHasMore(fresh.length >= PAGE_SIZE);
-        if (stick) { scrollFsBottom(); setAtBottom(true); }
+        if (stick) scrollFsBottom(listElRef.current);
         if (force && fresh.length > 0) {
-          setFocusedInitial((already) => { if (!already) focusLastMessage(); return true; });
+          setFocusedInitial((already) => { if (!already) focusLastMessage(listElRef.current); return true; });
         }
       })
       .catch(() => { if (force) setMessages([]); }); // un poll raté ne doit pas effacer ce qui est déjà affiché
@@ -257,7 +355,11 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
         // La personne dont le message vient d'arriver n'est plus "en train
         // d'écrire" — Discord n'envoie pas d'event de fin de frappe.
         setTypingUser((cur) => (cur === data.message.author ? null : cur));
-        const wasNearBottom = isFsNearBottom();
+        const wasNearBottom = isFsNearBottom(listElRef.current);
+        const stick = wasNearBottom && !isInteractingWithMessage() && liveEdgeRef.current;
+        // ⚠️ AVANT le setMessages : l'ancre doit être mesurée sur la vue telle
+        // qu'elle est encore, sans le nouveau message.
+        if (!stick) holdAnchor();
         setMessages((prev) => {
           if (!prev) return [data.message];
           if (prev.some((m) => m.id === data.message.id)) return prev;
@@ -266,17 +368,12 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
         // Re-colle explicitement en bas si on y était (mesuré au CDP : même
         // en column-reverse, scrollTop dérivait de quelques px sous les
         // insertions → le nouveau message finissait coupé par le bord bas).
-        // Plus haut dans l'historique : on n'y touche pas, le bouton
-        // "revenir aux derniers messages" est là pour ça.
+        // Plus haut dans l'historique : on n'y touche pas, redescendre sur le
+        // composer est là pour ça.
         // …sauf si on est en train d'agir sur un message précis (react/edit/
         // suppression) ou si l'utilisateur en a simplement SÉLECTIONNÉ un plus
         // haut : on gèle la vue pour ne pas l'arracher (David #21).
-        if (wasNearBottom && !isInteractingWithMessage() && liveEdgeRef.current) {
-          scrollFsBottom();
-          setAtBottom(true);
-        } else {
-          setAtBottom(false); // "revenir aux derniers messages" pour reprendre le flux
-        }
+        if (stick) scrollFsBottom(listElRef.current);
       } else if (data.op === "update" && data.message) {
         setMessages((prev) => prev?.map((m) => m.id === data.message.id ? { ...m, ...data.message } : m) ?? prev);
       } else if (data.op === "delete" && data.message_id) {
@@ -360,8 +457,86 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
     setSending(false);
   };
 
-  // Reprend explicitement le flux : c'est la sortie de la sélection figée.
-  const jumpToLatest = () => { liveEdgeRef.current = true; scrollFsBottom(); setAtBottom(true); };
+  // Reprend le flux : c'est LA sortie de la sélection figée. Déclenché en
+  // descendant sur la zone de saisie (voir son onFocus), pas par un bouton.
+  //
+  // ⚠️ NE PAS rebrancher ça sur un raccourci manette via `onSecondaryButton` /
+  // `onSecondaryActionDescription` posés sur le Focusable de la LISTE : essayé
+  // le 26/07, ça rend le conteneur focusable LUI-MÊME et ça casse tout le
+  // parcours de navigation (impossible de descendre de la liste des MP vers la
+  // saisie, liste de messages inerte — le user a vu « les messages ne chargent
+  // pas »). Vérifié au CDP : aucune erreur JS, aucun plantage React, le rendu
+  // est intact — c'est purement le focus qui est détourné. Même famille de
+  // piège que le `flow-children` non supporté documenté plus bas.
+  const jumpToLatest = () => { dropAnchor(); liveEdgeRef.current = true; scrollFsBottom(listElRef.current); };
+
+  // Le raccourci ne fait PAS un scroll à part : il ramène la SÉLECTION sur la
+  // zone de saisie, exactement le geste que le user faisait à la main. Comme le
+  // composer dégèle et recolle en bas via son onFocus, la vue redescend toute
+  // seule — un seul comportement à maintenir au lieu de deux.
+  // Même technique de focus programmatique que focusLastMessage() plus haut.
+  const focusComposer = () => {
+    // Nœud mémorisé par la ref en priorité — voir le commentaire sur composerElRef.
+    const box = composerElRef.current;
+    const input = box?.querySelector("input, textarea") as HTMLElement | null;
+    // Le conteneur de messages garde en mémoire le dernier enfant qu'on y a
+    // sélectionné et le restaure quand on y revient — ça l'emporte sur
+    // navEntryPreferPosition=LAST. Sans ça, après le raccourci, remonter d'un
+    // cran ramenait exactement là où on lisait AVANT (retour user 26/07), au
+    // lieu de repartir du message le plus récent. On réécrit donc cette mémoire
+    // en focalisant le dernier message, puis on pose la sélection sur la saisie
+    // au tick suivant (ordre vérifié au CDP : le focus final reste bien l'input).
+    const flow = listElRef.current?.querySelector<HTMLElement>(`#${FS_MSG_FLOW_ID}`);
+    const stops = flow?.querySelectorAll<HTMLElement>("button, [tabindex]");
+    if (stops && stops.length) stops[stops.length - 1]?.focus?.();
+    // Vérifié au CDP : un .focus() natif sur cet input lui donne bien la classe
+    // `gpfocus` (le vrai anneau de sélection Steam) et n'ouvre PAS le clavier
+    // virtuel. Le composer dégèle ensuite la vue via son onFocus.
+    setTimeout(() => (input || box)?.focus?.(), 0);
+    dropAnchor();
+    liveEdgeRef.current = true;
+    const list = listElRef.current;
+    setTimeout(() => { if (list) list.scrollTop = 0; }, 50);
+  };
+
+  // Le raccourci manette est câblé À LA MAIN, sur des <div> bruts du JSX (leur
+  // ref de callback est toujours transmise), en écoutant l'événement DOM que
+  // Steam émet — pas via une prop `onSecondaryButton`, pas via `document`.
+  //
+  // Pourquoi (tout mesuré au CDP le 26/07, ne pas « simplifier » ça) :
+  // • `ModalRoot` n'implémente pas du tout ces props, il les étale sur son
+  //   <form> où elles sont inertes ;
+  // • sur le `Focusable` de la LISTE, elles marchent mais rendent le conteneur
+  //   focusable et détruisent la navigation ;
+  // • sur cette enveloppe, Steam enregistre bien un écouteur `vgp_onsecondaryaction`
+  //   (vu via DOMDebugger.getEventListeners) et l'événement lui parvient bien
+  //   (bubbles: true, capté par un écouteur brut) — mais son handler interne
+  //   REFUSE d'agir tant que l'élément n'a pas lui-même le focus. Résultat :
+  //   glyphe affiché en pied d'écran, action morte.
+  // On garde donc `onSecondaryActionDescription` (qui, elle, affiche bien le
+  // glyphe) et on prend l'action en charge nous-mêmes. Y = vgp_onsecondaryaction,
+  // X = vgp_onoptions ; les deux mènent au même endroit.
+  // ⚠️ Deux pièges cumulés, tous deux mesurés au CDP le 26/07 :
+  // ① une ref React sur un `Focusable` de @decky/ui n'est PAS transmise au nœud
+  //    DOM (`ref.current` reste null) → on ne peut s'accrocher qu'à des <div>
+  //    bruts du JSX, dont la ref de callback, elle, arrive toujours ;
+  // ② `document` n'est pas celui de la modale (rendue dans la fenêtre Big
+  //    Picture, alors que le code du plugin tourne ailleurs) → tout
+  //    `document.getElementById` renvoie null EN SILENCE.
+  // D'où : on GARDE les nœuds que React nous donne, et on ne cherche plus rien.
+  // Piège de diagnostic associé : Steam enregistre de lui-même des écouteurs
+  // vgp_* du seul fait de `onSecondaryActionDescription`, donc voir les bons
+  // écouteurs au CDP ne prouve PAS que le câblage est le nôtre.
+
+  const wire = (el: HTMLDivElement | null) => {
+    if (!el || (el as any).__scShortcut) return;
+    (el as any).__scShortcut = true;
+    const onShortcut = () => focusComposer();
+    el.addEventListener("vgp_onsecondaryaction", onShortcut); // Y
+    el.addEventListener("vgp_onoptions", onShortcut);         // X
+  };
+  const attachShortcutList = (el: HTMLDivElement | null) => { listElRef.current = el; wire(el); };
+  const attachShortcutComposer = (el: HTMLDivElement | null) => { composerElRef.current = el; wire(el); };
 
   return (
     <ModalRootAny
@@ -370,7 +545,27 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
       onCancelActionDescription={t("video_exit_fullscreen")}
       bAllowFullSize
     >
-      <div style={{ display: "flex", flexDirection: "column", height: "78vh", maxWidth: 720, margin: "0 auto", width: "100%" }}>
+      {/* Enveloppe Focusable = l'accroche du raccourci manette. Mesuré au CDP
+          le 26/07 : ModalRoot n'implémente PAS les props de FooterLegendProps,
+          il se contente de les étaler sur le <form> qu'il rend — une prop
+          inconnue sur un élément DOM est inerte pour React, donc ni glyphe en
+          pied d'écran ni action (`onCancelActionDescription` juste au-dessus
+          est décoratif pour la même raison). Seul un vrai `Focusable` de
+          @decky/ui les câble.
+          ⚠️ Position IMPORTANTE : ici, en ENVELOPPE du contenu. Les avoir mises
+          sur le Focusable de la LISTE elle-même a cassé toute la navigation le
+          même jour (liste inerte, impossible de descendre vers la saisie). */}
+      <Focusable
+        id={FS_ROOT_ID}
+        flow-children="column"
+        noFocusRing
+        // Gardée UNIQUEMENT pour le glyphe en pied d'écran : Steam affiche bien
+        // ce libellé, mais ne déclenche jamais le handler associé ici (voir le
+        // long commentaire sur rootRef plus haut). L'action passe par l'écouteur
+        // DOM, pas par une prop `on*Button`.
+        onSecondaryActionDescription={t("jump_to_latest")}
+        style={{ display: "flex", flexDirection: "column", height: "78vh", maxWidth: 720, margin: "0 auto", width: "100%" }}
+      >
         <div style={{
           fontSize: 16, fontWeight: 600, textAlign: "center", marginBottom: 8,
           padding: "8px 12px", borderRadius: 8, background: "rgba(255,255,255,0.06)",
@@ -405,8 +600,16 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
             enfants gardent leur vraie taille (cf. ①). */}
         <div
           id={FS_MSG_LIST_ID}
+          ref={attachShortcutList}
           style={{ flex: 1, overflowY: "auto", paddingRight: 4, display: "flex", flexDirection: "column-reverse", overflowAnchor: "none" }}
-          onScroll={() => setAtBottom(isFsNearBottom())}
+          onScroll={(e: any) => {
+            // Un scroll qui n'est PAS le nôtre (stick manette, gâchette) veut
+            // dire que l'utilisateur reprend la main : l'ancre posée sur ce
+            // qu'il regardait n'a plus lieu d'être, sinon les repasses
+            // différées la ramèneraient en arrière sous ses doigts.
+            const top = e?.currentTarget?.scrollTop;
+            if (top !== selfScrollTopRef.current) dropAnchor();
+          }}
         >
           <Focusable
             id={FS_MSG_FLOW_ID}
@@ -435,14 +638,6 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
           </Focusable>
         </div>
 
-        {!atBottom && (
-          <div style={{ alignSelf: "center", marginTop: 6, marginBottom: 2 }}>
-            <ActionCard onClick={jumpToLatest} center>
-              <IcChevronDown /> {t("jump_to_latest")}
-            </ActionCard>
-          </div>
-        )}
-
         {typingUser && (
           <div style={{ fontSize: 11, opacity: 0.7, fontStyle: "italic", marginTop: 6 }}>
             {t("typing_indicator", { name: typingUser })}
@@ -461,10 +656,20 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
           </div>
         )}
 
-        <div style={{ marginTop: 8 }}>
+        <div id={FS_COMPOSER_ID} ref={attachShortcutComposer} style={{ marginTop: 8 }}>
           <TextField
             value={draft}
             placeholder={t("message_placeholder")}
+            // Descendre sur la saisie = « j'ai fini de lire l'historique » :
+            // on dégèle et on recolle en bas. C'est le geste que le user faisait
+            // DÉJÀ avant le fix #21 pour se remettre au dernier message avant de
+            // remonter au stick, et c'est ce qui remplace le bouton « revenir aux
+            // derniers messages » (retour 26/07 : il le voulait supprimé). Les
+            // `onFocus` suffit : mesuré au CDP, la navigation manette pose un
+            // VRAI focus DOM sur l'input (activeElement = INPUT, classe
+            // `gpfocus`). `onGamepadFocus` n'est pas dans TextFieldProps et
+            // faisait sortir TypeScript en erreur pour rien.
+            onFocus={jumpToLatest}
             onChange={(e: any) => {
               const v = e?.target?.value ?? "";
               setDraft(v);
@@ -504,7 +709,7 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
           </Focusable>
           {error && <div style={{ color: "#ff6b6b", fontSize: 11, marginTop: 4 }}>{error}</div>}
         </div>
-      </div>
+      </Focusable>
     </ModalRootAny>
   );
 }

@@ -469,6 +469,28 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const k = keyOf(own);
                 if (!out.has(k)) out.set(k, own);
             }
+            // 3e source, AUTORITATIVE : les voice states (issue #24). Les deux
+            // registres ci-dessus dépendent de ce que la gateway a bien voulu nous
+            // pousser — vérifié en live : un participant avec selfStream=true peut
+            // être TOTALEMENT absent des deux (salon dont on n'a pas reçu les
+            // STREAM_CREATE), et en appel DM « actif » ne contient QUE le stream
+            // qu'on regarde. Résultat côté user : un seul ami affiché comme LIVE,
+            // les autres sans badge ni bouton « Voir ». selfStream, lui, est
+            // exactement ce que l'UI Discord utilise pour son propre badge.
+            // Le stream reconstruit porte le strict nécessaire pour la clé, le
+            // badge et STREAM_WATCH ({ownerId, channelId, guildId}).
+            try {
+                const VSS = Vencord.Webpack.findStore("VoiceStateStore");
+                const guildId = Vencord.Webpack.findStore("ChannelStore")?.getChannel?.(chId)?.guild_id || null;
+                const states = VSS?.getVoiceStatesForChannel?.(chId) || {};
+                for (const uid in states) {
+                    if (!states[uid] || !states[uid].selfStream) continue;
+                    const s = { ownerId: uid, userId: uid, channelId: chId, guildId,
+                                state: "ACTIVE", __sc_fromVoiceState: true };
+                    const k = keyOf(s);
+                    if (!out.has(k)) out.set(k, s);
+                }
+            } catch (e) { /* store indispo → on garde ce que la gateway a donné */ }
             return Array.from(out, ([key, s]) => ({ key, s }));
         };
 
@@ -494,7 +516,17 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     const alreadyViewing = (ASS.getViewerIds?.(streamKey) || []).includes(myId);
                     if (!alreadyViewing) {
                         const watch = WP.findByCode('"STREAM_WATCH",streamKey');
-                        if (watch) watch(s); else console.warn("[Steamcord] video: action STREAM_WATCH introuvable");
+                        // forceMultiple : sans lui, Discord décide tout seul s'il
+                        // autorise plusieurs visionnages en comptant les streams de
+                        // getAllActiveStreamsForChannel — un registre qui, justement,
+                        // est souvent vide chez nous (issue #24). Le compte tombait
+                        // donc sous 2, allowMultiple passait à false, et regarder le
+                        // 2e partage COUPAIT le 1er : c'est le « ça a switché » du
+                        // rapport. On le force, puisqu'on sait, nous, qu'on relaie
+                        // plusieurs POV. noFocus : ne pas déplacer la sélection de
+                        // l'UI Discord sous les pieds de l'utilisateur.
+                        if (watch) watch(s, { forceMultiple: true, noFocus: true });
+                        else console.warn("[Steamcord] video: action STREAM_WATCH introuvable");
                     }
                 } else {
                     console.log("[Steamcord] video: pas de stream → cas CAMÉRA pour " + userId);
