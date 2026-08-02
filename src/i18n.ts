@@ -61,6 +61,7 @@ const T: Record<Locale, Dict> = {
     servers_show_hidden: "Show hidden",
     servers_show_visible: "Hide the hidden ones",
     discord_reconnecting: "Reconnecting to Discord… try again in a few seconds.",
+    discord_starting: "Discord is still starting up… retrying.", guilds_failed: "Could not load your servers. Check the Steamcord log for details.",
     connecting: "Connecting…",
     error: "Error: ",
     call: "Call",
@@ -97,6 +98,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "GStreamer/PipeWire Python bindings are missing for capture. Install them in a terminal:",
     config_notifs: "Notifications",
     native_toasts: "Native Decky notifications",
+    notif_ingame: "Notifications while playing", notif_ingame_desc: "Applies only while a game is running.",
+    notif_ingame_all: "All notifications", notif_ingame_priority: "Direct messages and calls only", notif_ingame_off: "None",
     native_toasts_desc: "Native look for all Decky plugin notifications. Warning: many Steam builds (including current SteamOS stable) crash while rendering them — if an error screen appears or notifications stop showing entirely, turn this back OFF (the safe chat-style fallback works everywhere).",
     update_section: "Updates",
     update_auto: "Automatic updates",
@@ -227,6 +230,7 @@ const T: Record<Locale, Dict> = {
     servers_show_hidden: "Afficher les masqués",
     servers_show_visible: "Masquer les masqués",
     discord_reconnecting: "Reconnexion à Discord en cours… réessaie dans quelques secondes.",
+    discord_starting: "Discord est encore en train de démarrer… nouvelle tentative.", guilds_failed: "Impossible de charger tes serveurs. Le journal Steamcord contient le détail.",
     connecting: "Connexion…",
     error: "Erreur : ",
     call: "Appeler",
@@ -263,6 +267,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Les bindings Python GStreamer/PipeWire manquent pour la capture. Installe-les dans un terminal :",
     config_notifs: "Notifications",
     native_toasts: "Notifications Decky natives",
+    notif_ingame: "Notifications en jeu", notif_ingame_desc: "Ne s'applique que lorsqu'un jeu est lancé.",
+    notif_ingame_all: "Toutes les notifications", notif_ingame_priority: "Messages privés et appels uniquement", notif_ingame_off: "Aucune",
     native_toasts_desc: "Rendu natif pour les notifications de tous les plugins Decky. Attention : beaucoup de builds Steam (dont la stable SteamOS actuelle) plantent en les affichant — si un écran d'erreur apparaît ou que plus aucune notification ne s'affiche, désactive (le rendu de secours style message marche partout).",
     update_section: "Mises à jour",
     update_auto: "Mises à jour automatiques",
@@ -424,6 +430,7 @@ const T: Record<Locale, Dict> = {
     tab_dms: "DMs",
     loading_servers: "Server werden geladen…",
     discord_reconnecting: "Verbindung zu Discord wird wiederhergestellt… versuche es in ein paar Sekunden erneut.",
+    discord_starting: "Discord startet noch… neuer Versuch.", guilds_failed: "Deine Server konnten nicht geladen werden. Details stehen im Steamcord-Protokoll.",
     connecting: "Verbinden…",
     error: "Fehler: ",
     call: "Anrufen",
@@ -451,6 +458,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Die GStreamer/PipeWire-Python-Bindings für die Aufnahme fehlen. Installiere sie im Terminal:",
     config_notifs: "Benachrichtigungen",
     native_toasts: "Native Decky-Benachrichtigungen",
+    notif_ingame: "Benachrichtigungen im Spiel", notif_ingame_desc: "Gilt nur, solange ein Spiel läuft.",
+    notif_ingame_all: "Alle Benachrichtigungen", notif_ingame_priority: "Nur Direktnachrichten und Anrufe", notif_ingame_off: "Keine",
     native_toasts_desc: "Natives Aussehen für die Benachrichtigungen aller Decky-Plugins. Achtung: viele Steam-Builds (auch das aktuelle SteamOS Stable) stürzen beim Darstellen ab — erscheint ein Fehlerbildschirm oder kommen gar keine Benachrichtigungen mehr an, wieder AUSSCHALTEN (die sichere Chat-Darstellung funktioniert überall).",
   },
   es: {
@@ -512,6 +521,7 @@ const T: Record<Locale, Dict> = {
     tab_dms: "MD",
     loading_servers: "Cargando servidores…",
     discord_reconnecting: "Reconectando con Discord… inténtalo de nuevo en unos segundos.",
+    discord_starting: "Discord aún se está iniciando… reintentando.", guilds_failed: "No se pudieron cargar tus servidores. Consulta el registro de Steamcord.",
     connecting: "Conectando…",
     error: "Error: ",
     call: "Llamar",
@@ -539,6 +549,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Faltan los bindings de Python de GStreamer/PipeWire para la captura. Instálalos en una terminal:",
     config_notifs: "Notificaciones",
     native_toasts: "Notificaciones Decky nativas",
+    notif_ingame: "Notificaciones durante el juego", notif_ingame_desc: "Solo se aplica mientras se ejecuta un juego.",
+    notif_ingame_all: "Todas las notificaciones", notif_ingame_priority: "Solo mensajes directos y llamadas", notif_ingame_off: "Ninguna",
     native_toasts_desc: "Aspecto nativo para las notificaciones de todos los plugins de Decky. Atención: muchas versiones de Steam (incluida la SteamOS estable actual) fallan al mostrarlas — si aparece una pantalla de error o dejan de mostrarse todas las notificaciones, desactívalo (el formato seguro estilo chat funciona en todas partes).",
   },
   it: {
@@ -600,6 +612,7 @@ const T: Record<Locale, Dict> = {
     tab_dms: "MP",
     loading_servers: "Caricamento dei server…",
     discord_reconnecting: "Riconnessione a Discord… riprova tra qualche secondo.",
+    discord_starting: "Discord si sta ancora avviando… nuovo tentativo.", guilds_failed: "Impossibile caricare i tuoi server. Controlla il registro di Steamcord.",
     connecting: "Connessione…",
     error: "Errore: ",
     call: "Chiama",
@@ -627,6 +640,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Mancano i binding Python GStreamer/PipeWire per la cattura. Installali in un terminale:",
     config_notifs: "Notifiche",
     native_toasts: "Notifiche Decky native",
+    notif_ingame: "Notifiche durante il gioco", notif_ingame_desc: "Si applica solo mentre un gioco è in esecuzione.",
+    notif_ingame_all: "Tutte le notifiche", notif_ingame_priority: "Solo messaggi diretti e chiamate", notif_ingame_off: "Nessuna",
     native_toasts_desc: "Aspetto nativo per le notifiche di tutti i plugin Decky. Attenzione: molte build di Steam (compresa l'attuale SteamOS stabile) vanno in crash nel mostrarle — se compare una schermata di errore o le notifiche smettono del tutto di apparire, disattivalo (la resa sicura in stile chat funziona ovunque).",
   },
   pt: {
@@ -688,6 +703,7 @@ const T: Record<Locale, Dict> = {
     tab_dms: "DMs",
     loading_servers: "Carregando servidores…",
     discord_reconnecting: "Reconectando ao Discord… tente novamente em alguns segundos.",
+    discord_starting: "O Discord ainda está a iniciar… a tentar novamente.", guilds_failed: "Não foi possível carregar os teus servidores. Consulta o registo do Steamcord.",
     connecting: "Conectando…",
     error: "Erro: ",
     call: "Ligar",
@@ -715,6 +731,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Faltam os bindings Python do GStreamer/PipeWire para a captura. Instale-os em um terminal:",
     config_notifs: "Notificações",
     native_toasts: "Notificações Decky nativas",
+    notif_ingame: "Notificações durante o jogo", notif_ingame_desc: "Aplica-se apenas enquanto um jogo está a correr.",
+    notif_ingame_all: "Todas as notificações", notif_ingame_priority: "Apenas mensagens diretas e chamadas", notif_ingame_off: "Nenhuma",
     native_toasts_desc: "Aparência nativa para as notificações de todos os plugins do Decky. Atenção: muitas versões do Steam (incluindo o SteamOS estável atual) travam ao exibi-las — se uma tela de erro aparecer ou as notificações pararem completamente de aparecer, desative (o formato seguro em estilo de chat funciona em qualquer lugar).",
   },
   nl: {
@@ -776,6 +794,7 @@ const T: Record<Locale, Dict> = {
     tab_dms: "DM's",
     loading_servers: "Servers laden…",
     discord_reconnecting: "Opnieuw verbinden met Discord… probeer het over een paar seconden opnieuw.",
+    discord_starting: "Discord start nog op… nieuwe poging.", guilds_failed: "Je servers konden niet worden geladen. Bekijk het Steamcord-logboek.",
     connecting: "Verbinden…",
     error: "Fout: ",
     call: "Bellen",
@@ -803,6 +822,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "De GStreamer/PipeWire-Python-bindings voor opname ontbreken. Installeer ze in een terminal:",
     config_notifs: "Meldingen",
     native_toasts: "Native Decky-meldingen",
+    notif_ingame: "Meldingen tijdens het spelen", notif_ingame_desc: "Geldt alleen zolang er een spel draait.",
+    notif_ingame_all: "Alle meldingen", notif_ingame_priority: "Alleen privéberichten en oproepen", notif_ingame_off: "Geen",
     native_toasts_desc: "Native weergave voor de meldingen van alle Decky-plugins. Let op: veel Steam-builds (ook de huidige stabiele SteamOS) crashen bij het weergeven — verschijnt er een foutscherm of komen er helemaal geen meldingen meer binnen, zet dit dan weer UIT (de veilige chat-weergave werkt overal).",
   },
   pl: {
@@ -864,6 +885,7 @@ const T: Record<Locale, Dict> = {
     tab_dms: "PW",
     loading_servers: "Ładowanie serwerów…",
     discord_reconnecting: "Ponowne łączenie z Discordem… spróbuj ponownie za kilka sekund.",
+    discord_starting: "Discord jeszcze się uruchamia… ponawiam próbę.", guilds_failed: "Nie udało się wczytać twoich serwerów. Szczegóły w dzienniku Steamcord.",
     connecting: "Łączenie…",
     error: "Błąd: ",
     call: "Zadzwoń",
@@ -891,6 +913,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Brakuje bindingów Pythona GStreamer/PipeWire do przechwytywania. Zainstaluj je w terminalu:",
     config_notifs: "Powiadomienia",
     native_toasts: "Natywne powiadomienia Decky",
+    notif_ingame: "Powiadomienia podczas gry", notif_ingame_desc: "Dotyczy tylko czasu, gdy gra jest uruchomiona.",
+    notif_ingame_all: "Wszystkie powiadomienia", notif_ingame_priority: "Tylko wiadomości prywatne i połączenia", notif_ingame_off: "Żadne",
     native_toasts_desc: "Natywny wygląd powiadomień wszystkich wtyczek Decky. Uwaga: wiele wersji Steam (w tym aktualny stabilny SteamOS) zawiesza się przy ich wyświetlaniu — jeśli pojawi się ekran błędu albo powiadomienia całkiem przestaną się pokazywać, wyłącz tę opcję (bezpieczny widok w stylu czatu działa wszędzie).",
   },
   ru: {
@@ -952,6 +976,7 @@ const T: Record<Locale, Dict> = {
     tab_dms: "ЛС",
     loading_servers: "Загрузка серверов…",
     discord_reconnecting: "Переподключение к Discord… попробуйте снова через несколько секунд.",
+    discord_starting: "Discord ещё запускается… повторная попытка.", guilds_failed: "Не удалось загрузить ваши серверы. Подробности в журнале Steamcord.",
     connecting: "Подключение…",
     error: "Ошибка: ",
     call: "Позвонить",
@@ -979,6 +1004,8 @@ const T: Record<Locale, Dict> = {
     hint_gst_missing: "Отсутствуют Python-биндинги GStreamer/PipeWire для захвата. Установите их в терминале:",
     config_notifs: "Уведомления",
     native_toasts: "Нативные уведомления Decky",
+    notif_ingame: "Уведомления во время игры", notif_ingame_desc: "Действует, только пока запущена игра.",
+    notif_ingame_all: "Все уведомления", notif_ingame_priority: "Только личные сообщения и звонки", notif_ingame_off: "Нет",
     native_toasts_desc: "Нативный вид уведомлений всех плагинов Decky. Внимание: многие сборки Steam (включая текущую стабильную SteamOS) падают при их отображении — если появился экран ошибки или уведомления вовсе перестали показываться, выключите обратно (безопасный вид в стиле чата работает везде).",
   },
 };
@@ -990,6 +1017,11 @@ const T: Record<Locale, Dict> = {
 export function errText(e: unknown): string {
   const s = String(e);
   if (s.includes("discord_reconnecting")) return t("discord_reconnecting");
+  // #28 : les stores Vencord pas encore résolus, et l'échec générique côté
+  // backend. Sans ces deux branches l'utilisateur recevait la TypeError ou la
+  // trace Python crue (« error: python exception »).
+  if (s.includes("stores_not_ready")) return t("discord_starting");
+  if (s.includes("guilds_failed")) return t("guilds_failed");
   return t("error") + s;
 }
 

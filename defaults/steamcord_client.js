@@ -1330,11 +1330,22 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     break;
                                 }
                                 case "$get_guilds_vc": {
-                                    const GS = Vencord.Webpack.Common.GuildStore;
+                                    const GS = Vencord.Webpack.Common?.GuildStore;
                                     const GCS = Vencord.Webpack.findStore("GuildChannelStore");
                                     const SGS = Vencord.Webpack.findStore("SortedGuildStore");
                                     const VSS = Vencord.Webpack.findStore("VoiceStateStore");
-                                    const US = Vencord.Webpack.Common.UserStore;
+                                    const US = Vencord.Webpack.Common?.UserStore;
+                                    // #28 « Servers not loading, error python exception ». Vencord
+                                    // résout ces stores PARESSEUSEMENT : dans les premières secondes
+                                    // après un (re)démarrage de Discord ils valent encore undefined.
+                                    // `Object.keys(GS.getGuilds())` était HORS du try/catch par
+                                    // serveur plus bas → TypeError brut, relayé tel quel jusqu'au
+                                    // QAM (« ça charge… puis erreur »). On échoue désormais avec un
+                                    // code STABLE que le frontend traduit et qui déclenche un
+                                    // réessai, au lieu d'exposer une exception crue.
+                                    if (typeof GS?.getGuilds !== "function" || typeof GCS?.getChannels !== "function") {
+                                        throw new Error("stores_not_ready");
+                                    }
                                     const sortedIds = SGS?.getFlattenedGuildIds?.() ?? SGS?.getGuilds?.()?.map(g => g.id) ?? Object.keys(GS.getGuilds());
                                     const allGuilds = GS.getGuilds();
                                     result = [];

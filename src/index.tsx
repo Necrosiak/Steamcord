@@ -345,6 +345,23 @@ const readRunningGame = (): { name: string; appid: number | null } | null => {
   return app ? { name: app.display_name, appid: app.appid ?? null } : null;
 };
 
+// #25 — mode de notification pendant qu'un jeu tourne. Gardé en mémoire et pas
+// relu à chaque fois : dispatchNotification est appelé depuis le backend et doit
+// trancher SANS aller-retour asynchrone, sinon le toast partirait avant la
+// réponse. Chargé une fois au démarrage du plugin, mis à jour par le réglage.
+type NotifyInGame = "all" | "priority" | "off";
+let notifyInGameMode: NotifyInGame = "all";
+const notifyModeListeners = new Set<() => void>();
+const setNotifyInGameCache = (v: NotifyInGame) => {
+  notifyInGameMode = v;
+  notifyModeListeners.forEach((f) => { try { f(); } catch {} });
+};
+// Un jeu est au premier plan. On réutilise readRunningGame (Router.MainRunningApp)
+// plutôt que d'inventer une 2e détection qui divergerait de « Now playing ».
+const isGameRunning = (): boolean => {
+  try { return readRunningGame() !== null; } catch { return false; }
+};
+
 // Artwork : assets LOCAUX Steam d'abord (marche aussi hors-ligne et pour les
 // raccourcis non-Steam avec grid perso), repli CDN header pour les jeux du
 // store, rien sinon (les appid de raccourcis non-Steam sont hors du CDN).
@@ -459,6 +476,44 @@ const NotifStyleToggle = () => {
         bottomSeparator="none"
       />
     </SR>
+  );
+};
+
+// #25 — « leave active or disabled to receive notifications while playing »
+// (Havok027). Trois modes plutôt qu'un simple oui/non : couper TOUT prive aussi
+// des MP et des appels entrants, ce que personne ne veut vraiment.
+const NotifInGameSetting = () => {
+  const [mode, setMode] = useState<NotifyInGame>(notifyInGameMode);
+  useEffect(() => {
+    const sync = () => setMode(notifyInGameMode);
+    notifyModeListeners.add(sync);
+    return () => { notifyModeListeners.delete(sync); };
+  }, []);
+  const opts = [
+    { data: "all", label: t("notif_ingame_all") },
+    { data: "priority", label: t("notif_ingame_priority") },
+    { data: "off", label: t("notif_ingame_off") },
+  ];
+  return (
+    <>
+      <SR>
+        <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("notif_ingame")}</div>
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={opts as any}
+          selectedOption={mode}
+          onChange={(o: any) => {
+            const v = o.data as NotifyInGame;
+            setNotifyInGameCache(v);
+            call("set_notify_prefs", v).catch(() => {});
+          }}
+        />
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>{t("notif_ingame_desc")}</div>
+      </SR>
+    </>
   );
 };
 
@@ -1155,6 +1210,7 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcBell /> {t("config_notifs")}</div>
       </SR>
       <NotifStyleToggle />
+      <NotifInGameSetting />
       <hr />
       <AboutSection />
       <LogoutSection />
@@ -1221,9 +1277,34 @@ export default definePlugin(() => {
     ' Focusable=' + !!Focusable + ' DialogButton=' + !!DialogButton +
     ' Toggle=' + !!Toggle + ' SliderField=' + !!SliderField + ' Dropdown=' + !!Dropdown);
 
+  // #25 — on charge le mode de notification en jeu AVANT que la première notif
+  // puisse tomber. En cas d'échec on reste sur "all", c'est-à-dire le
+  // comportement historique : un réglage illisible ne doit jamais faire taire
+  // les notifications à l'insu de l'utilisateur.
+  call<[], { in_game?: string }>("get_notify_prefs")
+    .then((p) => {
+      const m = p?.in_game;
+      if (m === "all" || m === "priority" || m === "off") setNotifyInGameCache(m);
+    })
+    .catch(() => {});
+
   window.STEAMCORD = {
     dispatchNotification: (payload: { title: string; body: string; kind?: string; icon?: string; channel_id?: string }) => {
       console.log("Dispatching Steamcord notification: ", payload);
+      // #25 — filtrage des notifications pendant qu'un jeu tourne. Il se fait
+      // ICI et pas dans le backend : seul le contexte Steam sait qu'un jeu est
+      // au premier plan.
+      if (notifyInGameMode !== "all" && isGameRunning()) {
+        // "priority" laisse passer ce qui est vraiment personnel ou important :
+        // MP, appel entrant, et les avis du plugin lui-même. Ce qu'on coupe,
+        // c'est le bruit de fond — messages de serveur, démarrages de partage
+        // d'écran et de caméra.
+        const priority = payload.kind === "dm" || payload.kind === "call" || payload.kind === "plugin";
+        if (notifyInGameMode === "off" || !priority) {
+          console.log("[Steamcord] notification filtrée (jeu en cours, mode " + notifyInGameMode + ")");
+          return;
+        }
+      }
       if (payload.kind === "call") {
         // Appel entrant (toujours un MP) : le backend met le nom de l'appelant
         // dans body et son avatar Discord dans icon → persona = appelant.

@@ -63,6 +63,12 @@ REQUEST_IFACE = "org.freedesktop.portal.Request"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 PROPS_IFACE = "org.freedesktop.DBus.Properties"
 
+# Délai avant de refermer NOTRE copie d'un fd PipeWire remis à Chromium (#26).
+# Il ne borne qu'un envoi D-Bus local déjà accepté par le noyau — 30 s est
+# absurdement large exprès : le but n'est pas d'être rapide, c'est de garantir
+# que la copie finit par partir même si Discord ne ferme jamais la session.
+FD_RELEASE_DELAY = 30.0
+
 # ScreenCast v2 : assez pour Chromium (CreateSession/SelectSources/Start +
 # cursor modes), pas assez pour qu'il tente les restore tokens (v4).
 SC_PROPS = {
@@ -312,6 +318,23 @@ class PortalShim:
         # donc un appelant non vérifié n'obtient ni node ni fd.
         async def _vet():
             if await self._sender_is_vesktop(sender):
+                # #26 « Stream screen not working ». Discord n'appelle
+                # Session.Close QUE sur un arrêt propre : un flux qui glitche, un
+                # rechargement de l'onglet ou un Vesktop qui redémarre laissaient
+                # la session — et ses fds PipeWire — vivante pour toujours. Les
+                # connexions s'accumulaient jusqu'à ce que PipeWire n'enregistre
+                # plus aucun client : pw-dump pend, find_screen_node rend
+                # (None, None), Start échoue SANS ERREUR VISIBLE, et seul un
+                # redémarrage complet récupérait la main. On ne partage qu'un seul
+                # écran à la fois ici : toute session antérieure du même
+                # expéditeur est forcément morte, on la ferme avant d'en ouvrir
+                # une neuve.
+                for old in [p for p in self.sessions
+                            if p.startswith(f"/org/freedesktop/portal/desktop/session/"
+                                            f"{_sender_token(sender)}/")
+                            and p != session_path]:
+                    log.info(f"CreateSession: fermeture de la session orpheline {old}")
+                    self._close_session(old)
                 self.sessions[session_path] = {"fds": []}
                 log.info(f"CreateSession → {session_path}")
                 self._respond_later(sender, req, 0,
@@ -379,11 +402,30 @@ class PortalShim:
             return Message.new_error(
                 msg, "org.freedesktop.portal.Error.Failed", str(e))
         fd = sock.detach()
-        # Le noyau duplique le fd à l'envoi (SCM_RIGHTS) ; on garde le nôtre
-        # jusqu'à la fermeture de la session pour ne pas couper un envoi en vol.
+        # Le noyau duplique le fd à l'envoi (SCM_RIGHTS) : une fois le message
+        # parti, NOTRE copie ne sert plus à rien — Chromium a la sienne. On la
+        # gardait jusqu'à Session.Close, donc pour toujours dès que Discord
+        # oubliait de fermer (#26) : autant de connexions PipeWire vivantes en
+        # pure perte, jusqu'au blocage du serveur. On la referme après un délai
+        # large, qui couvre très largement l'envoi en vol.
         self.sessions[session]["fds"].append(fd)
         log.info(f"OpenPipeWireRemote → fd pipewire (session {session})")
+        asyncio.get_event_loop().call_later(
+            FD_RELEASE_DELAY, self._release_fd, session, fd)
         return Message.new_method_return(msg, "h", [0], unix_fds=[fd])
+
+    def _release_fd(self, session, fd):
+        """Ferme notre copie du fd, une seule fois.
+
+        Le retrait de la liste AVANT le close est ce qui rend l'opération sûre :
+        sans ça, _close_session pourrait refermer le même numéro de fd après
+        que le noyau l'ait recyclé pour autre chose — on fermerait un descripteur
+        sans rapport (socket D-Bus, fichier de log…).
+        """
+        sess = self.sessions.get(session)
+        if sess and fd in sess["fds"]:
+            sess["fds"].remove(fd)
+            _safe_close(fd)
 
     def _close_session(self, path):
         sess = self.sessions.pop(path, None)

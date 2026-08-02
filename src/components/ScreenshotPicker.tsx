@@ -59,10 +59,37 @@ function ScreenshotPickerModal({ channelId, closeModal }: { channelId: string; c
   const [busyHandle, setBusyHandle] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // #27 — on demandait `GetAllAppsLocalScreenshotsRange(0, 24)`. Mesuré sur le
+  // client Steam : les bornes sont INCLUSIVES et la liste n'est PAS triée par
+  // date. Elle est GROUPÉE PAR JEU (jeux du plus anciennement capturé au plus
+  // récent), et décroissante À L'INTÉRIEUR de chaque jeu :
+  //   [2362060 · 28/06] [10885342 · 03/07, 03/07] [1768466 · 08/07, 08/07, 08/07]
+  // Un intervalle `0..24` rendait donc les 25 premières entrées de ce classement
+  // par jeu — chez quelqu'un qui a plus de captures que ça, les jeux récents
+  // tombaient entièrement hors de la fenêtre et sa dernière capture n'apparaissait
+  // jamais. Prendre la QUEUE ne marche pas non plus (la plus récente peut être au
+  // milieu). Seule solution correcte : tout récupérer, puis trier nous-mêmes.
+  // Le coût est faible — l'API ne rend que des métadonnées (url, appid, handle,
+  // date) ; seules les 24 vignettes affichées déclenchent un chargement d'image.
+  const MAX = 24;
   useEffect(() => {
-    SteamClient.Screenshots.GetAllAppsLocalScreenshotsRange(0, 24)
-      .then((res: Shot[]) => setShots((Array.isArray(res) ? res : []).slice().sort((a, b) => b.nCreated - a.nCreated)))
-      .catch(() => setShots([]));
+    const S = SteamClient.Screenshots;
+    (async () => {
+      let res: Shot[] = [];
+      try {
+        res = await S.GetAllAppsLocalScreenshots();
+      } catch {
+        // Client trop ancien pour la variante « tout » : on retombe sur un
+        // intervalle large, quitte à rater les plus récentes, plutôt que rien.
+        const c = await S.GetAllAppsLocalScreenshotsCount().catch(() => 0);
+        res = c > 0 ? await S.GetAllAppsLocalScreenshotsRange(0, c - 1) : [];
+      }
+      setShots(
+        (Array.isArray(res) ? res : []).slice()
+          .sort((a, b) => b.nCreated - a.nCreated)
+          .slice(0, MAX)
+      );
+    })().catch(() => setShots([]));
   }, []);
 
   const pick = async (shot: Shot) => {

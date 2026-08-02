@@ -16,6 +16,56 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.20.0 — 2026-08-02
+
+Four reports from @Matchaccia and @Havok027, three of them traced to a definite
+root cause. The screenshot picker was showing the wrong screenshots, screen
+sharing could die until a full shutdown, the server list could fail with a raw
+Python error, and notifications can now be filtered while a game is running.
+
+> Updating from v1.18.2 or later works normally from the plugin — this release
+> adds no new top-level files.
+
+### Fixed
+
+- **The screenshot picker never showed your most recent screenshots**
+  ([#27](https://github.com/Necrosiak/Steamcord/issues/27)). `GetAllAppsLocalScreenshotsRange(0, 24)`
+  looked like "the 25 newest". It is not. Measured against the running Steam
+  client: the bounds are **inclusive**, and the list is **not sorted by date** —
+  it is grouped by game, and only descending *within* each game. So the request
+  returned the first 25 entries of a per-game ordering, and once you had more
+  screenshots than that, whole recent games fell outside the window. Taking the
+  tail of the list does not work either, because the newest shot can sit in the
+  middle. The picker now fetches everything and sorts it itself.
+- **Screen sharing could stop starting entirely, until a full shutdown**
+  ([#26](https://github.com/Necrosiak/Steamcord/issues/26)). The ScreenCast
+  portal handed Chromium a PipeWire connection and held its own copy of the file
+  descriptor until Discord closed the session — which Discord only does on a
+  clean stop. A glitched stream, a reloaded tab or a restarted Vesktop leaked
+  one every time. Those connections pile up until PipeWire stops registering
+  clients: `pw-dump` then hangs, the screen node can no longer be found, and
+  `Start` fails **without surfacing any error** — exactly the reported "it just
+  doesn't want to start". Stale sessions are now closed when a new one opens,
+  and our copy of the descriptor is always released.
+- **The server list could fail with a raw Python exception**
+  ([#28](https://github.com/Necrosiak/Steamcord/issues/28)). Two separate
+  problems. A non-dict entry in the guild list raised `AttributeError` straight
+  into the panel, because the type guard was applied in one place out of three.
+  And Vencord resolves its stores lazily: opening the tab in the first seconds
+  after Discord starts could throw a `TypeError` that was relayed verbatim. The
+  list now retries on its own while the failure is transient, unexpected errors
+  are logged with a traceback, and neither case reaches the UI as a stack trace.
+  For the record, a 30-second timeout was ruled out by measurement — the lookup
+  takes 23 ms across 98 servers and 515 voice channels.
+
+### Added
+
+- **Notifications while playing** ([#25](https://github.com/Necrosiak/Steamcord/issues/25)),
+  requested by @Havok027. A new setting with three modes: all notifications,
+  direct messages and calls only, or none — applied only while a game is in the
+  foreground. A corrupt or unreadable setting always falls back to "all", so
+  notifications are never silenced without you asking.
+
 ## 1.19.0 — 2026-07-26
 
 Follow-up to @DavidNotProgamer2's reports. The jump-to-latest button is gone,

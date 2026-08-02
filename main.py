@@ -698,6 +698,54 @@ class Plugin:
                     logger.warning(f"notification dispatch attempt {attempt + 1}/3 failed: {e!r}")
                     await sleep(1)
 
+    # ── Notifications en jeu (#25) ────────────────────────────────────────────
+    # Havok027 : « Would it be possible to leave active or disabled to receive
+    # notifications while playing? Or select whatever receives notification? »
+    # Le filtrage se fait CÔTÉ FRONTEND (index.tsx) et pas ici : c'est le contexte
+    # Steam qui sait si un jeu tourne au premier plan, le backend n'en a aucune
+    # idée. Ici on ne fait que persister le choix.
+    _NOTIFY_CFG = os.path.expanduser("~/.config/steamcord-notify.json")
+    _notify_settings = None
+
+    # "all" : tout passe (comportement historique)
+    # "priority" : seulement MP, appels entrants et avis du plugin
+    # "off" : rien tant qu'un jeu est au premier plan
+    _NOTIFY_MODES = ("all", "priority", "off")
+
+    @classmethod
+    def _load_notify_settings(cls):
+        from json import load as _load
+        if cls._notify_settings is None:
+            try:
+                with open(cls._NOTIFY_CFG) as f:
+                    cls._notify_settings = _load(f)
+            except Exception:
+                cls._notify_settings = {}
+        mode = cls._notify_settings.get("in_game")
+        if mode not in cls._NOTIFY_MODES:
+            cls._notify_settings["in_game"] = "all"
+        return cls._notify_settings
+
+    @classmethod
+    async def get_notify_prefs(cls):
+        return cls._load_notify_settings()
+
+    @classmethod
+    async def set_notify_prefs(cls, in_game):
+        from json import dump as _dump
+        if in_game not in cls._NOTIFY_MODES:
+            return {"ok": False, "error": f"mode inconnu: {in_game}"}
+        cfg = cls._load_notify_settings()
+        cfg["in_game"] = in_game
+        try:
+            os.makedirs(os.path.dirname(cls._NOTIFY_CFG), exist_ok=True)
+            with open(cls._NOTIFY_CFG, "w") as f:
+                _dump(cfg, f)
+        except Exception as e:
+            logger.warning(f"save {cls._NOTIFY_CFG} failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, **cfg}
+
     @classmethod
     async def connect_ws(cls):
         await cls.shared_js_tab.ensure_open()
@@ -916,10 +964,16 @@ class Plugin:
         # correspondent plus à un serveur actuel).
         hidden = cls._hidden_guilds_set()
         order = cls._guild_order_list()
-        present = {g.get("id"): g for g in guilds if isinstance(g, dict) and g.get("id")}
+        # `clean` et PAS `guilds` pour la suite : le filtre isinstance n'était
+        # appliqué qu'à `present`, si bien qu'une entrée non-dict traversait
+        # quand même `rest` et la boucle de marquage → `AttributeError: 'str'
+        # object has no attribute 'get'` remontée BRUTE dans le QAM. Une seule
+        # liste assainie, utilisée partout (#28).
+        clean = [g for g in guilds if isinstance(g, dict) and g.get("id")]
+        present = {g["id"]: g for g in clean}
         ordered = [present[gid] for gid in order if gid in present]
-        ordered_ids = {g.get("id") for g in ordered}
-        rest = [g for g in guilds if g.get("id") not in ordered_ids]
+        ordered_ids = {g["id"] for g in ordered}
+        rest = [g for g in clean if g["id"] not in ordered_ids]
         merged = ordered + rest
         for g in merged:
             g["hidden"] = g.get("id") in hidden
@@ -927,10 +981,29 @@ class Plugin:
 
     @classmethod
     async def get_guilds_vc(cls, include_hidden=False):
-        guilds = await cls.evt_handler.api.get_guilds_vc()
+        # Tout ce qui s'échappe d'ici part TEL QUEL dans le QAM — c'est ce que
+        # voyait le rapporteur de #28 (« error: python exception »), sans la
+        # moindre trace exploitable dans les logs. On journalise la pile et on
+        # renvoie un code stable que le frontend sait traduire. Les codes déjà
+        # connus du frontend (`discord_reconnecting`, `stores_not_ready`) sont
+        # relayés intacts : eux ont une traduction et un réessai dédiés.
+        try:
+            guilds = await cls.evt_handler.api.get_guilds_vc()
+        except Exception as e:
+            msg = str(e)
+            if "discord_reconnecting" in msg or "stores_not_ready" in msg:
+                raise
+            logger.exception("get_guilds_vc failed")
+            raise Exception("guilds_failed") from None
         if not isinstance(guilds, list):
             return guilds
-        return cls._apply_guild_prefs(guilds, include_hidden)
+        try:
+            return cls._apply_guild_prefs(guilds, include_hidden)
+        except Exception:
+            # Les préférences (ordre/masquage) ne valent pas de perdre la liste :
+            # en cas de pépin on rend les serveurs bruts plutôt que rien.
+            logger.exception("guild prefs failed — falling back to raw list")
+            return [g for g in guilds if isinstance(g, dict) and g.get("id")]
 
     @classmethod
     async def join_vc(cls, channel_id, guild_id):

@@ -1,6 +1,6 @@
 import { DialogButton, Focusable } from "@decky/ui";
 import { call } from "@decky/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight } from "./Styled";
 import { IcRefresh, IcSpeaker, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
@@ -97,14 +97,42 @@ export function ChannelBrowser() {
   // même où on les masque, `hiddenCount` retombait à 0 juste après un masquage
   // (plus aucune trace qu'il en existait un) → le bouton "afficher les
   // masqués" ne réapparaissait jamais → impossible de les récupérer.
+  // #28 : ouvrir l'onglet pendant que Discord démarre encore échouait DÉFINITIVEMENT
+  // — les stores Vencord n'étaient pas résolus, et il fallait quitter puis rouvrir
+  // pour retenter. On réessaie tout seul tant que l'échec est transitoire (Discord
+  // qui démarre ou se reconnecte), sans jamais boucler à l'infini.
+  const retries = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alive = useRef(true);
+  const MAX_RETRIES = 10;
+
   const refresh = () => {
     call<[boolean], any>("get_guilds_vc", true).then(res => {
-      if (Array.isArray(res)) setGuilds(res);
+      if (!alive.current) return;
+      if (Array.isArray(res)) { retries.current = 0; setError(null); setGuilds(res); }
       else setError(t("error") + JSON.stringify(res));
-    }).catch(e => setError(errText(e)));
+    }).catch(e => {
+      if (!alive.current) return;
+      const s = String(e);
+      const transient = s.includes("stores_not_ready") || s.includes("discord_reconnecting");
+      setError(errText(e));
+      if (transient && retries.current < MAX_RETRIES) {
+        retries.current += 1;
+        // 1 s, 2 s, 3 s… : court au début (le cas courant se résout en quelques
+        // secondes), sans marteler le backend si Discord ne revient jamais.
+        timer.current = setTimeout(refresh, 1000 * retries.current);
+      }
+    });
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    alive.current = true;
+    refresh();
+    return () => {
+      alive.current = false;
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
 
   const join = async (channelId: string, guildId: string) => {
     setJoining(channelId);
