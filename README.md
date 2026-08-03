@@ -67,6 +67,8 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 
 Vesktop is installed and launched automatically by the plugin the first time it runs. Just log in once (QR or fullscreen) and you stay logged in.
 
+Nothing else is required: the Python dependencies are vendored, and the handful of system tools some features shell out to (`pw-dump`, `pactl`, `ffmpeg`, `gamescopectl`) are optional — each one only costs the feature it powers, and the backend logs a `[deps]` line at startup naming any that are missing. See **[docs/OS-NOTES.md](docs/OS-NOTES.md)** for the full table and per-distro packages, including NixOS, Gentoo, Alpine and Void.
+
 ### Screen share
 Screen sharing works out of the box — the plugin auto-installs its Python dependency (aiohttp) for the system Python on first run. GStreamer is provided by the system.
 
@@ -131,3 +133,4 @@ People who reported, diagnosed or helped fix bugs — thank you!
 - [@jafuuu](https://github.com/jafuuu) — spotted that the game Rich Presence was missing entirely ([#11](https://github.com/Necrosiak/Steamcord/issues/11), added in v1.16.0)
 - [@Matchaccia](https://github.com/Matchaccia) — report of screen sharing refusing to restart until a full shutdown, with the key detail that a reboot was not always enough while a full power cycle always was, which is what pointed at leaked PipeWire connections rather than a Discord-side problem ([#26](https://github.com/Necrosiak/Steamcord/issues/26), fixed in v1.20.0), report of the screenshot picker hiding the most recent screenshots ([#27](https://github.com/Necrosiak/Steamcord/issues/27), fixed in v1.20.0), and report of the server list failing with a raw Python exception ([#28](https://github.com/Necrosiak/Steamcord/issues/28), fixed in v1.20.0)
 - [@Havok027](https://github.com/Havok027) — report of the screen randomly dimming as if the game had gone to the background on a Legion Go S, and the follow-up suggestion of letting people choose which notifications come through while playing, which is what shaped the new setting ([#25](https://github.com/Necrosiak/Steamcord/issues/25), setting added in v1.20.0)
+- [@Strix-Vyxlor](https://github.com/Strix-Vyxlor) — the first NixOS report, with the log excerpts and the decisive detail that the stream worked while the preview did not, which is what identified the truncated service `PATH` rather than a missing package, and the request for an explicit dependency list ([#29](https://github.com/Necrosiak/Steamcord/issues/29), fixed in v1.21.0)

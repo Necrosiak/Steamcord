@@ -16,7 +16,7 @@ import sys
 import time
 import json
 import logging
-from subprocess import getoutput, run, PIPE, DEVNULL
+from subprocess import run, PIPE, DEVNULL
 from gi import require_version  # type: ignore
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout,
@@ -107,10 +107,12 @@ def find_x_display():
     nested (typiquement :1) pour le contenu jeu, :0 = UI Steam. On préfère :1.
     Inspiré de decky-streamer (ximagesrc DISPLAY=:1, capture fiable sans portail
     ni node PipeWire). Renvoie ":1"/":0" ou None."""
+    # os.listdir plutôt qu'un `ls` shellé : coreutils n'est pas garanti dans le
+    # PATH du service sur les distros non conventionnelles (issue #29).
     try:
-        socks = getoutput("ls /tmp/.X11-unix/ 2>/dev/null")
-    except Exception as e:
-        log.warning(f"ls .X11-unix KO: {e!r}")
+        socks = " ".join(os.listdir("/tmp/.X11-unix"))
+    except OSError as e:
+        log.warning(f"listdir .X11-unix KO: {e!r}")
         socks = ""
     order = []
     if "X1" in socks:

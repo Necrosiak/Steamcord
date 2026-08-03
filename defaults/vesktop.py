@@ -19,6 +19,109 @@ VESKTOP_CDP = "http://127.0.0.1:9223"
 VESKTOP_APP = "dev.vencord.Vesktop"
 
 
+# ── PATH: find system tools on ANY distro ───────────────────────────────────
+# The backend is spawned by the SYSTEM plugin_loader service, so it inherits
+# systemd's default PATH (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:
+# /sbin:/bin). On NixOS *nothing* lives there — pgrep, pw-dump, pactl, ffmpeg,
+# gamescopectl and python3 are all under /run/current-system/sw/bin — so every
+# helper died on a bare FileNotFoundError and the feature silently went away
+# (issue #29: no screen-share preview, `[shareenv]`/`[screendiag]` errors in the
+# log). The same holds for a Nix or Guix install on top of any other distro.
+# These roots are APPENDED, never prepended: the distro's own binaries keep
+# winning, and the whole thing is a no-op where the directories don't exist.
+_EXTRA_PATH = (
+    "/run/wrappers/bin",                        # NixOS setuid wrappers
+    "/run/current-system/sw/bin",               # NixOS system profile
+    "~/.nix-profile/bin",                       # Nix user profile (any distro)
+    "/nix/var/nix/profiles/default/bin",        # Nix multi-user default profile
+    "/var/guix/profiles/system/profile/bin",    # Guix system profile
+    "~/.guix-profile/bin",                      # Guix user profile
+    "~/.local/bin",
+    "/usr/local/bin", "/usr/bin", "/bin",
+    "/usr/local/sbin", "/usr/sbin", "/sbin",
+)
+
+
+def _ensure_path():
+    """Append the roots above to PATH, once, at import. Runs before anything
+    else in the backend (main.py execs this module at its own import time), so
+    every later shutil.which() and subprocess spawn sees the full PATH."""
+    try:
+        cur = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+        seen = set(cur)
+        extra = []
+        for d in _EXTRA_PATH:
+            d = os.path.expanduser(d)
+            if d not in seen and os.path.isdir(d):
+                seen.add(d)
+                extra.append(d)
+        if extra:
+            os.environ["PATH"] = os.pathsep.join(cur + extra)
+    except Exception:
+        pass          # never let PATH tuning break the import
+
+
+_ensure_path()
+
+
+# ── process lookup without procps ───────────────────────────────────────────
+# `pgrep` is not installed by default on NixOS or Alpine and is not on the
+# service PATH there either, so shelling out to it raised FileNotFoundError on
+# every poll. Reading /proc is one syscall sweep, needs no package at all, and
+# spares a fork on paths that run on every panel open (get_share_env).
+def proc_pids(comm=None, cmdline=None):
+    """PIDs matching `comm` (regex fullmatched against /proc/<pid>/comm, i.e.
+    `pgrep -x`) and/or `cmdline` (regex searched in the full argv, `pgrep -f`).
+    Our own PID is never returned."""
+    comm_rx = re.compile(comm) if comm else None
+    cmd_rx = re.compile(cmdline) if cmdline else None
+    me = os.getpid()
+    out = []
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return out
+    for name in entries:
+        if not name.isdigit():
+            continue
+        pid = int(name)
+        if pid == me:
+            continue
+        try:
+            if comm_rx is not None:
+                with open(f"/proc/{pid}/comm") as f:
+                    # comm is truncated to 15 chars by the kernel; every name we
+                    # match on (gamescope, kwin_wayland, vesktop) is shorter.
+                    if not comm_rx.fullmatch(f.read().strip()):
+                        continue
+            if cmd_rx is not None:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    argv = f.read().replace(b"\0", b" ").decode("utf-8", "replace")
+                if not cmd_rx.search(argv):
+                    continue
+        except OSError:
+            continue      # process exited mid-sweep, or a kernel thread
+        out.append(pid)
+    return out
+
+
+def proc_running(comm=None, cmdline=None):
+    return bool(proc_pids(comm=comm, cmdline=cmdline))
+
+
+def proc_kill(cmdline, sig=None):
+    """`pkill -f` without procps. Returns the number of processes signalled."""
+    import signal as _sig
+    n = 0
+    for pid in proc_pids(cmdline=cmdline):
+        try:
+            os.kill(pid, sig or _sig.SIGTERM)
+            n += 1
+        except OSError:
+            pass
+    return n
+
+
 # ── stand-alone: Vesktop backend = flatpak OU binaire natif ──────────────────
 # Bazzite/SteamOS : flatpak (historique). CachyOS/Arch & co n'ont pas forcément
 # flatpak → on accepte aussi un Vesktop natif du PATH (paquet `vesktop`).
@@ -199,8 +302,7 @@ _PROC_PATTERN = "[Vv]esktop"
 async def _running():
     """True if a Vesktop process exists, regardless of the debug port."""
     try:
-        proc = await create_subprocess_exec("pgrep", "-f", _PROC_PATTERN, stdout=DEVNULL, stderr=DEVNULL)
-        return (await proc.wait()) == 0
+        return proc_running(cmdline=_PROC_PATTERN)
     except Exception:
         return False
 
@@ -392,11 +494,9 @@ async def launch():
                 killer = await create_subprocess_exec(
                     "flatpak", "kill", VESKTOP_APP, stdout=DEVNULL, stderr=DEVNULL, env=env,
                 )
+                await killer.wait()
             else:
-                killer = await create_subprocess_exec(
-                    "pkill", "-f", _PROC_PATTERN, stdout=DEVNULL, stderr=DEVNULL,
-                )
-            await killer.wait()
+                proc_kill(_PROC_PATTERN)
             for _ in range(10):
                 await sleep(1)
                 if not await _running():
@@ -434,21 +534,8 @@ async def launch():
     # gamemode, et un gamescope imbriqué par-jeu peut tourner sous KWin
     # (= bureau quand même) — le test socket seul força(it) wayland à tort
     # au bureau.
-    def _proc_running(*names):
-        try:
-            for p in Path("/proc").iterdir():
-                if not p.name.isdigit():
-                    continue
-                try:
-                    if (p / "comm").read_text().strip() in names:
-                        return True
-                except OSError:
-                    continue
-        except Exception:
-            pass
-        return False
-    gamescope = (not _proc_running("kwin_wayland", "kwin_x11")
-                 and _proc_running("gamescope", "gamescope-wl"))
+    gamescope = (not proc_running(comm="kwin_wayland|kwin_x11")
+                 and proc_running(comm="gamescope|gamescope-wl"))
     extra_flags = []
     if gamescope:
         setenv.append("--setenv=XDG_SESSION_TYPE=wayland")

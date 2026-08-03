@@ -16,6 +16,55 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.21.0 — 2026-08-03
+
+The first NixOS report, from @Strix-Vyxlor, turned out not to be about missing
+packages at all: the plugin could not find tools that were installed. One cause,
+three symptoms, and the fix makes every unusual distribution more likely to work
+out of the box.
+
+> Updating from v1.18.2 or later works normally from the plugin — this release
+> adds no new top-level files.
+
+### Fixed
+
+- **Screen share and its preview silently did nothing on NixOS**
+  ([#29](https://github.com/Necrosiak/Steamcord/issues/29)). The backend is
+  started by Decky's *system* service, so it inherits systemd's minimal `PATH`.
+  On NixOS nothing lives in those directories — `pgrep`, `pw-dump`, `pactl`,
+  `ffmpeg` and `gamescopectl` are all under `/run/current-system/sw/bin` — so
+  three separate features died on a bare `FileNotFoundError`: the plugin could
+  no longer tell Game Mode from Desktop (`[shareenv]`), PipeWire node discovery
+  failed (`[screendiag]`), and the preview's no-GStreamer fallback never fired,
+  because looking up its two binaries went through the same truncated `PATH`.
+  Steamcord now appends the Nix and Guix roots, `~/.local/bin` and the usual
+  `/usr` locations to its own `PATH` at startup — appended, never prepended, so
+  the distribution's own binaries keep priority, and a no-op where those
+  directories do not exist.
+
+### Changed
+
+- **procps is no longer a dependency.** Process lookup used to shell out to
+  `pgrep`/`pkill`, which are absent from a default NixOS or Alpine install.
+  Steamcord now reads `/proc` directly — no package needed on any distribution,
+  and one less process spawned on paths that run every time the panel opens.
+- **Install hints for four more package managers.** `nixos-rebuild`, `emerge`,
+  `apk` and `xbps-install` are recognised alongside pacman/dnf/apt/zypper, so
+  those users stop being shown an Arch command. NixOS gets the declaration to
+  add to `configuration.nix` rather than an imperative command, which would be
+  undone by the next rebuild.
+- **A `[deps]` line at startup** naming exactly which optional tools were not
+  found and what each one costs. None of them are mandatory — voice and chat
+  need none — but a feature that quietly does nothing now says why.
+
+### Documentation
+
+- [docs/OS-NOTES.md](docs/OS-NOTES.md) gains a **required system tools** table,
+  a **NixOS** section (including why `pygobject3` on its own cannot work), and
+  Gentoo, Alpine and Void entries in the package tables — the explicit
+  dependency list asked for in
+  [#29](https://github.com/Necrosiak/Steamcord/issues/29).
+
 ## 1.20.0 — 2026-08-02
 
 Four reports from @Matchaccia and @Havok027, three of them traced to a definite

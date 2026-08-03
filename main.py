@@ -88,10 +88,34 @@ async def stream_watcher(stream, is_err=False, prefix="[gst]"):
             logger.info(prefix + " " + line)
 
 
+# Optional system tools, and the feature each one buys. Nothing here is fatal —
+# the plugin runs without all of them — but when a feature quietly does nothing
+# on an unusual distro, this log line is what tells you why (issue #29: a NixOS
+# user could only see raw FileNotFoundErrors and had to guess).
+_OPTIONAL_TOOLS = {
+    "pw-dump": "PipeWire node discovery (screen share, game audio)",
+    "pactl": "game audio sharing (virtual sinks)",
+    "ffmpeg": "screen-share preview fallback",
+    "gamescopectl": "screen-share preview fallback in Game Mode",
+    "flatpak": "installing/running Vesktop as a flatpak",
+}
+
+
+def _log_tool_report():
+    import shutil as _sh
+    missing = {t: why for t, why in _OPTIONAL_TOOLS.items() if not _sh.which(t)}
+    if not missing:
+        return
+    logger.info("[deps] optional tools not found on PATH — "
+                + "; ".join(f"{t} ({why})" for t, why in missing.items())
+                + " — see docs/OS-NOTES.md")
+
+
 async def initialize():
     # NATIVE approach: drive Vesktop (a real Electron Discord, mic works) over CDP
     # instead of a hidden Steam CEF BrowserView (where the mic is impossible).
     import vesktop
+    _log_tool_report()
     # defaults/ d'abord : même piège que discord_client/tab_utils — la copie
     # racine vient du zip de release et n'est PAS resynchronisée par le deploy
     # local (le client injecté restait figé → pas d'enrichissement __sc_dm).
@@ -318,9 +342,7 @@ class Plugin:
         # l'enfant → port 65124 "address already in use"). Puis laisser le port se libérer.
         try:
             import vesktop
-            killer = await create_subprocess_exec("pkill", "-f", "gst_webrtc.py",
-                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
-            await killer.wait()
+            vesktop.proc_kill("gst_webrtc.py")
             await sleep(1)
         except Exception:
             pass
@@ -339,9 +361,7 @@ class Plugin:
         # Tourne sous le python SYSTÈME (pas de gi requis — dbus_next est
         # vendoré dans py_modules, passé via PYTHONPATH).
         try:
-            killer = await create_subprocess_exec("pkill", "-f", "portal_shim.py",
-                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
-            await killer.wait()
+            vesktop.proc_kill("portal_shim.py")
         except Exception:
             pass
         _shim = Path(DECKY_PLUGIN_DIR) / "portal_shim.py"
@@ -1184,9 +1204,7 @@ class Plugin:
                 # -x avec les deux noms : le comm du compositeur est `gamescope-wl`
                 # sur Bazzite (gamescope tout court sur SteamOS) — avec le seul
                 # `gamescope`, ce log disait False alors qu'on était en mode jeu.
-                g = await create_subprocess_exec("pgrep", "-x", "gamescope(-wl)?",
-                                                 stdout=DEVNULL, stderr=DEVNULL)
-                in_game = (await g.wait()) == 0
+                in_game = vesktop.proc_running(comm="gamescope(-wl)?")
                 vids = []
                 try:
                     p = await create_subprocess_exec("pw-dump", stdout=PIPE, stderr=DEVNULL, env=vesktop._user_env())
@@ -1574,9 +1592,7 @@ class Plugin:
         # Tuer un feeder précédent puis (re)lancer.
         try:
             import vesktop
-            killer = await create_subprocess_exec("pkill", "-f", "gst_camera.py",
-                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
-            await killer.wait()
+            vesktop.proc_kill("gst_camera.py")
             await sleep(0.5)
         except Exception:
             pass
@@ -1603,7 +1619,14 @@ class Plugin:
     # les logs (issue #2 : le texte français codé en dur arrivait tel quel chez
     # un utilisateur en portugais).
     @staticmethod
-    def _pkg_hint(arch, fedora, debian):
+    def _pkg_hint(arch, fedora, debian, nix=None, gentoo=None, alpine=None, void=None):
+        """Install command for the package manager actually present.
+
+        NixOS/Gentoo/Alpine/Void added for issue #29: those users got the Arch
+        fallback (`install: python-gobject …`), a command that means nothing on
+        their system. Declarative distros get the *declaration* to add, not an
+        imperative command — telling a NixOS user to `nix-env -i` would work
+        until the next rebuild wipes it, which is worse than saying nothing."""
         import shutil as _sh
         if _sh.which("pacman"):
             return f"sudo pacman -S {arch}"
@@ -1615,6 +1638,15 @@ class Plugin:
             return f"sudo zypper install {fedora}"
         if _sh.which("apt"):
             return f"sudo apt install {debian}"
+        if _sh.which("nixos-rebuild") or _sh.which("nix"):
+            return (f"add to environment.systemPackages: {nix or arch}"
+                    " — then: sudo nixos-rebuild switch")
+        if _sh.which("emerge"):
+            return f"sudo emerge {gentoo or arch}"
+        if _sh.which("apk"):
+            return f"sudo apk add {alpine or arch}"
+        if _sh.which("xbps-install"):
+            return f"sudo xbps-install -S {void or arch}"
         return f"install: {arch}"
 
     @staticmethod
@@ -1653,9 +1685,21 @@ class Plugin:
                 return None
         except Exception:
             pass
-        cmd = cls._pkg_hint("python-gobject gst-plugin-pipewire",
-                            "python3-gobject pipewire-gstreamer",
-                            "python3-gi gir1.2-gstreamer-1.0 gstreamer1.0-pipewire")
+        cmd = cls._pkg_hint(
+            "python-gobject gst-plugin-pipewire",
+            "python3-gobject pipewire-gstreamer",
+            "python3-gi gir1.2-gstreamer-1.0 gstreamer1.0-pipewire",
+            # NixOS : pygobject3 seul ne suffit pas — le python doit être un
+            # `withPackages` (sinon `import gi` échoue quelle que soit la
+            # présence du paquet) et il faut le typelib GStreamer + le plugin
+            # PipeWire. Le fallback gamescopectl+ffmpeg (voir preview) évite
+            # tout ça et suffit à la plupart des installations.
+            nix="(python3.withPackages (ps: [ ps.pygobject3 ])) "
+                "gst_all_1.gstreamer gst_all_1.gst-plugins-base "
+                "gst_all_1.gst-plugins-good pipewire",
+            gentoo="dev-python/pygobject media-plugins/gst-plugins-pipewire",
+            alpine="py3-gobject3 gst-plugins-base pipewire",
+            void="python3-gobject gst-plugins-base1 pipewire")
         return {"code": "gst_missing", "cmd": cmd,
                 "hint": f"GStreamer/PipeWire Python bindings missing for capture: {cmd}"}
 
@@ -1768,7 +1812,14 @@ class Plugin:
             return {"code": "v4l2_steamos", "cmd": "",
                     "hint": "v4l2loopback missing and stock SteamOS cannot keep it "
                             "across OS updates — screen share (game mode) unavailable"}
-        pkg = cls._pkg_hint("v4l2loopback-dkms", "v4l2loopback", "v4l2loopback-dkms")
+        pkg = cls._pkg_hint("v4l2loopback-dkms", "v4l2loopback", "v4l2loopback-dkms",
+                            # NixOS charge les modules par boot.extraModulePackages
+                            # + boot.kernelModules, pas par un paquet utilisateur.
+                            nix="boot.extraModulePackages = [ config.boot.kernelPackages"
+                                ".v4l2loopback ]; boot.kernelModules = [ \"v4l2loopback\" ];",
+                            gentoo="media-video/v4l2loopback",
+                            alpine="v4l2loopback-dkms",
+                            void="v4l2loopback")
         # même bloc persistant après l'installation du paquet : un modprobe seul
         # ne survivrait pas au reboot (cf _MODPROBE_FIX).
         cmd = f"{pkg}\n{cls._MODPROBE_FIX}"
@@ -1785,9 +1836,7 @@ class Plugin:
             pass
         try:
             import vesktop
-            killer = await create_subprocess_exec("pkill", "-f", "gst_camera.py",
-                                                  stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
-            await killer.wait()
+            vesktop.proc_kill("gst_camera.py")
         except Exception:
             pass
         if hasattr(cls, "camera_feeder") and cls.camera_feeder:
@@ -1916,9 +1965,7 @@ class Plugin:
             if hint is None:
                 try:
                     import vesktop
-                    killer = await create_subprocess_exec("pkill", "-f", "gst_preview.py",
-                                                          stdout=DEVNULL, stderr=DEVNULL, env=vesktop._user_env())
-                    await killer.wait()
+                    vesktop.proc_kill("gst_preview.py")
                 except Exception:
                     pass
                 script = _P(DECKY_PLUGIN_DIR) / "gst_preview.py"
@@ -2009,14 +2056,14 @@ class Plugin:
         # PREMIER : c'est le signal fiable — les sockets gamescope-* persistent
         # dans XDG_RUNTIME_DIR après une session gamemode, et un gamescope
         # imbriqué par-jeu peut tourner sous KWin (= Bureau quand même).
-        async def _running(name):
-            p = await create_subprocess_exec("pgrep", "-x", name,
-                                             stdout=DEVNULL, stderr=DEVNULL)
-            return (await p.wait()) == 0
+        # /proc plutôt que pgrep : procps n'est ni installé ni dans le PATH du
+        # service sur NixOS/Alpine → FileNotFoundError à chaque ouverture du
+        # panneau, et le partage d'écran disparaissait (issue #29).
         try:
-            if await _running("kwin_wayland") or await _running("kwin_x11"):
+            import vesktop
+            if vesktop.proc_running(comm="kwin_wayland|kwin_x11"):
                 return {"env": "desktop"}
-            if await _running("gamescope") or await _running("gamescope-wl"):
+            if vesktop.proc_running(comm="gamescope|gamescope-wl"):
                 return {"env": "gamescope"}
         except Exception as e:
             logger.warning(f"[shareenv] {e!r}")
