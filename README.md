@@ -65,6 +65,12 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 3. Install from URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
 
+> **A note on automatic updates.** Decky owns the plugin's top-level directory,
+> so the built-in updater can rewrite existing files but cannot create new ones.
+> A release that adds a file at the top level therefore has to be installed the
+> normal way — *Install plugin from URL*, above — rather than through the
+> automatic update. The release notes say so whenever that is the case.
+
 Vesktop is installed and launched automatically by the plugin the first time it runs. Just log in once (QR or fullscreen) and you stay logged in.
 
 Nothing else is required: the Python dependencies are vendored, and the handful of system tools some features shell out to (`pw-dump`, `pactl`, `ffmpeg`, `gamescopectl`) are optional — each one only costs the feature it powers, and the backend logs a `[deps]` line at startup naming any that are missing. See **[docs/OS-NOTES.md](docs/OS-NOTES.md)** for the full table and per-distro packages, including NixOS, Gentoo, Alpine and Void.
