@@ -37,6 +37,40 @@ window.__sc_describeError = (e) => {
     return parts.join(" — ") || String(e);
 };
 
+// ── Titre de jeu → clé comparable entre Steam et Discord (issue #32) ─────────
+// Steam garde les symboles légaux et la ponctuation typographique dans ses
+// titres, la base des jeux détectables de Discord ne les a pas : "HELLDIVERS™ 2"
+// vs "HELLDIVERS 2", "Marvel’s Spider-Man Remastered" (U+2019) vs "Marvel's …"
+// (U+0027). Sans ça le titre ne se résout en aucun app id, et c'est l'app id qui
+// porte l'artwork → activité affichée sans image.
+// ⚠️ Les symboles partent AVANT le NFKC : la normalisation Unicode traduit ™ en
+// "TM" (et ® en "(R)"), ce qui rendrait le titre encore plus faux.
+window.rpcNormName = (s) => String(s)
+    .replace(/[™®©]/g, "")      // symboles légaux
+    .normalize("NFKC")          // demi-largeur, ligatures, etc.
+    .replace(/[‘’ʼ]/g, "'")     // apostrophes typographiques
+    .replace(/[“”]/g, '"')      // guillemets typographiques
+    .replace(/[‐-―]/g, "-")     // tirets typographiques
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+// Dernier recours : lettres et chiffres seulement. Steam et Discord ponctuent
+// différemment au-delà des symboles — "Resident Evil 7 Biohazard" vs "Resident
+// Evil 7: Biohazard", "DmC Devil May Cry" vs "DmC: Devil May Cry" — un deux-points
+// de trop suffit à perdre l'artwork.
+// ⚠️ Cette clé-là est DANGEREUSE et n'est utilisable que filtrée : elle réduit
+// tout titre entièrement non-latin (japonais, coréen, cyrillique, chinois) à la
+// chaîne VIDE — mesuré sur la base réelle : 50+ jeux tombaient dans le même
+// panier, chacun aurait hérité de l'image d'un autre. D'où les gardes posées à
+// la construction de l'index (longueur, présence de lettres, unicité).
+window.rpcNormNameLoose = (s) => String(s)
+    .replace(/[™®©]/g, "")
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")                       // accents décomposés
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
 // ── Mapping message Discord → forme attendue par le frontend QAM ─────────────
 // Partagé entre $get_messages (chargement/pagination) et l'intercepteur Flux
 // MESSAGE_CREATE/UPDATE (push temps réel du salon suivi) — même forme des deux
@@ -1256,18 +1290,59 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // vide). On le résout dans la base des jeux détectables de
                                     // Discord (match insensible à la casse — l'exact-match de
                                     // Deckcord ratait des jeux), cache en mémoire ; introuvable
-                                    // → "0" (l'activité s'affiche quand même, nom brut).
+                                    // → "0" (l'activité s'affiche quand même, nom brut, mais
+                                    // SANS artwork — c'est l'app id qui porte l'image).
+                                    // Issue #32 : Steam et Discord n'écrivent pas les titres
+                                    // pareil — Steam garde les symboles légaux et l'apostrophe
+                                    // typographique ("HELLDIVERS™ 2", "DARK SOULS™ III",
+                                    // "Marvel’s Spider-Man Remastered"), la base Discord ne les
+                                    // a pas ("HELLDIVERS 2", "Marvel's …"). D'où un 2e index
+                                    // normalisé, consulté seulement si le nom brut ne tombe pas
+                                    // juste, puis un 3e index « lettres et chiffres seuls » pour
+                                    // les écarts de ponctuation. Ordre strict du plus sûr au plus
+                                    // permissif : le match exact reste prioritaire, donc aucun jeu
+                                    // qui marchait déjà ne peut changer de cible.
                                     try {
                                         let appId = "0";
                                         if (data.game) {
                                             try {
-                                                if (!window.__sc_rpcAppIds) {
+                                                // On exige aussi le dernier index : après une mise
+                                                // à jour du plugin, une page déjà ouverte a le
+                                                // cache exact d'avant mais aucun des deux nouveaux
+                                                // — sans ce test le correctif n'arriverait qu'au
+                                                // prochain rechargement de Vesktop.
+                                                if (!window.__sc_rpcAppIds || !window.__sc_rpcAppIdsLoose) {
                                                     const res = await Vencord.Webpack.Common.RestAPI.get({ url: "/applications/detectable" });
-                                                    const map = new Map();
-                                                    if (res.ok) for (const e of res.body) map.set(String(e.name).toLowerCase(), e.id);
+                                                    const map = new Map(), norm = new Map(), loose = new Map();
+                                                    if (res.ok) for (const e of res.body) {
+                                                        const n = String(e.name);
+                                                        map.set(n.toLowerCase(), e.id);
+                                                        // 1er inscrit gagne : la base contient des
+                                                        // doublons de nom, on ne les réécrit pas.
+                                                        const k = window.rpcNormName(n);
+                                                        if (!norm.has(k)) norm.set(k, e.id);
+                                                        // Index de dernier recours, sous conditions :
+                                                        // au moins 6 caractères ET au moins une lettre
+                                                        // (sinon les titres non-latins s'effondrent sur
+                                                        // "" et les titres numériques sur "2"), et toute
+                                                        // clé réclamée par deux applications distinctes
+                                                        // est mise à null → plus jamais résolue. Mieux
+                                                        // vaut aucune image que celle d'un autre jeu.
+                                                        const l = window.rpcNormNameLoose(n);
+                                                        if (l.length >= 6 && /[a-z]/.test(l)) {
+                                                            if (!loose.has(l)) loose.set(l, e.id);
+                                                            else if (loose.get(l) !== e.id) loose.set(l, null);
+                                                        }
+                                                    }
                                                     window.__sc_rpcAppIds = map;
+                                                    window.__sc_rpcAppIdsNorm = norm;
+                                                    window.__sc_rpcAppIdsLoose = loose;
                                                 }
-                                                appId = window.__sc_rpcAppIds.get(String(data.game).toLowerCase()) || "0";
+                                                const raw = String(data.game);
+                                                appId = window.__sc_rpcAppIds.get(raw.toLowerCase())
+                                                    || window.__sc_rpcAppIdsNorm?.get(window.rpcNormName(raw))
+                                                    || window.__sc_rpcAppIdsLoose?.get(window.rpcNormNameLoose(raw))
+                                                    || "0";
                                             } catch (_) { /* hors-ligne/API KO : nom brut */ }
                                         }
                                         const activity = data.game ? {

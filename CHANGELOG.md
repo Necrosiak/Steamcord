@@ -16,6 +16,40 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.21.1 — 2026-08-09
+
+@william097y noticed that some games showed up in Discord without their
+artwork, and guessed the reason from the pattern: the affected titles all
+carried a `™`. That guess was right, and it pointed at something slightly
+wider than the symbol itself.
+
+### Fixed
+
+- **Games showing in Discord without their Rich Presence artwork**
+  ([#32](https://github.com/Necrosiak/Steamcord/issues/32)). Steam and Discord
+  do not spell the same game the same way. Steam keeps legal symbols and
+  typographic punctuation — `HELLDIVERS™ 2`, `DARK SOULS™ III`,
+  `Marvel’s Spider-Man Remastered` with a curly apostrophe — while Discord's
+  detectable-games index has `HELLDIVERS 2` and `Marvel's …` with a plain one.
+  Steamcord matched those two spellings literally, so the title resolved to no
+  application id at all, and the artwork hangs off that id: the activity
+  appeared with the right name and no image.
+
+  Titles are now compared through a normalised key (legal symbols, curly
+  quotes and dashes, width and spacing), and, failing that, a letters-and-digits
+  key that absorbs punctuation differences such as
+  `Resident Evil 7 Biohazard` versus `Resident Evil 7: Biohazard`. Exact
+  matching still runs first, so no game that already resolved can change
+  target. Measured against a real 139-game library, matches went from 99 to
+  110 — every game in that library which Discord knows about.
+
+  The loosest key is deliberately fenced in: on its own it collapses any
+  fully non-Latin title — Japanese, Korean, Chinese, Cyrillic — to an empty
+  string, which on the real index put more than fifty games in one bucket.
+  It is therefore only consulted for keys of at least six characters that
+  contain a letter, and any key claimed by two different applications is
+  dropped for good. No image is better than another game's image.
+
 ## 1.21.0 — 2026-08-03
 
 The first NixOS report, from @Strix-Vyxlor, turned out not to be about missing
