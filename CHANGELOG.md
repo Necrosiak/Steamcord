@@ -16,6 +16,71 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## Unreleased
+
+The voice shortcut could only be bound to controller buttons, which is the one
+thing `SteamClient.Input` can see. Binding push-to-talk to a key on an attached
+keyboard — or to a spare mouse button, which is what most people actually want
+when the Deck is docked — needed a different input source, read from the
+backend. It turned out not to need any new privileges.
+
+### Added
+
+- **Push-to-talk on a physical keyboard key or a mouse button.** The QAM now
+  captures whatever you press — controller chord, keyboard key or mouse button —
+  and keeps one binding per input type, any of them opening the mic. Controller
+  in handheld, mouse while docked, without reconfiguring in between.
+
+  Keyboard and mouse are read in the backend from `/dev/input/event*`, because
+  the CEF context has no keyboard focus while a game is running: a `keydown`
+  listener in the panel sees nothing in the exact situation the feature exists
+  for. Notable constraints the implementation respects:
+
+  - **No root flag.** SteamOS ships
+    `/usr/lib/udev/rules.d/70-steam-jupiter-input.rules`, which tags input
+    devices `uaccess`; logind then grants the active session user a POSIX ACL on
+    the event nodes. Verified on-device for a USB keyboard *and* a Bluetooth
+    mouse. `plugin.json` stays `"flags": []`.
+  - **Readable devices are probed, never inferred.** Whether a node is readable
+    is not deducible from its bus or vendor — two predictions made from the rule
+    text turned out wrong. The reader simply attempts `open()` and offers what
+    succeeds; a device that is not readable is reported as such instead of
+    failing silently.
+  - **`EVIOCGRAB` is never used.** The grab is per *device*, not per key, so it
+    would take the whole keyboard away from the game. As a passive reader the
+    plugin sees the same events the game does.
+  - **Bindings are stored as a device fingerprint**, not `/dev/input/eventN`:
+    node numbers are reassigned on reconnect and after suspend (observed: the
+    same keyboard came back as `event19` having been `event18`). Devices are
+    re-resolved on a read error and on a periodic rescan, so a binding survives
+    sleep and Bluetooth reconnects.
+  - **Privacy.** The reader is a separate module so the guarantee is auditable in
+    one place: it never logs or persists a key code, only the binding you chose
+    and a count of readable devices. Autorepeat is ignored, and `SYN_DROPPED`
+    releases push-to-talk rather than risk leaving the mic open.
+
+### Fixed
+
+- **The mic cut out when two shortcuts were held at once.** `set_ptt` carried no
+  notion of *which* input asked for it, so with a controller button and a
+  keyboard key both held, releasing either one closed the mic while the other was
+  still down. Push-to-talk state is now tracked per source and only the
+  aggregate edge is sent to Discord.
+- **Saving the voice shortcut could drop unrelated settings.** The config was
+  written as a whole blob with no merge, so any caller that did not know about a
+  key silently removed it. Writes now merge onto the stored file under a lock.
+- **The controller shortcut could stop responding until Steam restarted.** The
+  subscription returned by `RegisterForControllerInputMessages` is now retained,
+  and re-subscribed after the machine wakes from sleep — held-button state is
+  reset at the same time, since a button held before suspend is not held after.
+
+### Changed
+
+- The voice shortcut config is now versioned (`version: 2`) and holds a list of
+  bindings instead of a single button array. Existing configs are migrated in
+  memory and only rewritten in the new shape once you save, so an install can be
+  rolled back. Nobody loses an existing controller binding.
+
 ## 1.21.1 — 2026-08-09
 
 @william097y noticed that some games showed up in Discord without their
