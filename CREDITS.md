@@ -78,3 +78,11 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@jafuuu](https://github.com/jafuuu)
 
 - Spotted that the game Rich Presence was missing entirely ([#11](https://github.com/Necrosiak/Steamcord/issues/11), added in v1.16.0)
+
+---
+
+# Code contributions
+
+### [@jezonek](https://github.com/jezonek)
+
+- Push-to-talk on a keyboard key or a mouse button ([#34](https://github.com/Necrosiak/Steamcord/pull/34)) — the backend evdev reader, its privacy constraints and the config migration. Along the way he found and fixed two pre-existing bugs nobody had reported: holding a controller button and a key at once cut the mic when either was released, and saving the voice shortcut silently dropped unrelated settings.
