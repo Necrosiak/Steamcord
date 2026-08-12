@@ -1219,21 +1219,34 @@ const VoiceShortcutConfig = () => {
               onChange={(e: any) => save({ ...cfg, mode: e.data })} />
           </SR>
 
+          {/* Tableau à 3 colonnes FIXES : source | liaison | effacer.
+              En flex, la colonne du milieu s'étirait et le bouton n'existait que
+              sur les lignes liées — les trois lignes ne s'alignaient donc pas et
+              le bouton sautait d'une ligne à l'autre. La 3e cellule est toujours
+              rendue (vide si rien n'est lié) pour que la grille reste stable. */}
           {ROWS.map(({ kind, label }) => {
             const b = bindingOf(cfg, kind);
             return (
               <SR key={kind}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, margin: "4px 0" }}>
-                  <span style={{ opacity: 0.7, minWidth: 62 }}>{label}</span>
-                  <b style={{ flex: 1, opacity: b ? 1 : 0.55 }}>
+                <div style={{
+                  display: "grid", gridTemplateColumns: "68px 1fr 66px",
+                  alignItems: "center", columnGap: 8, fontSize: 12, margin: "4px 0",
+                }}>
+                  <span style={{ opacity: 0.7 }}>{label}</span>
+                  <b style={{
+                    opacity: b ? 1 : 0.55, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
                     {b ? bindingLabel(b) : t("shortcut_none")}
                   </b>
-                  {b && (
-                    <DialogButton onClick={() => clearBinding(kind)}
-                      style={{ fontSize: 11, minWidth: 0, padding: "2px 8px" }}>
-                      {t("shortcut_clear")}
-                    </DialogButton>
-                  )}
+                  <span style={{ justifySelf: "end" }}>
+                    {b && (
+                      <DialogButton onClick={() => clearBinding(kind)}
+                        style={{ fontSize: 11, minWidth: 0, padding: "2px 8px" }}>
+                        {t("shortcut_clear")}
+                      </DialogButton>
+                    )}
+                  </span>
                 </div>
               </SR>
             );
