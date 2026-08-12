@@ -78,6 +78,25 @@ Nothing else is required: the Python dependencies are vendored, and the handful 
 ### Screen share
 Screen sharing works out of the box — the plugin auto-installs its Python dependency (aiohttp) for the system Python on first run. GStreamer is provided by the system.
 
+### Keyboard / mouse push-to-talk outside SteamOS
+Binding the voice shortcut to a **controller** button works everywhere. Binding it to a **keyboard key or mouse button** requires the plugin to read `/dev/input/event*`, which needs a `uaccess` ACL — and systemd grants that to **joysticks only** (`70-uaccess.rules`: `ENV{ID_INPUT_JOYSTICK}`). SteamOS ships an extra rule covering input devices; most other distributions do not.
+
+Measured on Bazzite: a USB wireless mouse returned `EACCES` on all five of its nodes, and a keyboard was readable only because an unrelated RGB-lighting rule happened to tag it. The shortcut panel tells you when a device is present but unreadable, instead of silently offering nothing.
+
+To opt in, as root:
+
+```
+# /etc/udev/rules.d/70-input-uaccess.rules
+SUBSYSTEM=="input", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"
+SUBSYSTEM=="input", ENV{ID_INPUT_MOUSE}=="1", TAG+="uaccess"
+```
+
+```
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
+```
+
+⚠️ Know what this costs: `uaccess` lets **any** process running as your user read every keystroke on the machine, in any window — not just this plugin. It is the same trade SteamOS makes on the Deck, which is reasonable on a single-user games console and much less so on a machine you also work on. Delete the file to revert.
+
 ---
 
 ## Build from source

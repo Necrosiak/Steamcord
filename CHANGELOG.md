@@ -16,7 +16,7 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
-## Unreleased
+## 1.22.0 — 2026-08-12
 
 The voice shortcut could only be bound to controller buttons, which is the one
 thing `SteamClient.Input` can see. Binding push-to-talk to a key on an attached
@@ -36,16 +36,16 @@ backend. It turned out not to need any new privileges.
   listener in the panel sees nothing in the exact situation the feature exists
   for. Notable constraints the implementation respects:
 
-  - **No root flag.** SteamOS ships
-    `/usr/lib/udev/rules.d/70-steam-jupiter-input.rules`, which tags input
-    devices `uaccess`; logind then grants the active session user a POSIX ACL on
-    the event nodes. Verified on-device for a USB keyboard *and* a Bluetooth
-    mouse. `plugin.json` stays `"flags": []`.
+  - **No root flag.** `plugin.json` stays `"flags": []`. On SteamOS this is
+    enough: it ships `70-steam-jupiter-input.rules`, which tags input devices
+    `uaccess`, and logind then grants the active session user a POSIX ACL on the
+    event nodes. **On other distributions it is usually not enough** — see the
+    known limitation below.
   - **Readable devices are probed, never inferred.** Whether a node is readable
     is not deducible from its bus or vendor — two predictions made from the rule
     text turned out wrong. The reader simply attempts `open()` and offers what
-    succeeds; a device that is not readable is reported as such instead of
-    failing silently.
+    succeeds; a device that is present but not readable is listed separately
+    and shown to you, rather than being indistinguishable from one that is absent.
   - **`EVIOCGRAB` is never used.** The grab is per *device*, not per key, so it
     would take the whole keyboard away from the game. As a passive reader the
     plugin sees the same events the game does.
@@ -73,6 +73,44 @@ backend. It turned out not to need any new privileges.
   subscription returned by `RegisterForControllerInputMessages` is now retained,
   and re-subscribed after the machine wakes from sleep — held-button state is
   reset at the same time, since a button held before suspend is not held after.
+- **A binding could anchor on a node that never speaks.** A device fingerprint
+  (vendor, product, name) does not identify a *node*, and several nodes can share
+  all three byte for byte — measured on an ordinary 2.4GHz receiver whose
+  `event3` and `event7` are both keyboards with identical fields. Resolution
+  stopped at the first match, which is the lowest-numbered node and frequently
+  the silent one; the shortcut then never fired, with no error anywhere. Every
+  matching node is now registered.
+- **Push-to-talk was not released when the plugin reloaded.** A key held at that
+  moment left the client on `$ptt = true` with nothing left to say otherwise,
+  holding the mic open.
+
+### Known limitation
+
+- **Outside SteamOS, your keyboard and mouse are probably not readable.** The
+  plugin cannot fix this from its side: reading `/dev/input/event*` needs a
+  `uaccess` ACL, and systemd's own rule grants it to **joysticks only**
+  (`70-uaccess.rules`: `ENV{ID_INPUT_JOYSTICK}`). SteamOS adds a rule covering
+  input devices; most other distributions do not — measured on Bazzite, where a
+  USB wireless mouse returned `EACCES` on all five of its nodes, and a keyboard
+  was readable only because an unrelated RGB-lighting rule happened to tag it.
+
+  The panel now tells you when this is the case, instead of silently offering
+  nothing. To opt in, add two lines as root and reload udev:
+
+  ```
+  # /etc/udev/rules.d/70-input-uaccess.rules
+  SUBSYSTEM=="input", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"
+  SUBSYSTEM=="input", ENV{ID_INPUT_MOUSE}=="1", TAG+="uaccess"
+  ```
+
+  ```
+  sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
+  ```
+
+  Be aware of what this trades away: `uaccess` lets **any** process running as
+  your user read every keystroke on the machine, in any window. It is the same
+  trade SteamOS makes on the Deck, reasonable on a single-user games console and
+  much less so on a machine you also work on. Deleting the file reverts it.
 
 ### Changed
 
