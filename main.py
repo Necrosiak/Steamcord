@@ -385,6 +385,10 @@ class Plugin:
         create_task(cls._screen_diag())
         create_task(cls._ga_boot_cleanup())
         create_task(cls._account_watcher())
+        # Lecteur clavier/souris du raccourci vocal — no-op tant qu'aucun binding
+        # clavier/souris n'existe (aucun fd ouvert, donc rien à payer).
+        create_task(cls._input_refresh())
+        create_task(cls._input_watchdog())
 
         async for state in cls.evt_handler.yield_new_state():
             await emit("state", state)
@@ -801,9 +805,40 @@ class Plugin:
         logger.info("Disconnecting vc")
         return await cls.evt_handler.disconnect_vc()
 
+    # ── Push-to-talk : agrégation PAR SOURCE ──
+    # $ptt est un booléen SANS source. Avec un seul producteur (la manette, côté
+    # frontend) ça suffisait. Dès qu'un second producteur existe (clavier/souris,
+    # lus par input_watch dans CE processus), le dernier qui parle gagne : manette
+    # tenue + touche tenue, on relâche la TOUCHE → set_ptt(False) coupait le micro
+    # alors que la manette est toujours enfoncée. On garde donc l'état par source et
+    # on n'émet vers le client que sur un front de l'AGRÉGAT (OU logique) — « une
+    # source quelconque tenue = micro ouvert », ce qui est aussi le comportement
+    # attendu (manette en portable, clavier en station d'accueil).
+    _ptt_sources = {}
+    _ptt_active = False
+
     @classmethod
-    async def set_ptt(cls, value):
-        await cls.evt_handler.send_client({"type": "$ptt", "value": value})
+    async def _ptt_sync(cls):
+        want = any(cls._ptt_sources.values())
+        if want == cls._ptt_active:
+            return
+        cls._ptt_active = want
+        await cls.evt_handler.send_client({"type": "$ptt", "value": want})
+
+    @classmethod
+    async def set_ptt(cls, value, source="controller"):
+        # `source` par défaut = "controller" : les appels existants du frontend
+        # (call("set_ptt", true)) restent valides sans changement.
+        cls._ptt_sources[source] = bool(value)
+        await cls._ptt_sync()
+
+    @classmethod
+    async def _ptt_release_all(cls):
+        """Relâche toutes les sources (changement de config, arrêt du lecteur)."""
+        if not cls._ptt_sources:
+            return
+        cls._ptt_sources = {}
+        await cls._ptt_sync()
 
     @classmethod
     async def enable_ptt(cls, enabled):
@@ -1439,32 +1474,321 @@ class Plugin:
         except Exception as e:
             logger.warning(f"save audio cfg failed: {e!r}")
 
-    # ── Raccourci manette vocal (mute-toggle / push-to-talk) ──
-    # La détection des boutons vit dans le FRONTEND (SteamClient.Input) ; ici
-    # on ne fait que persister la config pour qu'elle survive aux reboots.
+    # ── Raccourci vocal (manette / clavier / souris) ──
+    # La MANETTE est détectée dans le FRONTEND (SteamClient.Input est la seule API
+    # qui voit les boutons Steam). Le CLAVIER et la SOURIS sont lus ICI, par
+    # input_watch : CEF n'a pas le focus clavier quand un jeu tourne, donc une
+    # capture globale ne peut pas vivre côté frontend. Voir defaults/input_watch.py
+    # pour les contraintes de vie privée (aucun code de touche journalisé).
     _INPUT_CFG = os.path.expanduser("~/.config/steamcord-input.json")
+    _input_lock = None            # asyncio.Lock (créé à la première écriture)
+    _input_watcher = None
+    _input_capture = None         # {"token": str, "task": Task} pendant une capture
+    _voice_cache = None           # config normalisée (évite un accès disque par touche)
+    _input_active = {}            # (kind, code, node) -> source, recalculé au rescan
+
+    VOICE_CFG_V2 = {"version": 2, "enabled": False, "mode": "toggle", "bindings": []}
+
+    @staticmethod
+    def _valid_binding(b):
+        if not isinstance(b, dict):
+            return False
+        if b.get("kind") == "controller":
+            return isinstance(b.get("buttons"), list) and all(
+                isinstance(x, int) for x in b["buttons"]
+            )
+        if b.get("kind") in ("keyboard", "mouse"):
+            return isinstance(b.get("code"), int) and isinstance(b.get("device"), dict)
+        return False
 
     @classmethod
-    async def get_voice_shortcut(cls):
+    def _migrate_voice_cfg(cls, raw):
+        """Normalise en v2 ; la v1 était {enabled, mode, buttons[], label}.
+
+        La migration est EN MÉMOIRE et on n'écrit la v2 qu'au premier enregistrement
+        de l'utilisateur : quelqu'un qui met à jour sans toucher aux réglages garde
+        un fichier relisible par l'ancienne version (retour arrière possible).
+        """
+        cfg = {"version": 2, "enabled": False, "mode": "toggle", "bindings": []}
+        if not isinstance(raw, dict):
+            return cfg
+        cfg["enabled"] = bool(raw.get("enabled", False))
+        cfg["mode"] = raw.get("mode") if raw.get("mode") in ("toggle", "ptt") else "toggle"
+        if raw.get("version") == 2 and isinstance(raw.get("bindings"), list):
+            cfg["bindings"] = [b for b in raw["bindings"] if cls._valid_binding(b)]
+            return cfg
+        btns = [b for b in (raw.get("buttons") or []) if isinstance(b, int)]
+        if btns:
+            cfg["bindings"] = [{
+                "kind": "controller",
+                "buttons": btns,
+                "label": raw.get("label") or "",
+            }]
+        return cfg
+
+    @classmethod
+    def _voice_cfg(cls, refresh=False):
+        if cls._voice_cache is not None and not refresh:
+            return cls._voice_cache
         from json import load
         try:
             with open(cls._INPUT_CFG) as f:
-                return load(f)
+                raw = load(f)
         except Exception:
-            return {"enabled": False, "mode": "toggle", "buttons": [],
-                    "label": ""}
+            raw = None
+        cls._voice_cache = cls._migrate_voice_cfg(raw)
+        return cls._voice_cache
+
+    @classmethod
+    async def get_voice_shortcut(cls):
+        return cls._voice_cfg(refresh=True)
 
     @classmethod
     async def set_voice_shortcut(cls, cfg):
         from json import dump
+        # Fusion sur l'existant : l'ancienne version écrasait le blob entier, donc
+        # tout appelant ignorant une clé la supprimait silencieusement. Sous verrou
+        # (même motif que _golive_seq_lock) pour éviter deux écritures entrelacées.
+        if cls._input_lock is None:
+            from asyncio import Lock
+            cls._input_lock = Lock()
+        async with cls._input_lock:
+            merged = cls._voice_cfg(refresh=True)
+            merged = dict(merged)
+            if isinstance(cfg, dict):
+                merged.update(cfg)
+            merged["version"] = 2
+            merged.pop("buttons", None)         # reliquats de la v1
+            merged.pop("label", None)
+            merged["bindings"] = [
+                b for b in (merged.get("bindings") or []) if cls._valid_binding(b)
+            ]
+            try:
+                os.makedirs(os.path.dirname(cls._INPUT_CFG), exist_ok=True)
+                with open(cls._INPUT_CFG, "w") as f:
+                    dump(merged, f)
+            except Exception as e:
+                logger.warning(f"save input cfg failed: {e!r}")
+                return False
+            cls._voice_cache = merged
+        # Le binding a pu changer : on repart d'un état de sources propre (sinon une
+        # touche « tenue » d'un ancien binding resterait vraie pour toujours) et on
+        # réévalue les périphériques à écouter.
+        await cls._ptt_release_all()
+        await cls._input_refresh()
+        return True
+
+    # ── Lecture clavier / souris ────────────────────────────────────────────
+    @classmethod
+    async def _input_refresh(cls):
+        """Démarre, arrête ou réévalue le lecteur selon la config et la capture."""
+        cfg = cls._voice_cfg()
+        wants = bool(cfg["enabled"]) and any(
+            b.get("kind") in ("keyboard", "mouse") for b in cfg["bindings"]
+        )
+        capturing = cls._input_capture is not None
+        if not (wants or capturing):
+            if cls._input_watcher is not None:
+                cls._input_watcher.close()
+                cls._input_watcher = None
+            cls._input_active = {}
+            return
         try:
-            os.makedirs(os.path.dirname(cls._INPUT_CFG), exist_ok=True)
-            with open(cls._INPUT_CFG, "w") as f:
-                dump(cfg, f)
-            return True
+            import input_watch
         except Exception as e:
-            logger.warning(f"save input cfg failed: {e!r}")
+            logger.warning(f"input_watch unavailable: {e!r}")
+            return
+        if cls._input_watcher is None:
+            from asyncio import get_running_loop
+            cls._input_watcher = input_watch.Watcher(
+                get_running_loop(), cls._on_input_edge, cls._on_input_capture,
+                log=logger.info, on_lost=cls._on_input_lost,
+            )
+        cls._input_watcher.rescan()
+        # Résolution des empreintes → nœud COURANT. Le numéro de nœud change au
+        # rebranchement (et le Bluetooth se reconnecte souvent), donc on ne se fie
+        # jamais au nœud persisté : on remappe à chaque rescan.
+        active = {}
+        devices = input_watch.list_devices()
+        for b in cfg["bindings"]:
+            kind = b.get("kind")
+            if kind not in ("keyboard", "mouse"):
+                continue
+            # PAS de `break` : l'empreinte (vendor+product+nom) ne distingue PAS
+            # les nœuds d'un même périphérique, et plusieurs peuvent la partager à
+            # l'octet près — mesuré sur un récepteur sans fil 2.4G grand public,
+            # dont event3 et event7 sont tous deux « keyboard » avec des champs
+            # identiques. S'arrêter au premier ancrait la liaison sur le nœud de
+            # plus petit numéro, qui est souvent le nœud MUET : la touche liée
+            # n'aurait alors jamais déclenché, sans la moindre erreur. On
+            # enregistre donc TOUS les nœuds correspondants ; _input_active étant
+            # déjà indexé par nœud, plusieurs entrées pour une même liaison sont
+            # sans effet de bord, et l'ordre des nœuds cesse de compter.
+            for d in devices:
+                if d["kind"] == kind and input_watch.match(d, b.get("device")):
+                    active[(kind, b["code"], d["node"])] = kind
+        cls._input_active = active
+
+    @classmethod
+    def _on_input_lost(cls):
+        """Un fd est mort (débranchement / réveil) : re-résoudre les nœuds."""
+        create_task(cls._input_refresh())
+
+    @classmethod
+    async def _input_watchdog(cls):
+        """Rescan périodique des périphériques d'entrée.
+
+        Au RÉVEIL de veille et à chaque reconnexion Bluetooth, deux choses
+        cassent en même temps : les fd ouverts deviennent morts, et
+        /dev/input/eventN est RENUMÉROTÉ (vérifié sur l'appareil : le même
+        clavier est passé de event18 à event19 après une mise en veille). Le
+        rescan sur erreur de lecture (_on_input_lost) couvre le premier cas,
+        mais un périphérique qui revient sur un nouveau nœud n'émet plus rien
+        sur l'ancien fd — donc aucune erreur, donc aucun rescan. D'où ce filet
+        périodique. Coût : ~20 open/close toutes les 20 s, négligeable, et rien
+        du tout quand aucune liaison clavier/souris n'est configurée.
+        """
+        while True:
+            await sleep(20)
+            try:
+                cfg = cls._voice_cfg()
+                wants = bool(cfg["enabled"]) and any(
+                    b.get("kind") in ("keyboard", "mouse") for b in cfg["bindings"]
+                )
+                if not wants and cls._input_watcher is None:
+                    continue
+                await cls._input_refresh()
+            except Exception as e:
+                logger.warning(f"input watchdog failed: {e!r}")
+
+    @classmethod
+    def _on_input_edge(cls, kind, code, node, down):
+        """Appelé SYNCHRONEMENT par le lecteur : aiguillage seulement, pas d'await.
+
+        `code is None` = SYN_DROPPED (le noyau a jeté des événements) : notre état
+        « tenu » n'est plus fiable, on relâche pour ne pas laisser le micro ouvert.
+        """
+        if code is None:
+            create_task(cls.set_ptt(False, kind))
+            return
+        if (kind, code, node) not in cls._input_active:
+            return                      # pas notre touche : ignorée, jamais stockée
+        cfg = cls._voice_cfg()
+        if cfg["mode"] == "ptt":
+            create_task(cls.set_ptt(down, kind))
+        elif down:
+            create_task(cls._toggle_mute_notify())
+
+    @classmethod
+    async def _toggle_mute_notify(cls):
+        try:
+            await cls.toggle_mute()
+        except Exception as e:
+            logger.warning(f"toggle_mute from input failed: {e!r}")
+
+    @classmethod
+    def _on_input_capture(cls, kind, code, node, dev):
+        cap = cls._input_capture
+        if cap is None:
+            return
+        import input_watch
+        payload = {
+            "token": cap["token"],
+            "status": "ok",
+            "kind": kind,
+            "code": code,
+            "name": input_watch.code_name(code, kind),
+            "label": input_watch.code_label(code, kind),
+            "noisy": kind == "mouse" and code in input_watch.NOISY_BUTTONS,
+            "device": input_watch.fingerprint(dev),
+            "device_name": dev.get("name") or "",
+        }
+        create_task(cls._finish_capture(payload))
+
+    @classmethod
+    async def _finish_capture(cls, payload):
+        cap = cls._input_capture
+        if cap is None:
+            return
+        cls._input_capture = None
+        task = cap.get("task")
+        if task is not None:
+            task.cancel()
+        if cls._input_watcher is not None:
+            cls._input_watcher.set_capturing(False)
+        await emit("ptt_capture", payload)
+        await cls._input_refresh()
+
+    @classmethod
+    async def _capture_timeout(cls, token, timeout_ms):
+        try:
+            await sleep(timeout_ms / 1000)
+        except Exception:
+            return
+        cap = cls._input_capture
+        if cap is None or cap["token"] != token:
+            return
+        cls._input_capture = None
+        if cls._input_watcher is not None:
+            cls._input_watcher.set_capturing(False)
+        logger.info("input capture timed out")
+        await emit("ptt_capture", {"token": token, "status": "timeout"})
+        await cls._input_refresh()
+
+    @classmethod
+    async def list_input_devices(cls):
+        """Périphériques clavier/souris réellement LISIBLES par nous.
+
+        On ne devine pas depuis le bus ou le vendeur : input_watch tente open() sur
+        chaque nœud. Un clavier présent mais absent de cette liste n'est pas lisible
+        (l'UI le dit à l'utilisateur au lieu d'échouer en silence).
+        """
+        # Renvoie AUSSI les périphériques présents mais non ouvrables : les taire
+        # laissait l'utilisateur appuyer sur un clavier qui ne répondra jamais,
+        # sans aucun message. Hors SteamOS c'est le cas courant, pas un cas limite
+        # (Bazzite ne pose `uaccess` que sur les joysticks).
+        try:
+            import input_watch
+            return {"devices": input_watch.list_devices(),
+                    "unreadable": input_watch.list_unreadable()}
+        except Exception as e:
+            logger.warning(f"list_input_devices failed: {e!r}")
+            return {"devices": [], "unreadable": []}
+
+    @classmethod
+    async def start_input_capture(cls, timeout_ms=10000):
+        """Ouvre une fenêtre de capture ; le résultat arrive par l'événement
+        `ptt_capture` (jeton apparié). Événement plutôt que promesse : l'annulation,
+        l'expiration et le démontage du panneau restent explicites."""
+        from secrets import token_hex
+        await cls.cancel_input_capture()
+        token = token_hex(8)
+        cls._input_capture = {"token": token}
+        await cls._input_refresh()
+        if cls._input_watcher is None or cls._input_watcher.device_count == 0:
+            cls._input_capture = None
+            await cls._input_refresh()
+            return {"token": None, "error": "no_devices"}
+        cls._input_watcher.set_capturing(True)
+        cls._input_capture["task"] = create_task(cls._capture_timeout(token, timeout_ms))
+        logger.info("input capture started")     # jamais de code de touche
+        return {"token": token, "devices": cls._input_watcher.device_count}
+
+    @classmethod
+    async def cancel_input_capture(cls, token=None):
+        cap = cls._input_capture
+        if cap is None:
             return False
+        if token is not None and cap["token"] != token:
+            return False
+        cls._input_capture = None
+        task = cap.get("task")
+        if task is not None:
+            task.cancel()
+        if cls._input_watcher is not None:
+            cls._input_watcher.set_capturing(False)
+        await cls._input_refresh()
+        return True
 
     @classmethod
     async def _ensure_screenshare_deps(cls):
@@ -2616,6 +2940,25 @@ class Plugin:
 
     @classmethod
     async def _unload(cls):
+        # Fermer les fd /dev/input AVANT tout le reste : un rechargement de plugin
+        # détruit les objets Python sans tuer le processus, donc rien ne les
+        # refermerait tout seul (fuite de fd + lecteur fantôme).
+        try:
+            if cls._input_capture is not None:
+                cls._input_capture = None
+            # Relâcher AVANT de fermer les fd : si une touche liée est tenue au
+            # moment du rechargement, le client a reçu $ptt=true et plus personne
+            # ne lui dira l'inverse — le micro resterait ouvert.
+            if cls._ptt_sources:
+                try:
+                    await cls._ptt_release_all()
+                except Exception:
+                    pass
+            if cls._input_watcher is not None:
+                cls._input_watcher.close()
+                cls._input_watcher = None
+        except Exception:
+            pass
         # Restaurer la capture voix si un Go Live sans micro était en cours
         # (sinon la source par défaut resterait le null-sink silencieux).
         try:

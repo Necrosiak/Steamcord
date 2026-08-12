@@ -51,7 +51,11 @@ import {
 import { MuteButton } from "./components/buttons/MuteButton";
 import { DeafenButton } from "./components/buttons/DeafenButton";
 import { DisconnectButton } from "./components/buttons/DisconnectButton";
-import { initVoiceShortcut, getShortcutCfg, setShortcutCfg, captureBinding, cancelCapture, ShortcutCfg, DEFAULT_CFG } from "./voiceShortcut";
+import {
+  initVoiceShortcut, setShortcutCfg, captureBinding, cancelCapture,
+  reloadShortcutCfg, refreshShortcutCfg,
+  bindingLabel, bindingOf, ShortcutCfg, VoiceBinding, BindingKind, DEFAULT_CFG,
+} from "./voiceShortcut";
 import {
   VoiceChatChannel,
   VoiceChatMembers,
@@ -1122,32 +1126,85 @@ const LogoutSection = () => {
 };
 
 
-// Raccourci manette vocal : activer, mode (mute-toggle / PTT), capture de
-// l'accord de boutons. La logique globale vit dans voiceShortcut.ts — ici on
-// ne fait qu'éditer sa config (le listener tourne même QAM fermé).
+// Raccourci vocal : activer, mode (mute-toggle / PTT), et une liaison par type
+// d'entrée (manette / clavier / souris), les types se cumulant en OU. La logique
+// globale vit dans voiceShortcut.ts (manette) et dans le backend
+// defaults/input_watch.py (clavier/souris) — ici on ne fait qu'éditer la config.
+//
+// Capture UNIFIÉE : un seul bouton « Définir », l'utilisateur appuie sur ce qu'il
+// veut et le type est déduit de ce qui a répondu. Pas de menu « clavier/souris/
+// manette » à choisir AVANT d'appuyer : sur une console de poing, demander à
+// l'utilisateur de savoir si le bouton latéral de sa souris se déclare en BTN_SIDE
+// ou en touche est une mauvaise question.
+const CAPTURE_MS = 10000;
+
 const VoiceShortcutConfig = () => {
   const [cfg, setCfg] = useState<ShortcutCfg>({ ...DEFAULT_CFG });
   const [capturing, setCapturing] = useState(false);
+  const [left, setLeft] = useState(0);
+  // null = pas encore interrogé ; [] = aucun clavier/souris LISIBLE (on le dit).
+  const [devs, setDevs] = useState<any[] | null>(null);
+  // Périphériques PRESENTS mais non ouvrables (pas d'ACL uaccess pour nous).
+  // Les taire laissait l'utilisateur appuyer sur un clavier muet sans explication.
+  const [unreadable, setUnreadable] = useState<any[]>([]);
+  const capRef = useRef<{ cancel: () => void } | null>(null);
 
   useEffect(() => {
-    setCfg({ ...getShortcutCfg() });
-    return () => cancelCapture();
+    // On repart du cache module (affichage immédiat) PUIS on relit la source de
+    // vérité côté backend. Sans cette relecture, un panneau monté avant que
+    // get_voice_shortcut de l'init ait répondu affichait la config par défaut —
+    // et le premier enregistrement ÉCRASAIT les liaisons existantes.
+    setCfg(reloadShortcutCfg());
+    refreshShortcutCfg().then(setCfg).catch(() => {});
+    call<[], any>("list_input_devices")
+      .then((r) => { setDevs(r?.devices ?? []); setUnreadable(r?.unreadable ?? []); })
+      .catch(() => setDevs([]));
+    // Démontage du panneau : on annule côté backend aussi, sinon la fenêtre de
+    // capture (et ses fd) survivrait à la fermeture du QAM.
+    return () => { capRef.current?.cancel(); cancelCapture(); };
   }, []);
 
   const save = (next: ShortcutCfg) => { setCfg(next); setShortcutCfg(next); };
 
+  const setBinding = (b: VoiceBinding) => {
+    const bindings = [...cfg.bindings.filter((x) => x.kind !== b.kind), b];
+    save({ ...cfg, bindings });
+    return bindings;
+  };
+
+  const clearBinding = (kind: BindingKind) =>
+    save({ ...cfg, bindings: cfg.bindings.filter((b) => b.kind !== kind) });
+
   const onCapture = async () => {
     setCapturing(true);
-    const r = await captureBinding();
+    setLeft(Math.ceil(CAPTURE_MS / 1000));
+    const tick = setInterval(() => setLeft((s) => (s > 0 ? s - 1 : 0)), 1000);
+    const h = captureBinding(CAPTURE_MS);
+    capRef.current = h;
+    const r = await h.promise;
+    clearInterval(tick);
+    capRef.current = null;
     setCapturing(false);
-    save({ ...cfg, buttons: r.buttons, label: r.label });
-    notify({ title: "Steamcord", body: `${t("shortcut_saved")}: ${r.label}` });
+    if (!r) return;                       // annulé ou expiré : on ne touche à rien
+    setBinding(r);
+    call<[], any>("list_input_devices")
+      .then((r) => { setDevs(r?.devices ?? []); setUnreadable(r?.unreadable ?? []); })
+      .catch(() => {});
+    notify({ title: "Steamcord", body: `${t("shortcut_saved")}: ${bindingLabel(r)}` });
   };
 
   const modeOpts = [
     { data: "toggle", label: t("shortcut_mode_toggle") },
     { data: "ptt", label: t("shortcut_mode_ptt") },
   ];
+
+  const ROWS: { kind: BindingKind; label: string }[] = [
+    { kind: "controller", label: t("shortcut_src_controller") },
+    { kind: "keyboard", label: t("shortcut_src_keyboard") },
+    { kind: "mouse", label: t("shortcut_src_mouse") },
+  ];
+
+  const noisy = cfg.bindings.some((b) => b.kind !== "controller" && (b as any).noisy);
 
   return (
     <>
@@ -1161,16 +1218,71 @@ const VoiceShortcutConfig = () => {
             <Dropdown rgOptions={modeOpts as any} selectedOption={cfg.mode}
               onChange={(e: any) => save({ ...cfg, mode: e.data })} />
           </SR>
-          <SR>
-            <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>
-              <IcJoystick /> {t("shortcut_binding")}: <b>{cfg.label || t("shortcut_none")}</b>
-            </div>
-          </SR>
-          <SR>
-            <DialogButton onClick={onCapture} disabled={capturing} style={{ fontSize: 13 }}>
-              {capturing ? t("shortcut_capture_hint") : t("shortcut_capture")}
-            </DialogButton>
-          </SR>
+
+          {ROWS.map(({ kind, label }) => {
+            const b = bindingOf(cfg, kind);
+            return (
+              <SR key={kind}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, margin: "4px 0" }}>
+                  <span style={{ opacity: 0.7, minWidth: 62 }}>{label}</span>
+                  <b style={{ flex: 1, opacity: b ? 1 : 0.55 }}>
+                    {b ? bindingLabel(b) : t("shortcut_none")}
+                  </b>
+                  {b && (
+                    <DialogButton onClick={() => clearBinding(kind)}
+                      style={{ fontSize: 11, minWidth: 0, padding: "2px 8px" }}>
+                      {t("shortcut_clear")}
+                    </DialogButton>
+                  )}
+                </div>
+              </SR>
+            );
+          })}
+
+          {capturing ? (
+            <>
+              <SR>
+                <div style={{ fontSize: 12, opacity: 0.9, margin: "4px 0" }}>
+                  <IcJoystick /> {t("shortcut_capture_any")} <b>{left}s</b>
+                </div>
+              </SR>
+              <SR>
+                {/* Annuler doit rester atteignable À LA MANETTE : l'utilisateur
+                    regarde l'écran du Deck, le clavier peut être hors de portée. */}
+                <DialogButton onClick={() => capRef.current?.cancel()} style={{ fontSize: 13 }}>
+                  {t("shortcut_cancel")}
+                </DialogButton>
+              </SR>
+            </>
+          ) : (
+            <SR>
+              <DialogButton onClick={onCapture} style={{ fontSize: 13 }}>
+                {t("shortcut_capture")}
+              </DialogButton>
+            </SR>
+          )}
+
+          {noisy && (
+            <SR>
+              <div style={{ fontSize: 11, opacity: 0.8, color: "#ffcc66", margin: "2px 0" }}>
+                <IcWarn /> {t("shortcut_noisy_button")}
+              </div>
+            </SR>
+          )}
+          {devs !== null && devs.length === 0 && (
+            <SR>
+              <div style={{ fontSize: 11, opacity: 0.75, margin: "2px 0" }}>
+                {t("shortcut_no_devices")}
+              </div>
+            </SR>
+          )}
+          {unreadable.length > 0 && (
+            <SR>
+              <div style={{ fontSize: 11, opacity: 0.8, color: "#ffcc66", margin: "2px 0" }}>
+                <IcWarn /> {t("shortcut_unreadable_devices").replace("{n}", String(unreadable.length))}
+              </div>
+            </SR>
+          )}
         </>
       )}
     </>
