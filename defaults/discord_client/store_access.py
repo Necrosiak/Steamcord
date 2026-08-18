@@ -194,3 +194,7 @@ class StoreAccess:
 
     async def set_automatic_gain_control(self, enabled):
         return await self._store_access_request("$set_automatic_gain_control", enabled=enabled)
+
+    async def set_stream_quality(self, resolution, frameRate):
+        return await self._store_access_request(
+            "$set_stream_quality", resolution=resolution, frameRate=frameRate)

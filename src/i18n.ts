@@ -100,6 +100,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Native Decky notifications",
     notif_ingame: "Notifications while playing", notif_ingame_desc: "Applies only while a game is running.",
     notif_ingame_all: "All notifications", notif_ingame_priority: "Direct messages and calls only", notif_ingame_off: "None",
+    stream_quality: "Stream quality", stream_quality_desc: "Applies to the next Go Live, not one already running. Discord does the encoding — this only tells it what to aim for.", stream_source: "Source",
     native_toasts_desc: "Native look for all Decky plugin notifications. Warning: many Steam builds (including current SteamOS stable) crash while rendering them — if an error screen appears or notifications stop showing entirely, turn this back OFF (the safe chat-style fallback works everywhere).",
     update_section: "Updates",
     update_auto: "Automatic updates",
@@ -283,6 +284,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Notifications Decky natives",
     notif_ingame: "Notifications en jeu", notif_ingame_desc: "Ne s'applique que lorsqu'un jeu est lancé.",
     notif_ingame_all: "Toutes les notifications", notif_ingame_priority: "Messages privés et appels uniquement", notif_ingame_off: "Aucune",
+    stream_quality: "Qualité du partage d’écran", stream_quality_desc: "S’applique au prochain Go Live, pas à un partage déjà en cours. C’est Discord qui encode — on lui indique seulement quoi viser.", stream_source: "Source",
     native_toasts_desc: "Rendu natif pour les notifications de tous les plugins Decky. Attention : beaucoup de builds Steam (dont la stable SteamOS actuelle) plantent en les affichant — si un écran d'erreur apparaît ou que plus aucune notification ne s'affiche, désactive (le rendu de secours style message marche partout).",
     update_section: "Mises à jour",
     update_auto: "Mises à jour automatiques",
@@ -502,6 +504,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Native Decky-Benachrichtigungen",
     notif_ingame: "Benachrichtigungen im Spiel", notif_ingame_desc: "Gilt nur, solange ein Spiel läuft.",
     notif_ingame_all: "Alle Benachrichtigungen", notif_ingame_priority: "Nur Direktnachrichten und Anrufe", notif_ingame_off: "Keine",
+    stream_quality: "Streamqualität", stream_quality_desc: "Gilt für den nächsten Go Live, nicht für einen laufenden. Discord kodiert — wir geben nur das Ziel vor.", stream_source: "Quelle",
     native_toasts_desc: "Natives Aussehen für die Benachrichtigungen aller Decky-Plugins. Achtung: viele Steam-Builds (auch das aktuelle SteamOS Stable) stürzen beim Darstellen ab — erscheint ein Fehlerbildschirm oder kommen gar keine Benachrichtigungen mehr an, wieder AUSSCHALTEN (die sichere Chat-Darstellung funktioniert überall).",
   },
   es: {
@@ -607,6 +610,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Notificaciones Decky nativas",
     notif_ingame: "Notificaciones durante el juego", notif_ingame_desc: "Solo se aplica mientras se ejecuta un juego.",
     notif_ingame_all: "Todas las notificaciones", notif_ingame_priority: "Solo mensajes directos y llamadas", notif_ingame_off: "Ninguna",
+    stream_quality: "Calidad de la transmisión", stream_quality_desc: "Se aplica a la próxima transmisión, no a una en curso. Discord codifica; aquí solo se le indica el objetivo.", stream_source: "Fuente",
     native_toasts_desc: "Aspecto nativo para las notificaciones de todos los plugins de Decky. Atención: muchas versiones de Steam (incluida la SteamOS estable actual) fallan al mostrarlas — si aparece una pantalla de error o dejan de mostrarse todas las notificaciones, desactívalo (el formato seguro estilo chat funciona en todas partes).",
   },
   it: {
@@ -712,6 +716,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Notifiche Decky native",
     notif_ingame: "Notifiche durante il gioco", notif_ingame_desc: "Si applica solo mentre un gioco è in esecuzione.",
     notif_ingame_all: "Tutte le notifiche", notif_ingame_priority: "Solo messaggi diretti e chiamate", notif_ingame_off: "Nessuna",
+    stream_quality: "Qualità dello streaming", stream_quality_desc: "Vale per il prossimo Go Live, non per uno già avviato. Codifica Discord: qui gli si indica solo l’obiettivo.", stream_source: "Sorgente",
     native_toasts_desc: "Aspetto nativo per le notifiche di tutti i plugin Decky. Attenzione: molte build di Steam (compresa l'attuale SteamOS stabile) vanno in crash nel mostrarle — se compare una schermata di errore o le notifiche smettono del tutto di apparire, disattivalo (la resa sicura in stile chat funziona ovunque).",
   },
   pt: {
@@ -817,6 +822,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Notificações Decky nativas",
     notif_ingame: "Notificações durante o jogo", notif_ingame_desc: "Aplica-se apenas enquanto um jogo está a correr.",
     notif_ingame_all: "Todas as notificações", notif_ingame_priority: "Apenas mensagens diretas e chamadas", notif_ingame_off: "Nenhuma",
+    stream_quality: "Qualidade da transmissão", stream_quality_desc: "Aplica-se à próxima transmissão, não a uma em curso. Quem codifica é o Discord — aqui só se indica o alvo.", stream_source: "Origem",
     native_toasts_desc: "Aparência nativa para as notificações de todos os plugins do Decky. Atenção: muitas versões do Steam (incluindo o SteamOS estável atual) travam ao exibi-las — se uma tela de erro aparecer ou as notificações pararem completamente de aparecer, desative (o formato seguro em estilo de chat funciona em qualquer lugar).",
   },
   nl: {
@@ -922,6 +928,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Native Decky-meldingen",
     notif_ingame: "Meldingen tijdens het spelen", notif_ingame_desc: "Geldt alleen zolang er een spel draait.",
     notif_ingame_all: "Alle meldingen", notif_ingame_priority: "Alleen privéberichten en oproepen", notif_ingame_off: "Geen",
+    stream_quality: "Streamkwaliteit", stream_quality_desc: "Geldt voor de volgende Go Live, niet voor een lopende. Discord codeert — dit geeft alleen het doel aan.", stream_source: "Bron",
     native_toasts_desc: "Native weergave voor de meldingen van alle Decky-plugins. Let op: veel Steam-builds (ook de huidige stabiele SteamOS) crashen bij het weergeven — verschijnt er een foutscherm of komen er helemaal geen meldingen meer binnen, zet dit dan weer UIT (de veilige chat-weergave werkt overal).",
   },
   pl: {
@@ -1027,6 +1034,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Natywne powiadomienia Decky",
     notif_ingame: "Powiadomienia podczas gry", notif_ingame_desc: "Dotyczy tylko czasu, gdy gra jest uruchomiona.",
     notif_ingame_all: "Wszystkie powiadomienia", notif_ingame_priority: "Tylko wiadomości prywatne i połączenia", notif_ingame_off: "Żadne",
+    stream_quality: "Jakość transmisji", stream_quality_desc: "Dotyczy następnej transmisji, nie trwającej. Koduje Discord — tu wskazujemy tylko cel.", stream_source: "Źródło",
     native_toasts_desc: "Natywny wygląd powiadomień wszystkich wtyczek Decky. Uwaga: wiele wersji Steam (w tym aktualny stabilny SteamOS) zawiesza się przy ich wyświetlaniu — jeśli pojawi się ekran błędu albo powiadomienia całkiem przestaną się pokazywać, wyłącz tę opcję (bezpieczny widok w stylu czatu działa wszędzie).",
   },
   ru: {
@@ -1132,6 +1140,7 @@ const T: Record<Locale, Dict> = {
     native_toasts: "Нативные уведомления Decky",
     notif_ingame: "Уведомления во время игры", notif_ingame_desc: "Действует, только пока запущена игра.",
     notif_ingame_all: "Все уведомления", notif_ingame_priority: "Только личные сообщения и звонки", notif_ingame_off: "Нет",
+    stream_quality: "Качество трансляции", stream_quality_desc: "Применяется к следующей трансляции, не к текущей. Кодирует Discord — здесь задаётся лишь цель.", stream_source: "Источник",
     native_toasts_desc: "Нативный вид уведомлений всех плагинов Decky. Внимание: многие сборки Steam (включая текущую стабильную SteamOS) падают при их отображении — если появился экран ошибки или уведомления вовсе перестали показываться, выключите обратно (безопасный вид в стиле чата работает везде).",
   },
 };

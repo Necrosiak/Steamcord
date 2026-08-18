@@ -521,6 +521,70 @@ const NotifInGameSetting = () => {
   );
 };
 
+// #33 — « it would be cool to insert the sharing options to configure the stream
+// resolution » (Havok027). Le réglage n'a pas besoin d'être inventé : Vesktop
+// garde une screenshareQuality que Vencord applique comme contrainte sur la
+// piste vidéo, et Steamcord la forçait déjà à 1080p60 en dur sans jamais
+// l'exposer. Ici on la rend visible et modifiable. C'est l'encodeur de Discord
+// qui obéit — aucun transcodage de notre côté, donc aucun cycle CPU ajouté sur
+// une machine qui encode déjà en logiciel.
+const StreamQualitySetting = () => {
+  const [res, setRes] = useState<string>("1080");
+  const [fps, setFps] = useState<string>("60");
+  useEffect(() => {
+    call<[], { resolution?: string; frameRate?: string }>("get_stream_prefs")
+      .then((r) => {
+        if (r?.resolution) setRes(r.resolution);
+        if (r?.frameRate) setFps(r.frameRate);
+      })
+      .catch(() => {});
+  }, []);
+  const resOpts = [
+    { data: "source", label: t("stream_source") },
+    { data: "720", label: "720p" },
+    { data: "1080", label: "1080p" },
+    { data: "1440", label: "1440p" },
+  ];
+  const fpsOpts = [
+    { data: "source", label: t("stream_source") },
+    { data: "15", label: "15 FPS" },
+    { data: "30", label: "30 FPS" },
+    { data: "60", label: "60 FPS" },
+  ];
+  return (
+    <>
+      <SR>
+        <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("stream_quality")}</div>
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={resOpts as any}
+          selectedOption={res}
+          onChange={(o: any) => {
+            const v = o.data as string;
+            setRes(v);
+            call("set_stream_prefs", v, fps).catch(() => {});
+          }}
+        />
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={fpsOpts as any}
+          selectedOption={fps}
+          onChange={(o: any) => {
+            const v = o.data as string;
+            setFps(v);
+            call("set_stream_prefs", res, v).catch(() => {});
+          }}
+        />
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>{t("stream_quality_desc")}</div>
+      </SR>
+    </>
+  );
+};
+
 const UpdaterSection = () => {
   // Défaut OFF, aligné sur le backend : une install passe par la modale de
   // confirmation de Decky, on ne la fait pas surgir sans que l'user l'ait voulu.
@@ -1336,6 +1400,7 @@ const ConfigPanel = () => {
       </SR>
       <NotifStyleToggle />
       <NotifInGameSetting />
+      <StreamQualitySetting />
       <hr />
       <AboutSection />
       <LogoutSection />

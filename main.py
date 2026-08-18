@@ -380,7 +380,8 @@ class Plugin:
         create_task(cls._audio_keepalive())
         create_task(cls._autoupdate_check())
         cls._load_audio_cfg()
-        cls.evt_handler.on_logged_in = cls._apply_mic_prefs
+        cls.evt_handler.on_logged_in = cls._on_logged_in
+        create_task(cls.apply_stream_prefs())
         create_task(cls._audio_routing_watcher())
         create_task(cls._screen_diag())
         create_task(cls._ga_boot_cleanup())
@@ -768,6 +769,97 @@ class Plugin:
         except Exception as e:
             logger.warning(f"save {cls._NOTIFY_CFG} failed: {e!r}")
             return {"ok": False, "error": str(e)}
+        return {"ok": True, **cfg}
+
+    # ── qualité du partage d'écran (issue #33) ──────────────────────────────
+    # « It would be cool to insert the sharing options to configure the stream
+    # resolution » (Havok027). Le levier existe déjà, il n'était simplement pas
+    # exposé : Vesktop garde une `screenshareQuality` dans son VesktopState, et
+    # le patch screenShareFixes de Vencord l'applique comme contrainte sur la
+    # piste vidéo au moment du partage. C'est le BON endroit pour ce réglage —
+    # c'est l'encodeur de Discord qui obéit, sans transcodage de notre côté,
+    # donc sans un cycle CPU de plus sur une machine qui encode déjà en logiciel.
+    #
+    # Piège : sur discord.com, `window.localStorage` est SUPPRIMÉ par Discord
+    # (protection anti-vol de jeton). Y accéder directement jette, et le préréglage
+    # 1080p60 que le client injecté croyait poser ne l'était pas toujours. On passe
+    # donc par le localStorage d'une iframe de même origine, comme Vencord.
+    _STREAM_CFG = os.path.expanduser("~/.config/steamcord-stream.json")
+    _stream_settings = None
+
+    # "source" = ne rien contraindre, on laisse Vesktop/Discord décider.
+    _STREAM_RES = ("source", "720", "1080", "1440")
+    _STREAM_FPS = ("source", "15", "30", "60")
+
+    @classmethod
+    def _load_stream_settings(cls):
+        from json import load as _load
+        if cls._stream_settings is None:
+            try:
+                with open(cls._STREAM_CFG) as f:
+                    cls._stream_settings = _load(f)
+            except Exception:
+                cls._stream_settings = {}
+        if cls._stream_settings.get("resolution") not in cls._STREAM_RES:
+            cls._stream_settings["resolution"] = "1080"
+        if cls._stream_settings.get("frameRate") not in cls._STREAM_FPS:
+            cls._stream_settings["frameRate"] = "60"
+        return cls._stream_settings
+
+    @classmethod
+    async def apply_stream_prefs(cls):
+        """Pousse le réglage dans Vesktop. Sans effet sur un partage EN COURS :
+        la contrainte est lue à l'acquisition de la piste.
+
+        Passe par le canal WebSocket du client injecté, PAS par une évaluation
+        CDP directe : le socket CDP est partagé, et un evaluate lancé pendant la
+        poignée de main de démarrage le faisait échouer sur « Concurrent call to
+        receive() ». Le canal $steamcord_request, lui, sérialise les requêtes.
+        """
+        cfg = cls._load_stream_settings()
+        # Au démarrage le client n'est pas encore injecté : le hook on_logged_in
+        # n'est branché qu'après le premier CONNECTION_OPEN. Sans cette attente,
+        # la préférence était ignorée au boot et ne reprenait qu'au login suivant.
+        for _ in range(30):
+            api = getattr(getattr(cls, "evt_handler", None), "api", None)
+            if api is not None and getattr(api, "ws", None) is not None \
+                    and not api.ws.closed:
+                try:
+                    res = await api.set_stream_quality(cfg["resolution"],
+                                                       cfg["frameRate"])
+                    logger.info(f"[stream] qualité appliquée: {res}")
+                    return res
+                except Exception as e:
+                    logger.warning(f"[stream] application échouée: {e!r}")
+                    return None
+            await sleep(1)
+        logger.warning("[stream] client Discord absent — qualité non appliquée")
+        return None
+
+    @classmethod
+    async def get_stream_prefs(cls):
+        return cls._load_stream_settings()
+
+    @classmethod
+    async def set_stream_prefs(cls, resolution=None, frameRate=None):
+        from json import dump as _dump
+        cfg = cls._load_stream_settings()
+        if resolution is not None:
+            if resolution not in cls._STREAM_RES:
+                return {"ok": False, "error": f"résolution inconnue: {resolution}"}
+            cfg["resolution"] = resolution
+        if frameRate is not None:
+            if frameRate not in cls._STREAM_FPS:
+                return {"ok": False, "error": f"cadence inconnue: {frameRate}"}
+            cfg["frameRate"] = frameRate
+        try:
+            os.makedirs(os.path.dirname(cls._STREAM_CFG), exist_ok=True)
+            with open(cls._STREAM_CFG, "w") as f:
+                _dump(cfg, f)
+        except Exception as e:
+            logger.warning(f"save {cls._STREAM_CFG} failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+        await cls.apply_stream_prefs()
         return {"ok": True, **cfg}
 
     @classmethod
@@ -1207,6 +1299,14 @@ class Plugin:
         cls._mic_prefs["automaticGainControl"] = bool(enabled)
         cls._save_audio_cfg()
         return await cls.evt_handler.api.set_automatic_gain_control(enabled)
+
+    @classmethod
+    async def _on_logged_in(cls):
+        """Ré-assertions à chaque login du client Discord. Le plugin est la
+        source de vérité : ni les réglages micro (#14) ni la qualité de partage
+        (#33) ne doivent pouvoir « revenir » aux défauts après un redémarrage."""
+        await cls._apply_mic_prefs()
+        await cls.apply_stream_prefs()
 
     @classmethod
     async def _apply_mic_prefs(cls):
