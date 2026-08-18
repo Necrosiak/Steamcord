@@ -146,11 +146,20 @@ if (!window.STEAMCORD_IS_VESKTOP) try {
 // de Vesktop applique ces contraintes sur la piste vidéo).
 if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
     try {
-        const st = JSON.parse(localStorage.getItem("VesktopState") || "{}");
+        // `window.localStorage` est SUPPRIMÉ par Discord sur discord.com (mesure
+        // anti-vol de jeton) : la lecture jetait, le catch avalait, et ce
+        // préréglage pouvait n'être jamais posé. On passe par le localStorage
+        // d'une iframe de même origine — le contournement qu'utilise Vencord.
+        // Le réglage exposé dans le QAM (issue #33) écrit au même endroit.
+        const _f = document.createElement("iframe");
+        document.body.append(_f);
+        const _ls = _f.contentWindow.localStorage;
+        const st = JSON.parse(_ls.getItem("VesktopState") || "{}");
         if (!st.screenshareQuality) {
             st.screenshareQuality = { resolution: "1080", frameRate: "60" };
-            localStorage.setItem("VesktopState", JSON.stringify(st));
+            _ls.setItem("VesktopState", JSON.stringify(st));
         }
+        _f.remove();
     } catch (_) {}
     window.STEAMCORD_PICKER_WATCHER = setInterval(async () => {
         try {
@@ -865,13 +874,29 @@ window.Vencord.Plugins.plugins.Steamcord = {
             return new File([u8arr], filename, { type: mime });
         }
 
+        // Issue #36 — clavier virtuel : ceci était un setInterval(100 ms) qui
+        // cherchait la zone de saisie et ne s'arrêtait QU'EN CAS DE SUCCÈS.
+        // Sur toute vue sans zone de saisie (liste d'amis, salon vocal, forum,
+        // boutique…) `[0]` vaut undefined, l'affectation jette, le catch avale,
+        // et clearInterval n'est JAMAIS atteint : la boucle interroge le DOM
+        // entier 10 fois par seconde, pour toujours. Pire, patchTypingField()
+        // est rappelée à CHAQUE CHANNEL_SELECT — une boucle fuitée de plus par
+        // salon sans zone de saisie visité, cumulées sur toute la session.
+        // Mesuré au CDP sur une simple liste d'amis : 10 querySelectorAll/s en
+        // continu, seule requête DOM répétée de tout le renderer.
+        // Remplacé par UN écouteur délégué posé une fois : zéro sondage, et il
+        // couvre aussi les zones de saisie créées après coup.
+        let typingFieldHooked = false;
         function patchTypingField() {
-            const t = setInterval(() => {
+            if (typingFieldHooked) return;
+            typingFieldHooked = true;
+            document.addEventListener("click", (e) => {
                 try {
-                    document.querySelectorAll("[role=\"textbox\"]")[0].onclick = (e) => fetch("http://127.0.0.1:65123/openkb", { mode: "no-cors" });
-                    clearInterval(t);
+                    const t = e.target;
+                    if (t && t.closest && t.closest("[role=\"textbox\"]"))
+                        fetch("http://127.0.0.1:65123/openkb", { mode: "no-cors" });
                 } catch (err) { }
-            }, 100)
+            }, true);
         }
 
         async function getAppId(name) {
@@ -1733,6 +1758,35 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     };
                                     break;
                                 }
+                                case "$set_stream_quality": {
+                                    // Issue #33 — qualité du partage d'écran.
+                                    // On écrit la screenshareQuality de Vesktop,
+                                    // que le patch screenShareFixes de Vencord
+                                    // applique comme contrainte sur la piste
+                                    // vidéo À L'ACQUISITION : c'est l'encodeur de
+                                    // Discord qui obéit, pas un transcodage de
+                                    // notre côté. Un partage DÉJÀ en cours garde
+                                    // donc son réglage jusqu'au suivant.
+                                    // localStorage est supprimé par Discord sur
+                                    // discord.com — on passe par celui d'une
+                                    // iframe de même origine, comme Vencord.
+                                    const _fq = document.createElement("iframe");
+                                    document.body.append(_fq);
+                                    try {
+                                        const _lsq = _fq.contentWindow.localStorage;
+                                        const stq = JSON.parse(_lsq.getItem("VesktopState") || "{}");
+                                        const q = {};
+                                        if (data.resolution && data.resolution !== "source") q.resolution = data.resolution;
+                                        if (data.frameRate && data.frameRate !== "source") q.frameRate = data.frameRate;
+                                        if (Object.keys(q).length) stq.screenshareQuality = Object.assign(stq.screenshareQuality || {}, q);
+                                        else delete stq.screenshareQuality;
+                                        _lsq.setItem("VesktopState", JSON.stringify(stq));
+                                        result = { quality: stq.screenshareQuality || null };
+                                    } finally {
+                                        _fq.remove();
+                                    }
+                                    break;
+                                }
                                 case "$set_noise_reduction": {
                                     // data.mode: "none" | "standard" | "krisp"
                                     // Le module d'actions peut manquer selon le bundle (issue #14 :
@@ -2106,17 +2160,17 @@ window.Vencord.Plugins.plugins.Steamcord = {
         });
 
         (() => {
-            const t = setInterval(() => {
+            // Même remplacement que patchTypingField : un écouteur délégué au
+            // lieu d'un sondage. Le clearInterval était bien atteint ici, mais
+            // les <input> apparus après le premier tick n'étaient jamais câblés.
+            document.addEventListener("click", (e) => {
                 try {
-                    if (window.location.pathname == "/login") {
-                        for (const el of document.getElementsByTagName('input')) {
-                            el.onclick = (ev) => fetch("http://127.0.0.1:65123/openkb", { mode: "no-cors" });
-                        }
-                    }
-                    clearInterval(t);
-                }
-                catch (err) { }
-            }, 100)
+                    if (window.location.pathname !== "/login") return;
+                    const t = e.target;
+                    if (t && t.tagName === "INPUT")
+                        fetch("http://127.0.0.1:65123/openkb", { mode: "no-cors" });
+                } catch (err) { }
+            }, true);
         })();
 
         // ── Wake-lock audio (issue #3) ──────────────────────────────────────

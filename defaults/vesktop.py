@@ -589,9 +589,19 @@ async def launch():
         *cmd,
         "--remote-debugging-port=9223",
         "--remote-allow-origins=*",
+        # Issue #36 : la fenêtre Vesktop n'est JAMAIS affichée (--start-minimized,
+        # tout l'UI visible est notre QAM). Garder les trois flags anti-throttling
+        # d'origine forçait donc Chromium à peindre et composer un renderer que
+        # personne ne regarde, en continu — mesuré à ~4,6 % d'un cœur en
+        # permanence sur BC-250, batterie et ventilateur en pure perte sur un
+        # portable. On ne garde que celui dont on dépend vraiment :
+        # --disable-background-timer-throttling protège les timers JS, donc le
+        # heartbeat de la gateway Discord (sans lui, Chromium clampe à 1/s puis
+        # 1/min en « intensive throttling » après 5 min caché → déconnexions).
+        # Les deux autres ne gouvernent QUE la priorité du process et la peinture
+        # d'une fenêtre occultée : rien de ce que nous lisons (stores via CDP,
+        # événements gateway, capture d'écran par le portail) ne dépend du rendu.
         "--disable-background-timer-throttling",
-        "--disable-renderer-backgrounding",
-        "--disable-backgrounding-occluded-windows",
         # Login token persists, so we no longer need the window visible for the QR —
         # start it minimized so it runs invisibly in the background.
         "--start-minimized",
