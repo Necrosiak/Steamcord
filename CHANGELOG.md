@@ -16,6 +16,66 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.23.0 — 2026-08-18
+
+Two reports about the plugin costing more than it should, and one long-standing
+request for control over the stream. All three turned out to be about the same
+thing: work being done that nobody asked for, and settings that existed but were
+never exposed.
+
+### Added
+
+- **Stream quality settings for Go Live** (resolution and frame rate), in the
+  Steamcord settings next to the notification options — requested in
+  [#33](https://github.com/Necrosiak/Steamcord/issues/33).
+
+  Steamcord was already pinning screen sharing to 1080p60 internally, without
+  ever showing it. Now you choose: 720p / 1080p / 1440p / Source, and 15 / 30 /
+  60 FPS / Source.
+
+  Worth being precise about what this does, because it is not a transcoder. The
+  setting is handed to Discord's own encoder as a capture constraint, so nothing
+  is re-encoded on your machine and the plugin costs no extra CPU for it. It
+  also means the constraint is read **when a share starts**: changing it does
+  not affect a Go Live already running, only the next one.
+
+### Fixed
+
+- **A polling loop that never stopped, burning CPU and battery forever**
+  ([#36](https://github.com/Necrosiak/Steamcord/issues/36)).
+
+  Steamcord opens the on-screen keyboard when you tap a message box. It found
+  that message box by polling the DOM every 100 ms and stopping once it had
+  wired it up — except on any view that has no message box (the friends list, a
+  voice channel, a forum, the shop) the lookup threw, the failure was swallowed,
+  and the loop simply never stopped. Worse, it was restarted on **every channel
+  switch**: one permanently leaked 10 Hz whole-document query per such view
+  visited, accumulating for as long as the session lasted.
+
+  Measured over CDP on nothing but an idle friends list, it was the only
+  repeated DOM query in the whole renderer, running exactly ten times a second.
+  It is now a single delegated click listener, installed once: no polling at
+  all, and it also covers message boxes created later, which the old code could
+  not do reliably.
+
+- **The 1080p60 screen-share preset was often never applied.** It was written
+  through `window.localStorage`, which Discord deletes on `discord.com` as an
+  anti-token-theft measure; the write threw and the failure was swallowed. It
+  now goes through a same-origin iframe, the same approach Vencord uses.
+
+### Changed
+
+- **Vesktop no longer keeps its renderer at foreground priority.** Its window is
+  never shown — everything you look at is the plugin's own UI in the Steam
+  overlay — yet two Chromium flags were forcing the browser to treat that hidden
+  window as if you were watching it. Only the flag that protects JavaScript
+  timers is kept, because Discord's gateway heartbeat depends on it.
+
+  To be straight about the measured effect: idle CPU did **not** change (about
+  1.7 % of one core before, and Chromium was already throttling animation to
+  1 fps on its own). What changes is that the scheduler may now deprioritise a
+  renderer nobody is looking at while a game is running.
+
 ## 1.22.0 — 2026-08-12
 
 The voice shortcut could only be bound to controller buttons, which is the one
