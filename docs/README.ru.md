@@ -104,3 +104,7 @@ sudo systemctl restart plugin_loader
 - [@Epictek](https://github.com/Epictek) — основа входа по QR-коду
 - [@jessebofill](https://github.com/jessebofill) — код патчинга меню Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — нативный клиент Discord, которым управляет Steamcord
+
+## Об использовании ИИ
+
+При работе над проектом использовался ИИ — для обратной разработки, программирования и документации. **Не** для графики и не для художественных текстов. Всё опубликованное просмотрено человеком, и за результат отвечаю я. Если вас это смущает — теперь вы знаете.

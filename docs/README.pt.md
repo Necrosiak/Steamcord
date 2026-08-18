@@ -104,3 +104,7 @@ Pedidos de funcionalidades e relatos de «funciona!» em configurações incomun
 - [@Epictek](https://github.com/Epictek) — base do login por QR Code
 - [@jessebofill](https://github.com/jessebofill) — código de patch do menu do Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — o cliente Discord nativo que o Steamcord controla
+
+## Aviso sobre IA
+
+Foi usada IA na criação deste projeto: para engenharia reversa, desenvolvimento e documentação. **Não** foi usada para arte nem escrita criativa. Tudo o que é publicado é revisto por um humano, e o resultado é da minha responsabilidade. Se isso o incomoda, fica avisado.

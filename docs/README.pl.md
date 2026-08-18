@@ -104,3 +104,7 @@ Prośby o funkcje i zgłoszenia „działa!” na nietypowych konfiguracjach są
 - [@Epictek](https://github.com/Epictek) — podstawa logowania kodem QR
 - [@jessebofill](https://github.com/jessebofill) — kod łatania menu Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — natywny klient Discord, którym steruje Steamcord
+
+## Informacja o AI
+
+Przy tworzeniu tego projektu korzystano z AI — do inżynierii wstecznej, programowania i dokumentacji. **Nie** do grafiki ani twórczego pisania. Wszystko, co publikowane, przechodzi przez człowieka, a za wynik odpowiadam ja. Jeśli ci to nie odpowiada, teraz już wiesz.

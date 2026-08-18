@@ -106,3 +106,7 @@ inhabituelles sont tout aussi précieux.
 - [@Epictek](https://github.com/Epictek) — base de la connexion par QR Code
 - [@jessebofill](https://github.com/jessebofill) — code de patch du menu Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — le client Discord natif que Steamcord pilote
+
+## Mention IA
+
+L'IA a été utilisée dans la réalisation de ce projet — pour la rétro-ingénierie, le développement et la documentation. Elle n'a **pas** servi pour de l'art ni de l'écriture créative. Tout ce qui est publié est relu par un humain, et le résultat reste sous ma responsabilité. Si cela vous dérange, vous voilà informé.

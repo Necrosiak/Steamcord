@@ -105,3 +105,7 @@ Feature-Wünsche und „läuft!“-Meldungen von ungewöhnlichen Setups sind gen
 - [@Epictek](https://github.com/Epictek) — Grundlage der QR-Code-Anmeldung
 - [@jessebofill](https://github.com/jessebofill) — Code für das Steam-Menü-Patching
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — der native Discord-Client, den Steamcord steuert
+
+## KI-Hinweis
+
+Bei der Entwicklung dieses Projekts wurde KI eingesetzt — für Reverse Engineering, Entwicklung und Dokumentation. **Nicht** für Grafik oder kreatives Schreiben. Alles Veröffentlichte wird von einem Menschen geprüft, und ich stehe für das Ergebnis gerade. Wer damit nicht einverstanden ist, weiß nun Bescheid.

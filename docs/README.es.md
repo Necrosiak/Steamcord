@@ -104,3 +104,7 @@ Las peticiones de funciones y los «¡funciona!» en configuraciones inusuales v
 - [@Epictek](https://github.com/Epictek) — base del inicio de sesión con QR
 - [@jessebofill](https://github.com/jessebofill) — código de parcheo del menú de Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — el cliente de Discord nativo que controla Steamcord
+
+## Aviso sobre IA
+
+Se usó IA en la creación de este proyecto: para ingeniería inversa, desarrollo y documentación. **No** se usó para arte ni escritura creativa. Todo lo publicado lo revisa una persona, y el resultado es responsabilidad mía. Si eso te incomoda, ya lo sabes.
