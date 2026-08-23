@@ -16,6 +16,51 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.25.0 — 2026-08-23
+
+Screen sharing worked here and failed elsewhere. Three reasons, none of them
+visible on the machine it was developed on.
+
+### Fixed
+
+- **The GStreamer fallback could never claim the screen after the native path
+  timed out** ([#38](https://github.com/Necrosiak/Steamcord/issues/38)). When
+  `getDisplayMedia` did not answer within 25 seconds, Steamcord gave up and fell
+  back to its local GStreamer relay — but nothing cancelled the portal capture
+  session it had already opened. Closing a session only released our own copies
+  of the PipeWire file descriptors and never emitted
+  `org.freedesktop.portal.Session.Closed`, so Chromium went on believing the
+  session was alive and kept holding the gamescope node. The fallback then found
+  a source it could not open. Killing the shim by hand was the only thing that
+  freed it, because losing the D-Bus name is what finally told Chromium to let
+  go. Sessions now emit `Closed`, and the relay asks the shim to release them
+  before it opens the node.
+
+- **The GStreamer child inherited the plugin loader's PyInstaller
+  environment** ([#38](https://github.com/Necrosiak/Steamcord/issues/38)).
+  Decky's loader is a PyInstaller binary and points `LD_LIBRARY_PATH` and
+  `LD_PRELOAD` at its own bundled libraries. The system GStreamer launched from
+  it picked those up and aborted on the bundled OpenSSL (`OPENSSL_3.4.0 not
+  found`), so Go Live produced no picture at all. Steamcord already had the
+  cleanup used for the portal shim; this launch path had simply never been
+  routed through it. Two further spawn sites (the virtual-camera feeder and the
+  Go Live preview) fell back to the same unscrubbed environment and are fixed
+  too. This never showed up on Bazzite, whose system libraries happen to be
+  compatible with the bundled ones; on SteamOS it is fatal.
+
+- **An incomplete GStreamer install failed without saying so**
+  ([#38](https://github.com/Necrosiak/Steamcord/issues/38)). Without
+  `gst-plugins-bad` there is no `webrtcbin`, so the pipeline could not be built
+  and Go Live failed in a way that looked like "no capturable screen". Steamcord
+  now checks the GStreamer registry up front and reports every missing element
+  along with the package that provides it.
+
+### Known limitations
+
+- On hardware where `v4l2loopback` cannot be installed, the virtual-camera path
+  remains unavailable; this is a packaging matter for the distribution, not
+  something Steamcord can work around.
+
 ## 1.24.0 — 2026-08-23
 
 A login that could never finish, a README that described a feature removed a

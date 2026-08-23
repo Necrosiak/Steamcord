@@ -91,6 +91,10 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - The screenshot that exposed the portal shim refusing every interface it does not implement, to every application in the session — the error named Steamcord outright, and he was right to suspect it was not Sober's fault ([#39](https://github.com/Necrosiak/Steamcord/issues/39), fixed in v1.24.0)
 
+### [@immortalt](https://github.com/immortalt)
+
+- The write-up that took screen sharing apart on an ASUS ROG Xbox Ally, after the first report had nothing to act on ([#38](https://github.com/Necrosiak/Steamcord/issues/38)). He had already uninstalled Steamcord and lost his logs, and reconstructed the diagnosis from memory anyway: the missing `gst-plugins-bad`, the PyInstaller `LD_LIBRARY_PATH`/`LD_PRELOAD` leaking into the GStreamer child, and — the one that mattered — the timed-out portal session still holding the gamescope node, proven by killing `portal_shim.py` and watching the fallback start instantly. He also ruled out the part that was *not* our bug: identical frame hashes on the XWayland root window across a page turn, differing hashes on the game's own window, with the official Discord client showing the same stale picture.
+
 ---
 
 # Code contributions
