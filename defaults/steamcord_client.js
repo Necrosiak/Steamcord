@@ -2316,14 +2316,55 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 if (window.STEAMCORD_WS?.readyState === 1)
                     window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_SCANNED", scanned: b }));
             };
-            let lastUrl = null, lastScanned = false;
+            // CAPTCHA au niveau PAGE (#37). Le QR affiché sous Vesktop est celui de
+            // Discord lui-même : quand Discord défie l'IP, il plante un hCaptcha SUR
+            // la page de login et n'émet alors JAMAIS de ticket de remote-auth — le
+            // QR se régénère toutes les ~30 s, indéfiniment, sans le moindre indice
+            // pour l'utilisateur. L'AUTRE détection de CAPTCHA (exchange_ticket qui
+            // reçoit un 400 avec captcha_key) ne couvre QUE le remote-auth maison,
+            // lequel est désactivé sous Vesktop — elle ne pouvait donc structurellement
+            // pas se déclencher ici. On regarde la page.
+            // Deux garde-fous, parce que hCaptcha sème des iframes qui ne sont
+            // PAS un défi visible :
+            //  • la TAILLE — l'iframe d'API fait 0×0. Mais le plancher doit rester
+            //    BAS : la case « je ne suis pas un robot » ne fait que ~302×76,
+            //    un seuil à 80 de haut la ratait, c'est-à-dire le cas le plus
+            //    courant chez Discord ;
+            //  • la VISIBILITÉ — l'iframe du défi en grille existe déjà, à sa
+            //    taille définitive, mais en visibility:hidden tant qu'on n'a pas
+            //    coché la case. Sans ce test on annoncerait un défi trop tôt.
+            const CAPTCHA_SRC = /hcaptcha\.com|recaptcha|arkoselabs\.com|funcaptcha/i;
+            const captchaRect = (f) => {
+                if (!CAPTCHA_SRC.test(f.src || "")) return null;
+                const r = f.getBoundingClientRect();
+                if (r.width < 80 || r.height < 40) return null;
+                const cs = getComputedStyle(f);
+                if (cs.visibility === "hidden" || cs.display === "none") return null;
+                if (parseFloat(cs.opacity || "1") < 0.1) return null;
+                return r;
+            };
+            const findCaptcha = () => {
+                for (const f of document.querySelectorAll("iframe"))
+                    if (captchaRect(f)) return true;
+                return false;
+            };
+            const sendCaptcha = (b) => {
+                if (window.STEAMCORD_WS?.readyState === 1)
+                    window.STEAMCORD_WS.send(JSON.stringify({ type: "REMOTE_AUTH_CAPTCHA", captcha: b }));
+            };
+            let lastUrl = null, lastScanned = false, lastCaptcha = false;
             setInterval(() => {
                 try {
                     if (Vencord.Webpack.Common.UserStore?.getCurrentUser?.()) {
                         if (lastUrl !== null) { lastUrl = null; sendQR(null); }
                         if (lastScanned) { lastScanned = false; sendScanned(false); }
+                        if (lastCaptcha) { lastCaptcha = false; sendCaptcha(false); }
                         return;
                     }
+                    // AVANT la branche QR : Discord affiche le défi EN MÊME TEMPS que
+                    // le QR code, donc le `return` du bloc QR ferait rater le cas.
+                    const captcha = findCaptcha();
+                    if (captcha !== lastCaptcha) { lastCaptcha = captcha; sendCaptcha(captcha); }
                     const svg = findQRSvg();
                     if (svg) {
                         if (lastScanned) { lastScanned = false; sendScanned(false); }

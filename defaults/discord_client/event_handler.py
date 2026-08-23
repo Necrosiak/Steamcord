@@ -19,6 +19,7 @@ class EventHandler:
             "REMOTE_AUTH_FINGERPRINT": self._remote_auth_fingerprint,
             "REMOTE_AUTH_QR_SVG": self._remote_auth_qr_svg,
             "REMOTE_AUTH_SCANNED": self._remote_auth_scanned,
+            "REMOTE_AUTH_CAPTCHA": self._remote_auth_captcha,
             "REMOTE_AUTH_TICKET": self._remote_auth_ticket,
             "STREAM_START": self._stream_start,
             "STREAM_STOP": self._stream_stop,
@@ -50,6 +51,10 @@ class EventHandler:
         # peuplée (ou les membres sont reconstruits à chaque VOICE_STATE_UPDATES).
         self.streaming_users = set()
         self._qr_scanned = False  # QR scanné, en attente de validation sur le téléphone
+        # Discord sert un CAPTCHA sur la page de login (#37). Attribut RÉEL et non
+        # plus un getattr avec valeur par défaut : il n'était posé que sur le chemin
+        # remote-auth maison — désactivé sous Vesktop — donc il n'existait jamais.
+        self._captcha_needed = False
         self.state_changed_event = Event()
         # Salon ouvert dans le chat plein écran (posé par set_fullscreen_channel) :
         # on n'émet PAS de notif de MESSAGE pour ce salon tant qu'il est lu (#21).
@@ -79,7 +84,7 @@ class EventHandler:
             "vc": self._build_vc_dict(),
             "qr_login": self.remote_auth.qr_b64,
             "qr_scanned": self._qr_scanned,
-            "captcha_needed": getattr(self, "_captcha_needed", False),
+            "captcha_needed": self._captcha_needed,
         }
 
     def _build_vc_dict(self):
@@ -219,6 +224,7 @@ class EventHandler:
     async def _logged_in(self, data):
         self.logged_in = True
         self._qr_scanned = False
+        self._captcha_needed = False
         self.remote_auth.stop()
         user_data = data.get("user") if isinstance(data, dict) else None
         if not user_data or not user_data.get("id"):
@@ -237,6 +243,7 @@ class EventHandler:
     async def _logout(self, data):
         self.logged_in = False
         self._qr_scanned = False
+        self._captcha_needed = False
         self.me = User({"id": "", "username": "", "discriminator": None, "avatar": ""})
         # Purger l'état d'appel pour ne pas laisser un faux « en vocal » au QAM.
         self.vc_channel_id = None
@@ -516,6 +523,13 @@ class EventHandler:
     async def _remote_auth_scanned(self, data):
         # QR scanné → Discord attend la validation sur le téléphone.
         self._qr_scanned = bool(data.get("scanned"))
+
+    async def _remote_auth_captcha(self, data):
+        # Défi hCaptcha/Arkose planté sur la page de login par Discord (#37).
+        # Tant qu'il n'est pas résolu, Discord n'émet aucun ticket : le QR tourne
+        # en boucle pour rien. Le QAM affiche le miroir de la page pour le résoudre
+        # à la manette, sans repasser en mode Bureau.
+        self._captcha_needed = bool(data.get("captcha"))
 
     async def _remote_auth_ticket(self, data):
         from discord_client.remote_auth import exchange_ticket
