@@ -16,6 +16,51 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.24.0 — 2026-08-23
+
+A login that could never finish, and a README that described a feature removed
+a month earlier.
+
+### Fixed
+
+- **QR login looped forever, silently, when Discord served a CAPTCHA**
+  ([#37](https://github.com/Necrosiak/Steamcord/issues/37)). When Discord does
+  not trust the IP it puts a CAPTCHA on its *login page*. It then never issues a
+  remote-auth ticket at all: the QR code quietly reset every ~30 seconds,
+  forever, with nothing shown to explain it.
+
+  The plugin did have a CAPTCHA warning, translated into all nine languages —
+  and it could never fire. It was set only on the ticket-exchange path
+  (`exchange_ticket` receiving a `400` with `captcha_key`), and that path does
+  not exist under Vesktop: there the QR code shown in the panel is Discord's
+  own, mirrored from its login page, so no ticket is ever exchanged. The
+  warning was unreachable by construction. Detection now looks at the page
+  itself, where the challenge actually is.
+
+- **The README described a fullscreen login that no longer exists.** The
+  fullscreen login button and its CAPTCHA fallback were removed in v1.14.3
+  (they drove a Steam BrowserView from the pre-Vesktop architecture and had
+  been dead for everyone), but all nine READMEs kept advertising them —
+  including the claim that a CAPTCHA could be solved there. Corrected in every
+  language.
+
+### Added
+
+- **Solve the CAPTCHA in Gaming Mode, with the controller.** When the challenge
+  is detected the panel now offers to open it: Steamcord mirrors Discord's
+  login page and sends your clicks back to it. The D-pad moves the pointer and
+  A clicks; a touchscreen or mouse works too. It closes itself once you are
+  logged in.
+
+  Simply showing the Vesktop window instead would not work, and this was
+  measured rather than assumed: the window is started minimized, and mapping it
+  by hand changes nothing on screen — gamescope only paints the window Steam
+  designates, and before/after screenshots are identical byte for byte. Posting
+  it as an external overlay (the atom mangoapp uses) does display it, but such
+  windows receive no focus and no input at all. Mirroring the page over CDP is
+  the only path that works, and the page receives the forwarded clicks as
+  genuine user input.
+
 ## 1.23.0 — 2026-08-18
 
 Two reports about the plugin costing more than it should, and one long-standing
