@@ -79,6 +79,14 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - Spotted that the game Rich Presence was missing entirely ([#11](https://github.com/Necrosiak/Steamcord/issues/11), added in v1.16.0)
 
+### [@bastiHST90](https://github.com/bastiHST90)
+
+- The battery drain, with the measurement that made it actionable: idle power identical with and without the plugin once v1.23.0 landed, against a Vesktop sitting at 20–30% CPU before it ([#36](https://github.com/Necrosiak/Steamcord/issues/36), fixed in v1.23.0)
+
+### [@zomars](https://github.com/zomars)
+
+- The silently looping QR login — traced all the way to the page-level hCaptcha, with the page text and the exact `get_state` payload showing `captcha_needed` stuck at `false`, and the observation that the README promised a fullscreen CAPTCHA fallback the plugin no longer had ([#37](https://github.com/Necrosiak/Steamcord/issues/37), fixed in v1.24.0)
+
 ---
 
 # Code contributions
