@@ -87,6 +87,10 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - The silently looping QR login — traced all the way to the page-level hCaptcha, with the page text and the exact `get_state` payload showing `captcha_needed` stuck at `false`, and the observation that the README promised a fullscreen CAPTCHA fallback the plugin no longer had ([#37](https://github.com/Necrosiak/Steamcord/issues/37), fixed in v1.24.0)
 
+### [@EasyAs123ABC](https://github.com/EasyAs123ABC)
+
+- The screenshot that exposed the portal shim refusing every interface it does not implement, to every application in the session — the error named Steamcord outright, and he was right to suspect it was not Sober's fault ([#39](https://github.com/Necrosiak/Steamcord/issues/39), fixed in v1.24.0)
+
 ---
 
 # Code contributions

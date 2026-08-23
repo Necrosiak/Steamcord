@@ -18,10 +18,32 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 
 ## 1.24.0 — 2026-08-23
 
-A login that could never finish, and a README that described a feature removed
-a month earlier.
+A login that could never finish, a README that described a feature removed a
+month earlier, and a workaround that had quietly been breaking other people's
+applications.
 
 ### Fixed
+
+- **Steamcord broke every other app in Gaming Mode that talks to the desktop
+  portal** ([#39](https://github.com/Necrosiak/Steamcord/issues/39)). To make
+  Go Live work under gamescope — which ships no portal backend — Steamcord runs
+  a shim that takes ownership of `org.freedesktop.portal.Desktop` and stops the
+  real `xdg-desktop-portal` while a gamescope session exists.
+
+  That bus name is **session-wide**, not private to Discord. The shim
+  implemented only `ScreenCast` and answered everything else with an error, so
+  while it was running, *every* application in the session got that error
+  instead of a working portal. It was reported as Sober (Roblox on Linux)
+  failing to list servers; Sober was simply asking for its proxy configuration
+  and being refused by us.
+
+  The shim now answers the interfaces the real portal implements in its
+  frontend, with no desktop backend involved — `ProxyResolver` and
+  `NetworkMonitor`. Those are always available with a real portal on any
+  desktop, so refusing them was a regression rather than a missing feature.
+  Anything still unimplemented is now logged with the caller and the method, so
+  the next gap of this kind shows up in Steamcord's own journal instead of in
+  somebody else's application.
 
 - **QR login looped forever, silently, when Discord served a CAPTCHA**
   ([#37](https://github.com/Necrosiak/Steamcord/issues/37)). When Discord does
