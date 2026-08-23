@@ -25,7 +25,7 @@ Pasar a nativo resuelve los problemas difíciles del antiguo enfoque de navegado
 
 - **Un Discord por cuenta de Steam (multisesión)** — Cada usuario de Steam de la máquina tiene **su propio perfil de Discord**: cambia de cuenta de Steam y Steamcord cambia de Discord automáticamente en segundos (la primera vez muestra el login QR; después cada sesión queda recordada). Nadie acaba en el Discord de otra persona.
 - **Inicio de sesión con código QR** — Escanea un código QR con la app móvil de Discord para entrar al instante. En tu teléfono: *Discord → Ajustes → Escanear código QR*, luego apunta al código del panel. Sin escribir contraseñas en la Deck.
-- **Inicio de sesión en pantalla completa (alternativa)** — Abre Discord en pantalla completa para entrar con correo/contraseña o resolver un CAPTCHA cuando el QR no es posible.
+- **Resolver el CAPTCHA, sin Modo Escritorio** — Discord a veces pone un CAPTCHA en su página de inicio de sesión; hasta que se resuelve no emite ningún ticket de acceso y el código QR se regenera sin fin. Steamcord lo detecta y refleja la página de inicio de sesión en Modo Juego para que resuelvas el desafío con el mando: la cruceta mueve el puntero, A hace clic.
 - **Navegación unificada** — Pestañas **Voz / Texto / ⚙️ Ajustes** arriba, con un selector **Servidores / MD** compartido debajo: el mismo interruptor de fuente sirve para la voz y el texto.
 - **Chat de voz** — Únete a canales de voz y escucha a todos, con cada miembro mostrado en vivo (anillo al hablar, distintivos de silencio/ensordecer), un control de volumen por persona (0–200 %) **y un silencio local por persona** (silencia a alguien solo para ti, sin que lo sepa). Micrófono y audio nativos (Vesktop).
 - **Mensajes directos (MD y grupos)** — Explora tus conversaciones e inicia/únete a llamadas de voz con amigos directamente desde el menú de acceso rápido. Las llamadas activas se resaltan.
@@ -64,7 +64,7 @@ Pasar a nativo resuelve los problemas difíciles del antiguo enfoque de navegado
 3. Instala desde la URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
 
-Vesktop se instala y se inicia automáticamente con el plugin la primera vez. Solo inicia sesión una vez (QR o pantalla completa) y permaneces conectado.
+Vesktop se instala y se inicia automáticamente con el plugin la primera vez. Solo inicia sesión una vez (código QR, o Vesktop en Modo Escritorio) y permaneces conectado.
 
 ### Requisito (compartir pantalla)
 La pantalla compartida funciona de inmediato: el complemento instala automáticamente su dependencia de Python (aiohttp) en el primer arranque. GStreamer lo proporciona el sistema.

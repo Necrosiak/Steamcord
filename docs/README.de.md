@@ -25,7 +25,7 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 
 - **Ein Discord pro Steam-Konto (Multi-Session)** — Jeder Steam-Nutzer der Maschine bekommt **sein eigenes Discord-Profil**: Steam-Konto wechseln und Steamcord wechselt Discord automatisch in Sekunden (beim ersten Mal erscheint der QR-Login; danach wird jede Sitzung gemerkt). Niemand landet im Discord eines anderen.
 - **QR-Code-Anmeldung** — Scanne einen QR-Code mit der Discord-Handy-App, um dich sofort anzumelden. Auf deinem Handy: *Discord → Einstellungen → QR-Code scannen*, dann auf den im Panel angezeigten Code richten. Kein Passwort-Tippen auf dem Deck.
-- **Vollbild-Anmeldung (Ausweichlösung)** — Öffnet Discord im Vollbild zur Anmeldung mit E-Mail/Passwort oder zum Lösen eines CAPTCHAs, wenn QR nicht möglich ist.
+- **CAPTCHA lösen, ohne Desktop-Modus** — Discord setzt manchmal ein CAPTCHA auf seine Anmeldeseite; solange es nicht gelöst ist, wird kein Anmelde-Ticket ausgestellt und der QR-Code wird endlos neu erzeugt. Steamcord erkennt das und spiegelt die Anmeldeseite im Spielmodus, damit du die Aufgabe mit dem Controller lösen kannst: Steuerkreuz bewegt den Zeiger, A klickt.
 - **Einheitliche Navigation** — Oben die Tabs **Sprache / Text / ⚙️ Einstellungen**, darunter ein gemeinsamer **Server / DMs**-Umschalter — dieselbe Quellenauswahl gilt für Sprache und Text.
 - **Sprachchat** — Tritt Sprachkanälen bei und höre alle, jedes Mitglied live angezeigt (Sprechring, Stumm-/Taub-Abzeichen), mit Lautstärkeregler pro Person (0–200 %) **und lokalem Stummschalten pro Person** (jemanden nur für dich stummschalten, ohne dass er es merkt). Mikrofon und Ton sind nativ (Vesktop).
 - **Direktnachrichten (DMs & Gruppen-DMs)** — Durchsuche deine Unterhaltungen und starte/tritt Sprachanrufen mit Freunden direkt aus dem Schnellzugriffsmenü bei. Aktive Anrufe werden hervorgehoben.
@@ -64,7 +64,7 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 3. Installiere von der URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
 
-Vesktop wird beim ersten Start automatisch vom Plugin installiert und gestartet. Melde dich einmal an (QR oder Vollbild) und du bleibst angemeldet.
+Vesktop wird beim ersten Start automatisch vom Plugin installiert und gestartet. Melde dich einmal an (QR-Code oder Vesktop im Desktop-Modus) und du bleibst angemeldet.
 
 ### Bildschirmübertragung
 Die Bildschirmfreigabe funktioniert sofort — das Plugin installiert seine Python-Abhängigkeit (aiohttp) beim ersten Start automatisch. GStreamer kommt vom System.

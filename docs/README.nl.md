@@ -25,7 +25,7 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 
 - **Eén Discord per Steam-account (multi-sessie)** — Elke Steam-gebruiker op de machine krijgt **zijn eigen Discord-profiel**: wissel van Steam-account en Steamcord wisselt binnen enkele seconden automatisch van Discord (de eerste keer verschijnt de QR-login; daarna wordt elke sessie onthouden). Niemand belandt in andermans Discord.
 - **Aanmelden met QR-code** — Scan een QR-code met de Discord-app op je telefoon om direct in te loggen. Op je telefoon: *Discord → Instellingen → QR-code scannen*, richt dan op de code in het paneel. Geen wachtwoord typen op de Deck.
-- **Volledig scherm aanmelden (terugval)** — Opent Discord op volledig scherm om in te loggen met e-mail/wachtwoord of een CAPTCHA op te lossen wanneer QR niet mogelijk is.
+- **CAPTCHA oplossen, zonder Bureaubladmodus** — Discord zet soms een CAPTCHA op zijn aanmeldpagina; zolang die niet is opgelost geeft het geen aanmeldticket uit en blijft de QR-code zich eindeloos vernieuwen. Steamcord detecteert dat en spiegelt de aanmeldpagina in Spelmodus zodat je de uitdaging met de controller kunt oplossen: het D-pad verplaatst de aanwijzer, A klikt.
 - **Uniforme navigatie** — Tabbladen **Spraak / Tekst / ⚙️ Instellingen** bovenaan, met daaronder een gedeelde **Servers / DM's**-schakelaar: dezelfde bronkeuze geldt voor spraak en tekst.
 - **Spraakchat** — Word lid van spraakkanalen en hoor iedereen, met elk lid live weergegeven (sprekring, mute/doof-badges), een volumeschuif per persoon (0–200 %) **en een lokale mute per persoon** (demp iemand alleen voor jou, zonder dat diegene het weet). Microfoon en audio zijn native (Vesktop).
 - **Privéberichten (DM's & groeps-DM's)** — Blader door je gesprekken en start/neem deel aan spraakoproepen met vrienden rechtstreeks vanuit het snelmenu. Actieve oproepen worden gemarkeerd.
@@ -64,7 +64,7 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 3. Installeer vanaf de URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
 
-Vesktop wordt de eerste keer automatisch door de plugin geïnstalleerd en gestart. Log één keer in (QR of volledig scherm) en je blijft ingelogd.
+Vesktop wordt de eerste keer automatisch door de plugin geïnstalleerd en gestart. Log één keer in (QR-code, of Vesktop in Bureaubladmodus) en je blijft ingelogd.
 
 ### Vereiste (scherm delen)
 Schermdelen werkt meteen — de plugin installeert zijn Python-afhankelijkheid (aiohttp) automatisch bij de eerste start. GStreamer komt van het systeem.

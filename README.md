@@ -25,7 +25,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 
 - **One Discord per Steam account (multi-session)** — Every Steam user on the machine gets their **own Discord profile**: switch the Steam account and Steamcord switches Discord automatically within seconds (the first time shows the QR login; after that each session is remembered). Nobody lands in someone else's Discord.
 - **QR code login** — Scan a QR code with the Discord mobile app to log in instantly. On your phone: *Discord → Settings → Scan QR Code*, then aim at the code shown in the panel. No password typing on the Deck.
-- **Fullscreen login (fallback)** — Opens Discord full-screen to log in with email/password or solve a CAPTCHA when QR isn't possible.
+- **CAPTCHA solver, no Desktop Mode** — Discord sometimes puts a CAPTCHA on its login page; until it is solved no login ticket is issued and the QR code just keeps refreshing. Steamcord detects that and mirrors the login page in Gaming Mode so you can clear the challenge with the controller: D-pad moves the pointer, A clicks.
 - **Unified navigation** — Top tabs **Voice / Text / ⚙️ Settings**, with a shared **Servers / DMs** switch underneath, so the same source toggle works for both voice and text.
 - **Voice chat** — Join voice channels and hear everyone, with each member shown live (speaking ring, mute/deafen badges), a per-user volume slider (0–200%) **and a per-user local mute** (silence someone just for you, without them knowing). Mic and audio are native (Vesktop).
 - **Private messages (DMs & Group DMs)** — Browse your conversations and start/join voice calls with friends directly from the Quick Access Menu. Active calls are highlighted.
@@ -71,7 +71,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 > normal way — *Install plugin from URL*, above — rather than through the
 > automatic update. The release notes say so whenever that is the case.
 
-Vesktop is installed and launched automatically by the plugin the first time it runs. Just log in once (QR or fullscreen) and you stay logged in.
+Vesktop is installed and launched automatically by the plugin the first time it runs. Just log in once (QR code, or Vesktop in Desktop Mode) and you stay logged in.
 
 Nothing else is required: the Python dependencies are vendored, and the handful of system tools some features shell out to (`pw-dump`, `pactl`, `ffmpeg`, `gamescopectl`) are optional — each one only costs the feature it powers, and the backend logs a `[deps]` line at startup naming any that are missing. See **[docs/OS-NOTES.md](docs/OS-NOTES.md)** for the full table and per-distro packages, including NixOS, Gentoo, Alpine and Void.
 

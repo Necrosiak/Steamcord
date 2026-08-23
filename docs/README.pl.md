@@ -25,7 +25,7 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 
 - **Jeden Discord na konto Steam (multi-sesja)** — Każdy użytkownik Steam na maszynie ma **własny profil Discorda**: zmień konto Steam, a Steamcord automatycznie przełączy Discorda w kilka sekund (za pierwszym razem pokaże logowanie QR; potem każda sesja jest zapamiętana). Nikt nie trafi na cudzego Discorda.
 - **Logowanie kodem QR** — Zeskanuj kod QR aplikacją Discord na telefonie, aby zalogować się natychmiast. Na telefonie: *Discord → Ustawienia → Skanuj kod QR*, a następnie wyceluj w kod pokazany w panelu. Bez wpisywania hasła na Decku.
-- **Logowanie na pełnym ekranie (zapasowe)** — Otwiera Discord na pełnym ekranie, aby zalogować się e-mailem/hasłem lub rozwiązać CAPTCHA, gdy QR nie jest możliwy.
+- **Rozwiązywanie CAPTCHA, bez Trybu Pulpitu** — Discord czasami umieszcza CAPTCHA na swojej stronie logowania; dopóki nie zostanie rozwiązana, nie wydaje żadnego biletu logowania, a kod QR odświeża się w nieskończoność. Steamcord to wykrywa i odwzorowuje stronę logowania w Trybie Gry, byś rozwiązał zadanie padem: krzyżak przesuwa wskaźnik, A klika.
 - **Ujednolicona nawigacja** — Karty **Głos / Tekst / ⚙️ Ustawienia** u góry, a pod nimi wspólny przełącznik **Serwery / DM**: ten sam wybór źródła działa dla głosu i tekstu.
 - **Czat głosowy** — Dołączaj do kanałów głosowych i słysz wszystkich, każdy członek pokazany na żywo (pierścień mówienia, plakietki wyciszenia/ogłuszenia), suwak głośności na osobę (0–200 %) **oraz lokalne wyciszenie na osobę** (wycisz kogoś tylko dla siebie, bez jego wiedzy). Mikrofon i dźwięk są natywne (Vesktop).
 - **Wiadomości prywatne (DM i grupy)** — Przeglądaj rozmowy oraz rozpoczynaj/dołączaj do połączeń głosowych ze znajomymi bezpośrednio z menu szybkiego dostępu. Aktywne połączenia są wyróżnione.
@@ -64,7 +64,7 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 3. Zainstaluj z adresu URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
 
-Vesktop jest instalowany i uruchamiany automatycznie przez wtyczkę przy pierwszym uruchomieniu. Wystarczy zalogować się raz (QR lub pełny ekran) i pozostajesz zalogowany.
+Vesktop jest instalowany i uruchamiany automatycznie przez wtyczkę przy pierwszym uruchomieniu. Wystarczy zalogować się raz (kod QR lub Vesktop w Trybie Pulpitu) i pozostajesz zalogowany.
 
 ### Wymaganie (udostępnianie ekranu)
 Udostępnianie ekranu działa od razu — wtyczka automatycznie instaluje zależność Pythona (aiohttp) przy pierwszym uruchomieniu. GStreamer pochodzi z systemu.

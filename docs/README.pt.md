@@ -25,7 +25,7 @@ Ir para o nativo resolve os problemas difíceis da antiga abordagem de navegador
 
 - **Um Discord por conta Steam (multissessão)** — Cada utilizador Steam da máquina tem **o seu próprio perfil Discord**: mude de conta Steam e o Steamcord troca de Discord automaticamente em segundos (da primeira vez mostra o login por QR; depois cada sessão fica memorizada). Ninguém cai no Discord de outra pessoa.
 - **Login por código QR** — Escaneie um código QR com o app do Discord no celular para entrar na hora. No celular: *Discord → Configurações → Ler código QR*, depois aponte para o código mostrado no painel. Sem digitar senha no Deck.
-- **Login em tela cheia (alternativa)** — Abre o Discord em tela cheia para entrar com e-mail/senha ou resolver um CAPTCHA quando o QR não é possível.
+- **Resolver o CAPTCHA, sem Modo Área de Trabalho** — O Discord por vezes coloca um CAPTCHA na página de login; enquanto não for resolvido não emite qualquer ticket de login e o código QR regenera-se indefinidamente. O Steamcord deteta isso e espelha a página de login no Modo Jogo para resolver o desafio com o comando: o direcional move o ponteiro, A clica.
 - **Navegação unificada** — Abas **Voz / Texto / ⚙️ Configurações** no topo, com um seletor **Servidores / DMs** compartilhado logo abaixo: o mesmo interruptor de fonte vale para a voz e para o texto.
 - **Chat de voz** — Entre em canais de voz e ouça todos, com cada membro mostrado ao vivo (anel ao falar, selos de mudo/sem áudio), um controle de volume por pessoa (0–200 %) **e um mudo local por pessoa** (silencie alguém só para você, sem que a pessoa saiba). Microfone e áudio nativos (Vesktop).
 - **Mensagens diretas (DMs e grupos)** — Navegue pelas suas conversas e inicie/entre em chamadas de voz com amigos direto pelo menu de acesso rápido. Chamadas ativas são destacadas.
@@ -64,7 +64,7 @@ Ir para o nativo resolve os problemas difíceis da antiga abordagem de navegador
 3. Instale pela URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
 
-O Vesktop é instalado e iniciado automaticamente pelo plugin na primeira vez. Basta fazer login uma vez (QR ou tela cheia) e você permanece conectado.
+O Vesktop é instalado e iniciado automaticamente pelo plugin na primeira vez. Basta fazer login uma vez (código QR, ou Vesktop no Modo Área de Trabalho) e você permanece conectado.
 
 ### Requisito (compartilhamento de tela)
 A partilha de ecrã funciona logo — o plugin instala automaticamente a sua dependência Python (aiohttp) no primeiro arranque. O GStreamer é fornecido pelo sistema.
