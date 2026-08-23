@@ -42,6 +42,7 @@ import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts } from "./n
 import { ACCENT, DANGER, focusHalo } from "./components/Styled";
 import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
+import { openCaptchaSolver } from "./components/CaptchaSolver";
 import {
   useSteamcordState,
   isLoaded,
@@ -89,11 +90,15 @@ declare global {
 const SP = PanelSection || ((p: any) => <div>{p.children}</div>);
 const SR = PanelSectionRow || ((p: any) => <div>{p.children}</div>);
 
+const CaptchaBtn = DialogButton as any;
+
 const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: string; qr_scanned?: boolean; captcha_needed?: boolean }) => {
   // Deux méthodes de login SEULEMENT : QR (ci-dessous) ou Vesktop en mode
   // Bureau. AUCUN identifiant ne transite par le plugin — pas de page de login
   // interne (l'ancien bouton « plein écran » pilotait une BrowserView Steam de
   // l'archi pré-Vesktop qui n'existe plus → il ne faisait rien, issue #6).
+  // Le CAPTCHA, lui, n'a pas besoin d'identifiants : il se résout dans le
+  // miroir de la page (#37), sans repasser en mode Bureau.
   return (
     <div style={{ display: "flex", flexDirection: "column", padding: "8px 15px" }}>
       <h2 style={{ marginBottom: 4 }}>{t("not_connected")}</h2>
@@ -118,11 +123,18 @@ const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: stri
         <p style={{ fontSize: 12, opacity: 0.6 }}>{t("qr_loading")}</p>
       )}
       {captcha_needed && (
-        // Le login QR a buté sur un CAPTCHA : on ne peut pas le résoudre en
-        // gamemode (pas de page de login dans le plugin) → renvoyer vers Vesktop.
-        <p style={{ fontSize: 12, color: "#ffcc44", margin: "8px 0 0", lineHeight: 1.4 }}>
-          {t("captcha_needed")}
-        </p>
+        // Discord a planté un CAPTCHA SUR sa page de login : tant qu'il n'est
+        // pas résolu il n'émet aucun ticket, et le QR se régénère en boucle
+        // sans le moindre indice (#37). On le dit, et on propose de le résoudre
+        // ici même — le miroir de la page se pilote à la manette.
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(255,204,68,0.10)", border: "1px solid rgba(255,204,68,0.35)" }}>
+          <p style={{ fontSize: 12, color: "#ffcc44", margin: 0, lineHeight: 1.4 }}>
+            <IcWarn /> {t("captcha_needed")}
+          </p>
+          <CaptchaBtn onClick={() => openCaptchaSolver()} style={{ marginTop: 8, width: "100%" }}>
+            {t("captcha_open")}
+          </CaptchaBtn>
+        </div>
       )}
       <div style={{ marginTop: 12, padding: "8px 10px", background: "rgba(255,255,255,0.05)", borderRadius: 8 }}>
         <p style={{ fontSize: 11, opacity: 0.75, margin: 0, lineHeight: 1.45 }}>

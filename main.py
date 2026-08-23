@@ -1040,6 +1040,160 @@ class Plugin:
     async def get_screen_bounds(cls):
         return await cls.evt_handler.api.get_screen_bounds()
 
+    # ── CAPTCHA de la page de login (#37) ──────────────────────────────────
+    # Discord plante parfois un hCaptcha SUR sa page de login quand il n'aime
+    # pas l'IP. Tant qu'il n'est pas résolu, aucun ticket de remote-auth n'est
+    # émis : le QR se régénère toutes les ~30 s, sans fin et sans un mot.
+    #
+    # On ne peut PAS simplement montrer la fenêtre Vesktop pour le résoudre.
+    # Mesuré sur BC-250 en mode Jeu : la fenêtre est démappée (--start-minimized)
+    # et la re-mapper à la main ne change RIEN à l'écran — gamescope ne peint que
+    # la fenêtre que Steam a désignée (GAMESCOPECTRL_BASELAYER_APPID), et une
+    # capture avant/après est identique au md5 près. La poser en overlay externe
+    # (l'atome de mangoapp, cf. game_overlay/overlay.py) l'affiche mais SANS
+    # focus ni entrées : increvable pour un HUD, inutile pour cliquer.
+    #
+    # Le seul chemin qui marche en mode Jeu est donc de miroiter la page dans
+    # notre propre UI et de lui renvoyer les clics par CDP. Page.captureScreenshot
+    # rend même fenêtre démappée (vérifié : document.visibilityState reste
+    # "visible"), donc l'image est vivante et à jour.
+    # MÊME règle que findCaptcha() dans steamcord_client.js — les deux doivent
+    # rester d'accord, sinon le panneau annonce un défi que le miroir ne cadre
+    # pas (ou l'inverse). Plancher de hauteur BAS (la case « je ne suis pas un
+    # robot » fait ~302×76) et test de visibilité (l'iframe du défi en grille
+    # existe en visibility:hidden avant d'être ouverte).
+    _CAPTCHA_RECT_JS = """(() => {
+      let best = null;
+      for (const f of document.querySelectorAll("iframe")) {
+        if (!/hcaptcha\\.com|recaptcha|arkoselabs\\.com|funcaptcha/i.test(f.src || "")) continue;
+        const r = f.getBoundingClientRect();
+        if (r.width < 80 || r.height < 40) continue;
+        const cs = getComputedStyle(f);
+        if (cs.visibility === "hidden" || cs.display === "none") continue;
+        if (parseFloat(cs.opacity || "1") < 0.1) continue;
+        if (!best || r.width * r.height > best.w * best.h)
+          best = { x: r.left, y: r.top, w: r.width, h: r.height };
+      }
+      return JSON.stringify(best || null);
+    })()"""
+
+    @classmethod
+    async def captcha_session(cls, on: bool):
+        """Ouvre/ferme la session de résolution. Emulation.setFocusEmulationEnabled
+        fait croire à la page qu'elle a le focus : sans ça `document.hasFocus()`
+        est faux (la fenêtre est démappée), et hCaptcha refuse d'ouvrir son défi.
+        Posé seulement le temps de la résolution — le laisser en permanence
+        changerait la détection d'inactivité de Discord."""
+        tab = getattr(cls, "discord_tab", None)
+        if tab is None:
+            return False
+        try:
+            await tab.ensure_open()
+            await tab._send_devtools_cmd({
+                "method": "Emulation.setFocusEmulationEnabled",
+                "params": {"enabled": bool(on)},
+            }, False)
+            return True
+        except Exception as e:
+            logger.warning(f"[captcha] session({on}) failed: {e!r}")
+            return False
+
+    @classmethod
+    async def captcha_frame(cls, full: bool = False):
+        """Une image du défi — ou de toute la page de login si `full` — avec le
+        rectangle de PAGE qu'elle couvre, pour que le frontend retraduise ses
+        clics en coordonnées de page."""
+        from json import loads
+        tab = getattr(cls, "discord_tab", None)
+        if tab is None:
+            return None
+        try:
+            await tab.ensure_open()
+            vw, vh = 1280, 720
+            try:
+                res = await tab.evaluate(
+                    "JSON.stringify([innerWidth, innerHeight])", wait=True)
+                val = (((res or {}).get("result") or {}).get("result") or {}).get("value")
+                if val:
+                    vw, vh = loads(val)
+            except Exception:
+                pass
+
+            rect = None
+            if not full:
+                res = await tab.evaluate(cls._CAPTCHA_RECT_JS, wait=True)
+                val = (((res or {}).get("result") or {}).get("result") or {}).get("value")
+                if val and val != "null":
+                    rect = loads(val)
+
+            if rect:
+                # Marge : la case « je ne suis pas un robot » et le bouton de
+                # validation du défi débordent légèrement de l'iframe.
+                m = 12
+                x = max(0, rect["x"] - m)
+                y = max(0, rect["y"] - m)
+                w = min(vw - x, rect["w"] + 2 * m)
+                h = min(vh - y, rect["h"] + 2 * m)
+                scale = 1.0
+            else:
+                # Pas (encore) de défi visible : on miroite la page entière, ce
+                # qui couvre aussi l'interstitiel « Wait! Are you human? » servi
+                # AVANT que l'iframe du défi n'existe.
+                x, y, w, h = 0, 0, vw, vh
+                scale = 0.75
+
+            shot = await tab._send_devtools_cmd({
+                "method": "Page.captureScreenshot",
+                "params": {
+                    "format": "jpeg",
+                    "quality": 70,
+                    "clip": {"x": x, "y": y, "width": w, "height": h, "scale": scale},
+                },
+            }, True)
+            data = (((shot or {}).get("result") or {}).get("data"))
+            if not data:
+                return None
+            return {
+                "img": "data:image/jpeg;base64," + data,
+                # Rectangle de PAGE couvert par l'image (coordonnées CSS).
+                "x": x, "y": y, "w": w, "h": h,
+                "challenge": rect is not None,
+            }
+        except Exception as e:
+            logger.warning(f"[captcha] frame failed: {e!r}")
+            return None
+
+    @classmethod
+    async def captcha_click(cls, x: float, y: float):
+        """Clic à (x, y) en pixels CSS de la page de login."""
+        tab = getattr(cls, "discord_tab", None)
+        if tab is None:
+            return False
+        try:
+            await tab.ensure_open()
+            # Un mouseMoved AVANT le clic : un appui qui surgit sans le moindre
+            # déplacement de pointeur est une signature de robot évidente, et
+            # hCaptcha regarde exactement ça.
+            base = {"x": float(x), "y": float(y), "button": "left"}
+            await tab._send_devtools_cmd({
+                "method": "Input.dispatchMouseEvent",
+                "params": dict(base, type="mouseMoved", buttons=0),
+            }, False)
+            await sleep(0.05)
+            await tab._send_devtools_cmd({
+                "method": "Input.dispatchMouseEvent",
+                "params": dict(base, type="mousePressed", buttons=1, clickCount=1),
+            }, False)
+            await sleep(0.04)
+            await tab._send_devtools_cmd({
+                "method": "Input.dispatchMouseEvent",
+                "params": dict(base, type="mouseReleased", buttons=0, clickCount=1),
+            }, False)
+            return True
+        except Exception as e:
+            logger.warning(f"[captcha] click failed: {e!r}")
+            return False
+
     # Réordonner/masquer des serveurs (issue #18) : préférences 100% LOCALES à
     # Steamcord, PAS le tri natif Discord. Vérifié en vrai (redémarrage complet
     # de Vesktop) : GUILD_MOVE_BY_ID (le mécanisme du glisser-déposer natif)
