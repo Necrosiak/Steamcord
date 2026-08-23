@@ -15,6 +15,17 @@ org.freedesktop.portal.ScreenCast (v2) to auto-approve every request with the
 gamescope node — no dialog, no virtual camera, no kernel module: the native
 Chromium capture path, full resolution, hardware-friendly.
 
+Owning that name has a cost that is easy to miss: it is SESSION-WIDE, not
+private to Discord. While the shim holds it, every application in the session
+talks to us instead of the real portal — so anything we refuse, we refuse for
+all of them (#39: Sober asked for ProxyResolver and got an error, which looked
+like a Sober bug and was ours). We therefore answer the interfaces the real
+portal implements in its FRONTEND, with no desktop backend involved, because
+those are always available with a real portal and their absence is a genuine
+regression rather than a missing feature: ProxyResolver and NetworkMonitor.
+Anything still refused is now logged, so the next gap shows up in our journal
+instead of in somebody else's app.
+
 Politeness rules (SteamOS switches between game mode and desktop on the SAME
 user bus): we only hold the portal name while a gamescope session exists. In
 desktop mode the REAL xdg-desktop-portal must own it (KDE portal serves
@@ -59,6 +70,13 @@ from dbus_next import Variant  # type: ignore # noqa: E402
 PORTAL_NAME = "org.freedesktop.portal.Desktop"
 PORTAL_PATH = "/org/freedesktop/portal/desktop"
 SCREENCAST_IFACE = "org.freedesktop.portal.ScreenCast"
+# #39 : ProxyResolver et NetworkMonitor sont implémentées par le FRONTEND de
+# xdg-desktop-portal (GLib direct, aucun backend de bureau requis) — elles sont
+# donc TOUJOURS disponibles avec un vrai portail, sur n'importe quel bureau.
+# Les refuser n'est pas « une interface qu'on n'a pas », c'est une régression
+# visible par toute app de la session. Cf. le commentaire de handle().
+PROXY_IFACE = "org.freedesktop.portal.ProxyResolver"
+NETMON_IFACE = "org.freedesktop.portal.NetworkMonitor"
 REQUEST_IFACE = "org.freedesktop.portal.Request"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 PROPS_IFACE = "org.freedesktop.DBus.Properties"
@@ -77,6 +95,46 @@ SC_PROPS = {
     "AvailableCursorModes": Variant("u", 3),   # HIDDEN | EMBEDDED (gamescope
                                                # composite déjà le curseur)
 }
+
+PROXY_PROPS = {"version": Variant("u", 1)}
+NETMON_PROPS = {"version": Variant("u", 3)}
+
+
+def _proxy_for(uri):
+    """Proxy à employer pour `uri`, au format GProxyResolver — soit
+    « direct:// », soit une URL de proxy.
+
+    Le vrai portail délègue à GProxyResolver, qui lit la configuration du
+    bureau. Ici on s'en tient aux variables d'environnement (et à no_proxy),
+    et on retombe sur une connexion directe : c'est la réponse JUSTE dans le
+    cas de très loin le plus courant — aucun proxy configuré — et elle ne peut
+    pas casser une app, contrairement à l'erreur qu'on renvoyait avant.
+    Limite assumée : un proxy réglé UNIQUEMENT dans les réglages du bureau
+    (gsettings) n'est pas vu ici."""
+    scheme, host = "", ""
+    try:
+        if "://" in uri:
+            scheme, rest = uri.split("://", 1)
+        else:
+            rest = uri
+        scheme = scheme.lower()
+        host = rest.split("/", 1)[0].split("@")[-1].rsplit(":", 1)[0].strip("[]").lower()
+    except Exception:
+        pass
+
+    no_proxy = os.environ.get("no_proxy") or os.environ.get("NO_PROXY") or ""
+    for pat in (x.strip().lower() for x in no_proxy.split(",")):
+        if not pat:
+            continue
+        if pat == "*" or host == pat or host.endswith("." + pat.lstrip(".")):
+            return "direct://"
+
+    for var in (f"{scheme}_proxy", f"{scheme.upper()}_PROXY",
+                "all_proxy", "ALL_PROXY"):
+        val = os.environ.get(var)
+        if val:
+            return val
+    return "direct://"
 
 
 def _runtime_dir():
@@ -235,6 +293,28 @@ class PortalShim:
                     return Message.new_method_return(msg, "", [])
             if msg.interface == REQUEST_IFACE and msg.member == "Close":
                 return Message.new_method_return(msg, "", [])
+            if msg.path == PORTAL_PATH and msg.interface == PROXY_IFACE:
+                if msg.member == "Lookup":
+                    (uri,) = msg.body
+                    proxy = _proxy_for(uri)
+                    log.info(f"ProxyResolver.Lookup({uri!r}) -> {proxy}")
+                    return Message.new_method_return(msg, "as", [[proxy]])
+            if msg.path == PORTAL_PATH and msg.interface == NETMON_IFACE:
+                if msg.member == "GetAvailable":
+                    return Message.new_method_return(msg, "b", [True])
+                if msg.member == "GetMetered":
+                    return Message.new_method_return(msg, "b", [False])
+                if msg.member == "GetConnectivity":
+                    # 4 = G_NETWORK_CONNECTIVITY_FULL
+                    return Message.new_method_return(msg, "u", [4])
+                if msg.member == "CanReach":
+                    # Vrai = « tente la connexion ». On ne sonde PAS le réseau :
+                    # ce handler doit répondre sans bloquer la boucle qui sert
+                    # aussi le handshake ScreenCast. Et c'est la réponse sûre —
+                    # l'app établit ensuite sa connexion pour de vrai et gère
+                    # l'échec normalement, alors qu'un faux « injoignable »
+                    # l'arrêterait net.
+                    return Message.new_method_return(msg, "b", [True])
             # Interfaces portail NON implémentées (Settings, FileChooser…) :
             # répondre une VRAIE erreur D-Bus tout de suite. Sinon le handler
             # par défaut de dbus_next lève UNKNOWN_OBJECT sans répondre →
@@ -245,6 +325,15 @@ class PortalShim:
             if (str(msg.path).startswith("/org/freedesktop/portal/")
                     and not (msg.interface or "").startswith(
                         "org.freedesktop.DBus")):
+                # TRACÉ : sans cette ligne, une app tierce cassée par le shim
+                # échouait en silence côté Steamcord (#39 — Sober réclamait
+                # ProxyResolver et personne ne le voyait dans notre journal).
+                # msg.sender peut être None sur un bus sans routage de noms :
+                # _sender_token ferait un .lstrip() sur None et l'exception
+                # transformerait un UnknownMethod net en Error.Failed opaque.
+                log.warning(
+                    f"refusé à {msg.sender or '?'} : "
+                    f"{msg.interface}.{msg.member} — non implémentée par le shim")
                 return Message.new_error(
                     msg, "org.freedesktop.DBus.Error.UnknownMethod",
                     f"{msg.interface} not implemented by Steamcord shim")
@@ -257,15 +346,21 @@ class PortalShim:
     def _props(self, msg):
         if msg.member == "Get":
             iface, prop = msg.body
-            if iface == SCREENCAST_IFACE and prop in SC_PROPS:
-                return Message.new_method_return(msg, "v", [SC_PROPS[prop]])
+            for want, props in ((SCREENCAST_IFACE, SC_PROPS),
+                                (PROXY_IFACE, PROXY_PROPS),
+                                (NETMON_IFACE, NETMON_PROPS)):
+                if iface == want and prop in props:
+                    return Message.new_method_return(msg, "v", [props[prop]])
             return Message.new_error(
                 msg, "org.freedesktop.DBus.Error.InvalidArgs",
                 f"no property {prop!r} on {iface!r}")
         if msg.member == "GetAll":
             (iface,) = msg.body
-            if iface == SCREENCAST_IFACE:
-                return Message.new_method_return(msg, "a{sv}", [SC_PROPS])
+            for want, props in ((SCREENCAST_IFACE, SC_PROPS),
+                                (PROXY_IFACE, PROXY_PROPS),
+                                (NETMON_IFACE, NETMON_PROPS)):
+                if iface == want:
+                    return Message.new_method_return(msg, "a{sv}", [props])
             # Interfaces non implémentées (Settings…) : dict vide = réponse
             # honnête, pas de timeout ni de retry agressif côté appelant.
             return Message.new_method_return(msg, "a{sv}", [{}])
