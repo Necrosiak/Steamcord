@@ -315,23 +315,28 @@ class Plugin:
 
         # Use the SYSTEM GStreamer (1.26+). The original Deckcord bundled GStreamer in
         # bin/, but this fork never shipped it — pointing at a nonexistent bin/ broke the
-        # subprocess silently. Inherit the full environment so PATH/HOME/typelibs resolve,
-        # and only override what's needed for hw encode + pipewire/pulse access.
-        uid = os.getuid()
+        # subprocess silently. Inherit the user environment so PATH/HOME/typelibs
+        # resolve, and only override what's needed for hw encode + pipewire/pulse access.
         # Le plugin GStreamer `nice` (ICE, requis par webrtcbin) n'est PAS dans l'image
         # Bazzite de base → webrtcbin échouait à construire le pipeline VP8 ("missing
         # plug-in") et getDisplayMedia se bloquait. On embarque libgstnice.so et on
         # l'ajoute au GST_PLUGIN_PATH (pas d'install système / pas de reboot).
         gst_plugins_dir = str(Path(DECKY_PLUGIN_DIR) / "defaults" / "gst-plugins")
+        # #38 : partir de _user_env() et NON de os.environ. plugin_loader est un
+        # binaire PyInstaller : il exporte LD_LIBRARY_PATH/LD_PRELOAD vers ses libs
+        # embarquées (/tmp/_MEI...). Le GStreamer SYSTÈME lancé ici héritait de ces
+        # variables et chargeait le libcrypto du bundle → « OPENSSL_3.4.0 not found »,
+        # donc pas de pipeline et un Go Live sans image (invisible sur Bazzite, dont
+        # les libs système sont compatibles ; fatal sur SteamOS). _user_env() fait
+        # déjà ce nettoyage — le shim s'en servait, ce lancement-ci l'avait manqué.
+        # Il dérive aussi XDG_RUNTIME_DIR/DBUS du vrai uid, ce que os.environ.get
+        # ne garantissait pas (le backend hérite du /run/user/0 de plugin_loader).
+        import vesktop as _vesktop
         gst_env = {
-            **os.environ,
+            **_vesktop._user_env(),
             "GST_VAAPI_ALL_DRIVERS": "1",
             "LIBVA_DRIVER_NAME": "radeonsi",
             "GST_PLUGIN_PATH": gst_plugins_dir + os.pathsep + os.environ.get("GST_PLUGIN_PATH", ""),
-            "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{uid}"),
-            "DBUS_SESSION_BUS_ADDRESS": os.environ.get(
-                "DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{uid}/bus"
-            ),
         }
         # Réutilisé par le feeder webcam virtuelle (gst_camera.py).
         cls._gst_env = gst_env
@@ -2045,6 +2050,21 @@ class Plugin:
         return True
 
     @classmethod
+    def _gst_env_or_default(cls):
+        """Env des enfants GStreamer, même si _main n'a pas encore posé _gst_env.
+
+        #38 : le repli était `dict(os.environ)`, donc l'env PyInstaller de
+        plugin_loader (LD_LIBRARY_PATH/LD_PRELOAD vers /tmp/_MEI...) repassait par
+        la fenêtre dès que ces lancements précédaient _main. On repart de la même
+        base nettoyée que gst_env.
+        """
+        env = getattr(cls, "_gst_env", None)
+        if env:
+            return env
+        import vesktop as _vesktop
+        return _vesktop._user_env()
+
+    @classmethod
     async def _ensure_screenshare_deps(cls):
         # gst_webrtc.py tourne sous le python SYSTÈME (requis pour les bindings
         # GStreamer `gi`, absents du python embarqué du plugin). Sur une machine fraîche
@@ -2180,7 +2200,7 @@ class Plugin:
         cls.camera_feeder = await create_subprocess_exec(
             sys_python(),
             str(script),
-            env=getattr(cls, "_gst_env", None) or dict(os.environ),
+            env=cls._gst_env_or_default(),
             stdout=PIPE, stderr=PIPE,
         )
         create_task(stream_watcher(cls.camera_feeder.stdout, prefix="[gstcam]"))
@@ -2551,7 +2571,7 @@ class Plugin:
                     script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_preview.py"
                 cls.golive_preview = await create_subprocess_exec(
                     sys_python(), str(script),
-                    env=getattr(cls, "_gst_env", None) or dict(os.environ),
+                    env=cls._gst_env_or_default(),
                     stdout=PIPE, stderr=PIPE,
                 )
                 create_task(stream_watcher(cls.golive_preview.stdout, prefix="[gstprev]"))

@@ -119,6 +119,16 @@
                 clearTimeout(fbTimer);
                 return fail("gst no_source");
             }
+            // #38 : GStreamer incomplet (typiquement gst-plugins-bad absent, donc
+            // pas de webrtcbin). Sans ce message l'échec ressemblait à « aucune
+            // source » et envoyait le diagnostic dans le mur. On nomme le paquet.
+            if (data.missing_plugins) {
+                clearTimeout(fbTimer);
+                console.error("[Steamcord] GStreamer incomplet — éléments manquants : "
+                    + data.missing_plugins.join(", ")
+                    + " — paquet(s) à installer : " + (data.packages || []).join(", "));
+                return fail("gst missing_plugins: " + data.missing_plugins.join(","));
+            }
             if (data.sdp) {
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
             } else if (data.ice) {

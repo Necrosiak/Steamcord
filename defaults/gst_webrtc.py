@@ -5,6 +5,9 @@ import sys
 import aiohttp # type: ignore
 from aiohttp import web # type: ignore
 import logging
+import signal
+import os
+import time
 from logging import getLogger
 from gi import require_version # type: ignore
 import asyncio
@@ -37,6 +40,86 @@ PIPELINE_DESC = """
   pulsesrc device="{monitor}" ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
   queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload={audio_pt} ! send.
 """
+
+
+# Éléments exigés par PIPELINE_DESC, et le paquet qui les fournit. Sert à dire
+# CE QUI MANQUE plutôt que de laisser parse_launch échouer sur un message opaque
+# (#38 : sur SteamOS, gst-plugins-bad absent → pas de webrtcbin → Go Live sans
+# explication ; le rapporteur a mis longtemps à trouver que c'était ça).
+REQUIRED_ELEMENTS = {
+    "webrtcbin": "gst-plugins-bad (gstreamer1-plugins-bad-free)",
+    "pipewiresrc": "gstreamer1-plugin-pipewire / pipewire-gstreamer",
+    "vp8enc": "gst-plugins-good (libvpx)",
+    "rtpvp8pay": "gst-plugins-good",
+    "opusenc": "gst-plugins-base (opus)",
+    "rtpopuspay": "gst-plugins-good",
+    "pulsesrc": "gst-plugins-good (pulseaudio)",
+    "videoconvert": "gst-plugins-base",
+    "audioconvert": "gst-plugins-base",
+    "audioresample": "gst-plugins-base",
+}
+
+
+def _missing_gst_elements():
+    """Liste [(élément, paquet)] des éléments absents de l'installation GStreamer.
+
+    On interroge le registre plutôt que de tenter le pipeline : parse_launch
+    s'arrête au PREMIER manquant, alors qu'on veut pouvoir tout annoncer d'un coup.
+    """
+    missing = []
+    for name, pkg in REQUIRED_ELEMENTS.items():
+        try:
+            if Gst.ElementFactory.find(name) is None:
+                missing.append((name, pkg))
+        except Exception as e:
+            log.warning(f"[gst] registre interrogeable pour {name}: {e!r}")
+    return missing
+
+
+def _shim_pid_path():
+    rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return os.path.join(rt, "steamcord-portal-shim.pid")
+
+
+def _release_portal_sessions():
+    """Demande au shim de lâcher ses sessions ScreenCast (#38).
+
+    On n'arrive ici QUE si le getDisplayMedia natif a déjà échoué : toute session
+    portail encore vivante est donc orpheline. Elle tient pourtant le node
+    gamescope, et Chromium ne le relâche pas tant qu'il croit la session ouverte
+    — le relais trouvait alors une source impossible à ouvrir. SIGUSR1 déclenche
+    close_all() côté shim, qui émet Session.Closed et fait tout relâcher.
+    Le nettoyage d'orphelines de CreateSession (#26) ne couvre pas ce chemin :
+    le repli n'ouvre aucune session, donc il ne se déclenche jamais ici.
+
+    On vise un PID lu dans un pidfile, JAMAIS `pkill -f portal_shim.py` : ce
+    motif matche aussi un shell ou un éditeur dont la ligne de commande cite le
+    fichier, et l'action par défaut de SIGUSR1 est de TUER. Le pidfile pouvant
+    être périmé (PID recyclé par le noyau), on relit /proc/<pid>/cmdline pour
+    confirmer que c'est bien notre shim avant de signaler.
+    """
+    try:
+        with open(_shim_pid_path()) as f:
+            pid = int(f.read().strip())
+    except Exception:
+        return                      # pas de shim (mode bureau) : rien à libérer
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmdline = f.read().decode("utf-8", "replace")
+    except OSError:
+        log.info("[screen] pidfile shim périmé (processus absent)")
+        return
+    if "portal_shim.py" not in cmdline:
+        log.warning(f"[screen] PID {pid} n'est pas portal_shim.py — pas de signal")
+        return
+    try:
+        os.kill(pid, signal.SIGUSR1)
+        log.info(f"[screen] SIGUSR1 -> portal_shim ({pid}) : sessions portail relâchées")
+        # Laisser Chromium traiter le Closed et fermer son flux PipeWire avant
+        # qu'on tente d'ouvrir le node.
+        time.sleep(0.5)
+    except OSError as e:
+        log.warning(f"[screen] SIGUSR1 portal_shim KO: {e!r}")
 
 
 def _find_screen_node():
@@ -212,6 +295,20 @@ class WebRTCServer:
                         # `no_source` : le client basculera sur le getDisplayMedia
                         # NATIF (portail KDE), qui marche en bureau. En gamemode le
                         # node gamescope existe → on continue normalement (gst).
+                        # Avant toute chose : un GStreamer incomplet ne donnera
+                        # jamais de pipeline. Le dire explicitement vaut mieux que
+                        # de laisser le client conclure « aucune source » (#38).
+                        missing = _missing_gst_elements()
+                        if missing:
+                            details = ", ".join(f"{n} ({p})" for n, p in missing)
+                            log.error(f"[gst] éléments GStreamer manquants → Go Live impossible: {details}")
+                            await ws.send_json({
+                                "missing_plugins": [n for n, _ in missing],
+                                "packages": sorted({p for _, p in missing}),
+                            })
+                            await ws.close()
+                            break
+                        _release_portal_sessions()
                         if _find_screen_node() is None:
                             log.info("[screen] aucune source d'écran directe (bureau) → no_source, bascule portail natif côté client")
                             await ws.send_json({"no_source": True})

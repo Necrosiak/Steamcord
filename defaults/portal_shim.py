@@ -43,6 +43,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import socket
 import sys
 import time
@@ -139,6 +140,16 @@ def _proxy_for(uri):
 
 def _runtime_dir():
     return os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+
+
+def _shim_pid_path():
+    """Pidfile lu par gst_webrtc.py pour nous adresser SIGUSR1 (#38).
+
+    Un pidfile plutôt qu'un `pkill -f portal_shim.py` côté relais : ce motif
+    matche aussi un shell ou un éditeur citant le fichier, et SIGUSR1 tue par
+    défaut. Le lecteur revérifie /proc/<pid>/cmdline avant de signaler.
+    """
+    return os.path.join(_runtime_dir(), "steamcord-portal-shim.pid")
 
 
 def _proc_running(*names):
@@ -430,7 +441,7 @@ class PortalShim:
                             and p != session_path]:
                     log.info(f"CreateSession: fermeture de la session orpheline {old}")
                     self._close_session(old)
-                self.sessions[session_path] = {"fds": []}
+                self.sessions[session_path] = {"fds": [], "sender": sender}
                 log.info(f"CreateSession → {session_path}")
                 self._respond_later(sender, req, 0,
                                     {"session_handle": Variant("s", session_path)})
@@ -527,7 +538,33 @@ class PortalShim:
         if sess:
             for fd in sess["fds"]:
                 _safe_close(fd)
+            # #38 : fermer nos fds ne suffit PAS. Chromium garde sa propre copie et
+            # continue de tenir le node PipeWire gamescope tant qu'il croit la session
+            # vivante — c'est pour ça que seul TUER le shim (donc perdre le nom D-Bus)
+            # libérait la source. Le signal Closed est le seul moyen prévu par le
+            # protocole de lui dire de tout relâcher. Signature a{sv} : c'est la
+            # variante front-facing (org.freedesktop.portal.Session) ; celle de
+            # org.freedesktop.impl.portal.Session, elle, n'a pas d'argument.
+            self._emit_closed(path, sess.get("sender"))
             log.info(f"Session fermée: {path}")
+
+    def _emit_closed(self, path, sender):
+        if not sender:
+            return
+        try:
+            self.bus.send(Message(
+                message_type=MessageType.SIGNAL,
+                destination=sender,
+                path=path,
+                interface=SESSION_IFACE,
+                member="Closed",
+                signature="a{sv}",
+                body=[{}],
+            ))
+        except Exception as e:
+            # Le destinataire a pu disparaître (Vesktop fermé) : ce n'est pas une
+            # erreur, et surtout ça ne doit pas empêcher le reste du nettoyage.
+            log.info(f"Closed non émis pour {path}: {e!r}")
 
     def close_all(self):
         for path in list(self.sessions):
@@ -571,10 +608,31 @@ async def serve_while_in_game_mode():
         return
     log.info(f"portail ScreenCast prêt ({PORTAL_NAME} possédé) — "
              f"Go Live natif disponible en mode jeu")
+    # #38 : le repli GStreamer n'émet aucun CreateSession, donc le nettoyage
+    # d'orphelines de CreateSession (#26) ne se déclenche jamais dans ce chemin.
+    # SIGUSR1 donne au relais un moyen de dire « je reprends la source » avant
+    # d'ouvrir le node, sans lui imposer de parler D-Bus.
+    loop = asyncio.get_event_loop()
+    try:
+        loop.add_signal_handler(signal.SIGUSR1, shim.close_all)
+        # Publié SEULEMENT une fois la poignée armée : un pidfile visible alors
+        # que SIGUSR1 tue encore par défaut ferait du relais notre assassin.
+        with open(_shim_pid_path(), "w") as f:
+            f.write(str(os.getpid()))
+    except (NotImplementedError, RuntimeError, OSError) as e:
+        log.warning(f"SIGUSR1 non armé: {e!r}")
     try:
         while in_game_mode() and bus.connected:
             await asyncio.sleep(3)
     finally:
+        try:
+            loop.remove_signal_handler(signal.SIGUSR1)
+        except Exception:
+            pass
+        try:
+            os.unlink(_shim_pid_path())
+        except OSError:
+            pass
         shim.close_all()
         try:
             if bus.connected:
