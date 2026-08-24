@@ -16,6 +16,29 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.26.1 — 2026-08-24
+
+Same-day follow-up to v1.26.0, from @imrprogamer testing it properly.
+
+### Fixed
+
+- **A title Discord did not recognise could pick up someone else's artwork**
+  ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). When the running
+  title resolved to nothing, v1.26.0 fell back to the first recognised
+  executable it could find — which might be anything detectable sitting in the
+  background. Watching media in Harbor showed an unrelated game's picture. No
+  artwork was always better than the wrong artwork. The executable must now
+  bear some resemblance to the title Steam reports; launcher titles are exempt,
+  because there the whole point is to find a game unrelated to the launcher.
+
+- **Games started from inside a launcher are picked up as they appear**
+  ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). Steam only notifies
+  about its own applications, so launching a game from Heroic produced no event
+  at all and the process list travelled with a snapshot taken before the game
+  existed — leaving "Heroic" on screen. The list is now refreshed every 20
+  seconds for as long as something is running, and the client ignores refreshes
+  that change nothing, so Discord sees no extra traffic.
+
 ## 1.26.0 — 2026-08-24
 
 Rich Presence had been running on the wrong code for ten releases, and a crash
