@@ -1058,6 +1058,47 @@ class Plugin:
         await cls.evt_handler.send_client(
             {"type": "$rpc", "game": cls._rpc_game, "started_at": cls._rpc_since,
              "procs": _running_executables() if cls._rpc_game else []})
+        cls._rpc_rescan_arm()
+
+    # Steam ne notifie QUE ses propres applications : lancer un jeu DEPUIS Heroic
+    # ne produit aucun événement, donc la liste de processus envoyée avec le $rpc
+    # est une photo prise avant que le jeu existe (#41). On la rafraîchit tant
+    # qu'une application tourne ; le client ignore les envois qui ne changent
+    # rien, donc ceci ne provoque aucun trafic Discord inutile.
+    _rpc_rescan_task = None
+    RPC_RESCAN_PERIOD = 20
+
+    @classmethod
+    def _rpc_rescan_arm(cls):
+        task = getattr(cls, "_rpc_rescan_task", None)
+        if not cls._rpc_game:
+            if task is not None:
+                task.cancel()
+                cls._rpc_rescan_task = None
+            return
+        if task is not None and not task.done():
+            return
+
+        async def _loop():
+            try:
+                while cls._rpc_game and cls._rpc_pref():
+                    await sleep(cls.RPC_RESCAN_PERIOD)
+                    if not (cls._rpc_game and cls._rpc_pref()):
+                        break
+                    try:
+                        await cls.evt_handler.send_client(
+                            {"type": "$rpc", "game": cls._rpc_game,
+                             "started_at": cls._rpc_since,
+                             "procs": _running_executables()})
+                    except Exception:
+                        # Client absent/reconnexion : réessai au tour suivant.
+                        pass
+            finally:
+                # L'annulation se propage d'elle-même ; on ne veut ici que
+                # libérer la référence pour qu'un prochain arm() reparte.
+                cls._rpc_rescan_task = None
+
+        cls._rpc_rescan_task = create_task(_loop())
 
     @classmethod
     async def set_user_volume(cls, user_id, volume, context="default"):

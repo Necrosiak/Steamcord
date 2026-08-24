@@ -1377,14 +1377,30 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                 // La liste arrive triée du plus récemment démarré au
                                                 // plus ancien : le premier exécutable reconnu est le
                                                 // jeu qu'on vient d'ouvrir, pas un résidu.
-                                                if (SC_LAUNCHERS.has(window.rpcNormNameLoose(raw)) || appId === "0") {
+                                                const isLauncher = SC_LAUNCHERS.has(window.rpcNormNameLoose(raw));
+                                                if (isLauncher || appId === "0") {
+                                                    const titleKey = window.rpcNormNameLoose(raw);
                                                     for (const proc of (data.procs || [])) {
                                                         const hit = window.__sc_rpcExecs?.get(String(proc).toLowerCase());
-                                                        if (hit && hit.id !== appId) {
-                                                            appId = hit.id;
-                                                            rpcName = hit.name;
-                                                            break;
+                                                        if (!hit || hit.id === appId) continue;
+                                                        // Titre NON résolu : exiger que l'exécutable ait un
+                                                        // rapport avec ce que Steam annonce. Sans ce test,
+                                                        // n'importe quelle app détectable qui traîne en fond
+                                                        // s'empare du statut — @imrprogamer a vu Harbor
+                                                        // afficher la jaquette d'un autre programme (#41).
+                                                        // Pas d'image valait mieux que la MAUVAISE image.
+                                                        // Pour un LANCEUR, au contraire, on veut justement
+                                                        // un jeu qui n'a rien à voir avec « Heroic ».
+                                                        if (!isLauncher) {
+                                                            const stem = window.rpcNormNameLoose(
+                                                                String(proc).replace(/\.[^.]+$/, ""));
+                                                            if (!stem || !titleKey) continue;
+                                                            if (!titleKey.startsWith(stem) && !stem.startsWith(titleKey)
+                                                                && !titleKey.includes(stem) && !stem.includes(titleKey)) continue;
                                                         }
+                                                        appId = hit.id;
+                                                        rpcName = hit.name;
+                                                        break;
                                                     }
                                                 }
                                             } catch (_) { /* hors-ligne/API KO : nom brut */ }
@@ -1396,6 +1412,13 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             flags: 1, // INSTANCE
                                             timestamps: data.started_at ? { start: data.started_at } : undefined,
                                         } : null;
+                                        // Le backend re-émet périodiquement pour rattraper un jeu
+                                        // lancé DEPUIS un lanceur (Steam ne nous en dit rien, #41).
+                                        // On ne redispatche que si le résultat a VRAIMENT changé,
+                                        // sinon on enverrait la même activité toutes les 20 s.
+                                        const sig = activity ? appId + "|" + rpcName : "";
+                                        if (sig === window.__sc_lastRpcSig) return;
+                                        window.__sc_lastRpcSig = sig;
                                         FluxDispatcher.dispatch({
                                             type: "LOCAL_ACTIVITY_UPDATE",
                                             socketId: "steamcord-rpc",
