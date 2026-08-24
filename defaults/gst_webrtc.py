@@ -201,6 +201,11 @@ class WebRTCServer:
         self.app = web.Application()
         self.app.add_routes([web.get("/webrtc", self.websocket_handler)])
 
+        # #42 : close_pipeline() lit self.pipe, or il n'était posé que par
+        # start_pipeline(). Tout chemin qui ferme la WS SANS avoir bâti de
+        # pipeline — `no_source` en bureau, et depuis v1.25.0 `missing_plugins` —
+        # levait AttributeError dans le nettoyage du handler.
+        self.pipe = None
         self.webrtc = None
         self.remote_ws = None
 
