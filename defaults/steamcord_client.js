@@ -899,15 +899,6 @@ window.Vencord.Plugins.plugins.Steamcord = {
             }, true);
         }
 
-        async function getAppId(name) {
-            const res = await Vencord.Webpack.Common.RestAPI.get({ url: "/applications/detectable" });
-            if (res.ok) {
-                const item = res.body.filter(e => e.name == name);
-                if (item.length > 0) return item[0].id;
-            }
-            return "0";
-        }
-
         // Le statut Discord (online/idle/dnd/invisible) vit dans le settings proto
         // "PreloadedUserSettings" (type 1), pas dans un action-creator updateStatus
         // (qui n'existe plus). On localise le proto store dont getCurrentValue()
@@ -1056,19 +1047,6 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         "context": "default",
                                         "mode": data.enabled ? "PUSH_TO_TALK" : "VOICE_ACTIVITY",
                                         "options": MediaEngineStore.getSettings().modeOptions
-                                    });
-                                    return;
-                                case "$rpc":
-                                    FluxDispatcher.dispatch({
-                                        type: "LOCAL_ACTIVITY_UPDATE",
-                                        activity: data.game ? {
-                                            application_id: await getAppId(data.game),
-                                            name: data.game,
-                                            type: 0,
-                                            flags: 1,
-                                            timestamps: { start: Date.now() }
-                                        } : {},
-                                        socketId: "CustomRPC",
                                     });
                                     return;
                                 case "$screenshot":
@@ -1328,7 +1306,15 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // permissif : le match exact reste prioritaire, donc aucun jeu
                                     // qui marchait déjà ne peut changer de cible.
                                     try {
-                                        let appId = "0";
+                                        let appId = "0", rpcName = data.game;
+                                        // Lanceurs connus : eux-mêmes détectables par Discord, donc
+                                        // « Heroic » résout parfaitement... et masque le jeu. On ne
+                                        // consulte les processus QUE pour eux, ou quand le nom n'a
+                                        // rien résolu — un jeu Steam qui marche déjà ne peut donc
+                                        // pas se faire remplacer par une app de fond détectable.
+                                        const SC_LAUNCHERS = new Set(["heroic", "heroicgameslauncher",
+                                            "lutris", "bottles", "playnite", "goggalaxy",
+                                            "epicgameslauncher", "itch", "amazongames", "minigalaxy"]);
                                         if (data.game) {
                                             try {
                                                 // On exige aussi le dernier index : après une mise
@@ -1336,9 +1322,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                 // cache exact d'avant mais aucun des deux nouveaux
                                                 // — sans ce test le correctif n'arriverait qu'au
                                                 // prochain rechargement de Vesktop.
-                                                if (!window.__sc_rpcAppIds || !window.__sc_rpcAppIdsLoose) {
+                                                if (!window.__sc_rpcAppIds || !window.__sc_rpcAppIdsLoose || !window.__sc_rpcExecs) {
                                                     const res = await Vencord.Webpack.Common.RestAPI.get({ url: "/applications/detectable" });
-                                                    const map = new Map(), norm = new Map(), loose = new Map();
+                                                    const map = new Map(), norm = new Map(), loose = new Map(), execs = new Map();
                                                     if (res.ok) for (const e of res.body) {
                                                         const n = String(e.name);
                                                         map.set(n.toLowerCase(), e.id);
@@ -1358,21 +1344,54 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                             if (!loose.has(l)) loose.set(l, e.id);
                                                             else if (loose.get(l) !== e.id) loose.set(l, null);
                                                         }
+                                                        // #41 : la base Discord liste aussi les
+                                                        // EXÉCUTABLES de chaque jeu — c'est par eux que
+                                                        // le client officiel détecte ce qu'un lanceur a
+                                                        // ouvert. On les indexe par nom de fichier seul
+                                                        // (les entrées portent des chemins, win32 comme
+                                                        // linux). On IGNORE celles marquées is_launcher :
+                                                        // ce sont justement les lanceurs, les indexer
+                                                        // reviendrait à réafficher Heroic. Comme pour
+                                                        // l'index permissif, un exécutable réclamé par
+                                                        // deux applications est mis à null — plutôt rien
+                                                        // que le mauvais jeu.
+                                                        for (const x of (e.executables || [])) {
+                                                            if (x?.is_launcher) continue;
+                                                            const b = String(x?.name || "")
+                                                                .split(/[\\/]/).pop().toLowerCase();
+                                                            if (!b) continue;
+                                                            if (!execs.has(b)) execs.set(b, { id: e.id, name: n });
+                                                            else if (execs.get(b)?.id !== e.id) execs.set(b, null);
+                                                        }
                                                     }
                                                     window.__sc_rpcAppIds = map;
                                                     window.__sc_rpcAppIdsNorm = norm;
                                                     window.__sc_rpcAppIdsLoose = loose;
+                                                    window.__sc_rpcExecs = execs;
                                                 }
                                                 const raw = String(data.game);
                                                 appId = window.__sc_rpcAppIds.get(raw.toLowerCase())
                                                     || window.__sc_rpcAppIdsNorm?.get(window.rpcNormName(raw))
                                                     || window.__sc_rpcAppIdsLoose?.get(window.rpcNormNameLoose(raw))
                                                     || "0";
+                                                // La liste arrive triée du plus récemment démarré au
+                                                // plus ancien : le premier exécutable reconnu est le
+                                                // jeu qu'on vient d'ouvrir, pas un résidu.
+                                                if (SC_LAUNCHERS.has(window.rpcNormNameLoose(raw)) || appId === "0") {
+                                                    for (const proc of (data.procs || [])) {
+                                                        const hit = window.__sc_rpcExecs?.get(String(proc).toLowerCase());
+                                                        if (hit && hit.id !== appId) {
+                                                            appId = hit.id;
+                                                            rpcName = hit.name;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
                                             } catch (_) { /* hors-ligne/API KO : nom brut */ }
                                         }
                                         const activity = data.game ? {
                                             application_id: appId,
-                                            name: data.game,
+                                            name: rpcName,
                                             type: 0, // Playing
                                             flags: 1, // INSTANCE
                                             timestamps: data.started_at ? { start: data.started_at } : undefined,
@@ -1382,7 +1401,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             socketId: "steamcord-rpc",
                                             activity,
                                         });
-                                        console.log("[Steamcord] RPC → " + (data.game ? "Playing " + data.game + " (app " + appId + ")" : "effacé"));
+                                        console.log("[Steamcord] RPC → " + (data.game ? "Playing " + rpcName + " (app " + appId + ")" + (rpcName !== data.game ? " [processus ; Steam disait " + data.game + "]" : "") : "effacé"));
                                     } catch (e) {
                                         console.error("[Steamcord] RPC échec:", e);
                                     }

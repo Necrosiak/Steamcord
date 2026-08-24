@@ -224,6 +224,59 @@ async def watchdog(tab: Tab):
             await sleep(1)
 
 
+def _running_executables(cap=400):
+    """Exécutables en cours, du plus récemment démarré au plus ancien (#41).
+
+    Steam ne connaît que ce QU'IL a lancé : quand Heroic (ou tout autre lanceur)
+    démarre un jeu, `Router.MainRunningApp` reste « Heroic » et le jeu enfant est
+    invisible. La base `/applications/detectable` de Discord, elle, liste aussi
+    les EXÉCUTABLES de chaque jeu — c'est ainsi que le client Discord officiel
+    les détecte. On remonte donc les binaires vivants et le client fait le
+    rapprochement (il a déjà la base en mémoire).
+
+    On renvoie AUSSI les arguments en .exe : sous Proton/Wine le processus porte
+    le nom d'un lanceur Unix, et c'est l'argument qui nomme le jeu.
+    L'heure de démarrage vient de /proc/<pid>/stat champ 22 ; elle sert à
+    préférer le dernier lancé — donc le jeu plutôt que le lanceur qui l'a ouvert.
+    """
+    seen = {}
+    try:
+        pids = [d for d in os.listdir("/proc") if d.isdigit()]
+    except OSError:
+        return []
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as f:
+                stat = f.read().decode("utf-8", "replace")
+            # comm peut contenir espaces ET parenthèses : couper au DERNIER ')'.
+            start = int(stat[stat.rindex(")") + 2:].split()[19])
+        except (OSError, ValueError, IndexError):
+            continue
+        names = []
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                parts = [a for a in f.read().decode("utf-8", "replace").split("\0") if a]
+            if parts:
+                names.append(os.path.basename(parts[0]))
+                # Le DERNIER argument .exe est le binaire réellement lancé ; ceux
+                # d'avant sont des wrappers (proton, wine, steam-launch...).
+                exes = [os.path.basename(a) for a in parts if a.lower().endswith(".exe")]
+                if exes:
+                    names.append(exes[-1])
+        except OSError:
+            pass
+        # Ligne de commande vide = thread NOYAU (kworker, ksoftirqd...). Ils ne
+        # peuvent correspondre à aucun jeu et représentaient les deux tiers de la
+        # liste : on les écarte plutôt que de les envoyer au client.
+        if not names:
+            continue
+        for n in names:
+            if n and (n not in seen or start > seen[n]):
+                seen[n] = start
+    ordered = sorted(seen.items(), key=lambda kv: kv[1], reverse=True)
+    return [n for n, _ in ordered[:cap]]
+
+
 class Plugin:
     server = Application()
     cors = aiohttp_cors.setup(
@@ -687,7 +740,8 @@ class Plugin:
                 try:
                     await cls.evt_handler.send_client(
                         {"type": "$rpc", "game": cls._rpc_game,
-                         "started_at": cls._rpc_since})
+                         "started_at": cls._rpc_since,
+                         "procs": _running_executables()})
                 except Exception:
                     pass
             create_task(_replay_rpc())
@@ -998,8 +1052,12 @@ class Plugin:
             cls._rpc_since = int(_now() * 1000) if game else None
         if not cls._rpc_pref():
             return
+        # #41 : on joint les exécutables vivants pour que le client puisse
+        # reconnaître le jeu qu'un LANCEUR a ouvert (Heroic, Lutris...), que
+        # Steam ne nous nomme jamais. Inutile quand rien ne tourne.
         await cls.evt_handler.send_client(
-            {"type": "$rpc", "game": cls._rpc_game, "started_at": cls._rpc_since})
+            {"type": "$rpc", "game": cls._rpc_game, "started_at": cls._rpc_since,
+             "procs": _running_executables() if cls._rpc_game else []})
 
     @classmethod
     async def set_user_volume(cls, user_id, volume, context="default"):
