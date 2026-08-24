@@ -54,6 +54,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@william097y](https://github.com/william097y)
 
 - Games appearing in Discord without their Rich Presence artwork, with the observation that the affected titles all carried a `™` — which pointed at Steam and Discord spelling the same game differently — and the follow-up test on a title with no `™`, widening the cause to typographic punctuation in general ([#32](https://github.com/Necrosiak/Steamcord/issues/32), fixed in v1.21.1)
+- His report deserved better than it got: the fix written for it in v1.21.1 landed in a `case` that could never be reached, so it did nothing until v1.26.0. The diagnosis was right all along — the code just never ran ([#41](https://github.com/Necrosiak/Steamcord/issues/41))
 
 ### [@theconker64](https://github.com/theconker64)
 
@@ -94,6 +95,14 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@immortalt](https://github.com/immortalt)
 
 - The write-up that took screen sharing apart on an ASUS ROG Xbox Ally, after the first report had nothing to act on ([#38](https://github.com/Necrosiak/Steamcord/issues/38)). He had already uninstalled Steamcord and lost his logs, and reconstructed the diagnosis from memory anyway: the missing `gst-plugins-bad`, the PyInstaller `LD_LIBRARY_PATH`/`LD_PRELOAD` leaking into the GStreamer child, and — the one that mattered — the timed-out portal session still holding the gamescope node, proven by killing `portal_shim.py` and watching the fallback start instantly. He also ruled out the part that was *not* our bug: identical frame hashes on the XWayland root window across a page turn, differing hashes on the game's own window, with the official Discord client showing the same stale picture.
+
+### [@imrprogamer](https://github.com/imrprogamer)
+
+- The side-by-side comparison of Rich Presence in Gaming Mode against Desktop Mode, with screenshots of each case ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). Reporting that a game launched from Heroic showed up as "Heroic", that a non-Steam shortcut got its name but no artwork, and that the same setup behaved differently in Desktop Mode, is what exposed a duplicated `switch` branch that had silently disabled the artwork matching since v1.16.0 — and prompted detecting games by their executable, the way the official client does.
+
+### [@ZyreonX](https://github.com/ZyreonX)
+
+- The Go Live failure on an ASUS ROG Xbox Ally under Bazzite 44, with the full backend log attached ([#42](https://github.com/Necrosiak/Steamcord/issues/42)). The traceback in it pinned an `AttributeError` that had been reachable from the Desktop Mode fallback the whole time, and the log line numbers confirmed which release it came from.
 
 ---
 

@@ -16,6 +16,46 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.26.0 — 2026-08-24
+
+Rich Presence had been running on the wrong code for ten releases, and a crash
+in the desktop fallback had been waiting since before that.
+
+### Fixed
+
+- **The Rich Presence improvements shipped in v1.16.0 never ran**
+  ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). Two `case "$rpc"`
+  branches existed in the same `switch`, so the second — the one with the
+  artwork lookup, the normalised name matching added for
+  [#32](https://github.com/Necrosiak/Steamcord/issues/32), and the continuous
+  playtime — was unreachable. What actually ran was the original exact-match
+  handler: it required the Steam title to equal Discord's title character for
+  character, so anything Steam writes differently ("HELLDIVERS™ 2", a shortcut
+  named "GTA San Andreas") got no artwork at all, and the play timer restarted
+  on every reconnection. The dead branch is now the live one.
+
+- **The screen-share relay crashed when it had no pipeline to close**
+  ([#42](https://github.com/Necrosiak/Steamcord/issues/42)). `close_pipeline()`
+  read an attribute that only `start_pipeline()` ever created, so every path
+  that closed the socket without building a pipeline raised `AttributeError` in
+  the handler's cleanup — the Desktop Mode `no_source` path, and, since v1.25.0,
+  the missing-plugins path as well.
+
+### Added
+
+- **Games launched through Heroic, Lutris and other launchers are now
+  detected** ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). Steam
+  only knows what Steam started, so launching a game from Heroic showed
+  "Heroic" in Discord and nothing about the game. Steamcord now reports the
+  running executables alongside the Steam title, and matches them against the
+  executable list in Discord's own detectable-games database — the same
+  information the official client uses. A game whose Steam title already
+  resolves is left alone, so nothing that worked before can be redirected.
+
+- **Artwork for shortcuts whose name does not match Discord's**. When the title
+  resolves to nothing, the running executable is used instead, and the
+  canonical name is displayed with it.
+
 ## 1.25.0 — 2026-08-23
 
 Screen sharing worked here and failed elsewhere. Three reasons, none of them
