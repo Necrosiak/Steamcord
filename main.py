@@ -277,6 +277,58 @@ def _running_executables(cap=400):
     return [n for n, _ in ordered[:cap]]
 
 
+# ── Envoi de clips vidéo vers Discord (#40) ──────────────────────────────────
+# Demandé par @Havok027, qui sortait ses clips vers son téléphone pour les
+# reposter. Steam n'aide pas : ses enregistrements vivent en FRAGMENTS
+# (gamerecordings/timelines/*.m4s), illisibles tels quels — c'est le clip
+# EXPORTÉ par Steam qu'on peut envoyer. On ratisse donc les dossiers où
+# atterrissent les vidéos, sans supposer une langue d'interface.
+VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".mov", ".m4v")
+# Discord refuse au-delà de 10 Mio pour un compte sans Nitro. On liste quand
+# même les fichiers plus gros : mieux vaut les montrer grisés avec leur taille
+# que laisser l'utilisateur croire qu'ils n'existent pas.
+DISCORD_UPLOAD_LIMIT = 10 * 1024 * 1024
+
+
+def _video_dirs():
+    home = os.path.expanduser("~")
+    out = []
+    for rel in ("Videos", "Vidéos", "Vídeos", "Filme", "Video",
+                "Downloads", "Téléchargements", "Descargas",
+                "Desktop", "Bureau"):
+        d = os.path.join(home, rel)
+        if os.path.isdir(d):
+            out.append(d)
+    # Clips exportés par Steam (le dossier n'existe que si on en a exporté).
+    import glob
+    out += [d for d in glob.glob(os.path.join(
+        home, ".local/share/Steam/userdata/*/gamerecordings/clips")) if os.path.isdir(d)]
+    return out
+
+
+def _list_videos(cap=40):
+    """[(chemin, nom, taille, mtime)] des vidéos, de la plus récente à la plus
+    ancienne. Profondeur 2 : assez pour un sous-dossier par jeu, pas assez pour
+    parcourir tout un disque de 4 To."""
+    found = []
+    for root in _video_dirs():
+        for dirpath, dirnames, filenames in os.walk(root):
+            depth = dirpath[len(root):].count(os.sep)
+            if depth >= 2:
+                dirnames[:] = []
+            for fn in filenames:
+                if not fn.lower().endswith(VIDEO_EXTS):
+                    continue
+                full = os.path.join(dirpath, fn)
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue
+                found.append((full, fn, st.st_size, st.st_mtime))
+    found.sort(key=lambda t: t[3], reverse=True)
+    return found[:cap]
+
+
 class Plugin:
     server = Application()
     cors = aiohttp_cors.setup(
@@ -340,6 +392,7 @@ class Plugin:
                 get("/voice_render", cls._voice_render),
                 get("/voice_hide", cls._voice_hide),
                 get("/socket", cls._websocket_handler),
+                get("/clip", cls._serve_clip),
                 get("/pov_feed", cls._pov_feed),
             ]
         )
@@ -741,7 +794,9 @@ class Plugin:
                     await cls.evt_handler.send_client(
                         {"type": "$rpc", "game": cls._rpc_game,
                          "started_at": cls._rpc_since,
-                         "procs": _running_executables()})
+                         "procs": _running_executables(),
+                         "detect": cls._rpc_detect_pref(),
+                         "override": cls._rpc_override_pref()})
                 except Exception:
                     pass
             create_task(_replay_rpc())
@@ -1010,13 +1065,82 @@ class Plugin:
     @classmethod
     def _rpc_pref(cls):
         if cls._rpc_enabled is None:
-            from json import load
-            try:
-                with open(cls._RPC_CFG) as f:
-                    cls._rpc_enabled = bool(load(f).get("enabled", True))
-            except Exception:
-                cls._rpc_enabled = True
+            cls._rpc_cfg()
         return cls._rpc_enabled
+
+    # #41 : la base de Discord ne distingue pas toujours deux jeux qui partagent
+    # un exécutable — toute la série Need for Speed classique utilise speed.exe,
+    # et Discord ne connaît qu'un seul « Most Wanted ». Aucune heuristique ne
+    # peut trancher ça : on rend donc la main à l'utilisateur, avec un
+    # interrupteur pour couper la détection et un champ pour imposer un titre.
+    _rpc_detect = None
+    _rpc_override = None
+
+    @classmethod
+    def _rpc_cfg(cls):
+        """Charge le JSON complet une fois, et remplit les trois préférences."""
+        from json import load
+        cfg = {}
+        try:
+            with open(cls._RPC_CFG) as f:
+                cfg = load(f) or {}
+        except Exception:
+            cfg = {}
+        if cls._rpc_enabled is None:
+            cls._rpc_enabled = bool(cfg.get("enabled", True))
+        if cls._rpc_detect is None:
+            cls._rpc_detect = bool(cfg.get("detect_launcher_games", True))
+        if cls._rpc_override is None:
+            cls._rpc_override = str(cfg.get("override", "") or "")
+        return cfg
+
+    @classmethod
+    def _rpc_cfg_save(cls):
+        """Réécrit le fichier ENTIER : `dump({"enabled": ...})` seul effaçait les
+        autres clés à chaque bascule de l'interrupteur."""
+        from json import dump
+        try:
+            os.makedirs(os.path.dirname(cls._RPC_CFG), exist_ok=True)
+            with open(cls._RPC_CFG, "w") as f:
+                dump({"enabled": cls._rpc_pref(),
+                      "detect_launcher_games": cls._rpc_detect_pref(),
+                      "override": cls._rpc_override_pref()}, f)
+        except Exception as e:
+            logger.warning(f"save rpc cfg failed: {e!r}")
+
+    @classmethod
+    def _rpc_detect_pref(cls):
+        if cls._rpc_detect is None:
+            cls._rpc_cfg()
+        return cls._rpc_detect
+
+    @classmethod
+    def _rpc_override_pref(cls):
+        if cls._rpc_override is None:
+            cls._rpc_cfg()
+        return cls._rpc_override
+
+    @classmethod
+    async def get_rpc_detect(cls):
+        return cls._rpc_detect_pref()
+
+    @classmethod
+    async def set_rpc_detect(cls, enabled):
+        cls._rpc_detect = bool(enabled)
+        cls._rpc_cfg_save()
+        await cls.set_rpc(cls._rpc_game)
+        return True
+
+    @classmethod
+    async def get_rpc_override(cls):
+        return cls._rpc_override_pref()
+
+    @classmethod
+    async def set_rpc_override(cls, name):
+        cls._rpc_override = str(name or "").strip()
+        cls._rpc_cfg_save()
+        await cls.set_rpc(cls._rpc_game)
+        return True
 
     @classmethod
     async def get_rpc_enabled(cls):
@@ -1024,21 +1148,17 @@ class Plugin:
 
     @classmethod
     async def set_rpc_enabled(cls, enabled):
-        from json import dump
         cls._rpc_enabled = bool(enabled)
-        try:
-            os.makedirs(os.path.dirname(cls._RPC_CFG), exist_ok=True)
-            with open(cls._RPC_CFG, "w") as f:
-                dump({"enabled": cls._rpc_enabled}, f)
-        except Exception as e:
-            logger.warning(f"save rpc cfg failed: {e!r}")
+        cls._rpc_cfg_save()
         # Application immédiate : OFF efface l'activité affichée, ON rejoue le
         # jeu courant (toujours mémorisé, même préférence coupée).
         try:
             await cls.evt_handler.send_client(
                 {"type": "$rpc",
                  "game": cls._rpc_game if cls._rpc_enabled else None,
-                 "started_at": cls._rpc_since if cls._rpc_enabled else None})
+                 "started_at": cls._rpc_since if cls._rpc_enabled else None,
+                 "procs": _running_executables() if cls._rpc_enabled and cls._rpc_game else [],
+                 "detect": cls._rpc_detect_pref(), "override": cls._rpc_override_pref()})
         except Exception:
             pass
         return True
@@ -1057,7 +1177,8 @@ class Plugin:
         # Steam ne nous nomme jamais. Inutile quand rien ne tourne.
         await cls.evt_handler.send_client(
             {"type": "$rpc", "game": cls._rpc_game, "started_at": cls._rpc_since,
-             "procs": _running_executables() if cls._rpc_game else []})
+             "procs": _running_executables() if cls._rpc_game else [],
+             "detect": cls._rpc_detect_pref(), "override": cls._rpc_override_pref()})
         cls._rpc_rescan_arm()
 
     # Steam ne notifie QUE ses propres applications : lancer un jeu DEPUIS Heroic
@@ -1089,7 +1210,9 @@ class Plugin:
                         await cls.evt_handler.send_client(
                             {"type": "$rpc", "game": cls._rpc_game,
                              "started_at": cls._rpc_since,
-                             "procs": _running_executables()})
+                             "procs": _running_executables(),
+                             "detect": cls._rpc_detect_pref(),
+                             "override": cls._rpc_override_pref()})
                     except Exception:
                         # Client absent/reconnexion : réessai au tour suivant.
                         pass
@@ -1125,6 +1248,51 @@ class Plugin:
     @classmethod
     async def get_last_channels(cls):
         return await cls.evt_handler.api.get_last_channels()
+
+    # Jeton → chemin, rempli par list_videos(). On ne prend JAMAIS un chemin
+    # fourni par le client : sans ça, /clip?path=… lirait n'importe quel fichier
+    # du disque via une requête locale. Le client ne manipule que des jetons.
+    _clip_index = {}
+
+    @classmethod
+    async def list_videos(cls):
+        from hashlib import sha1
+        out = []
+        cls._clip_index = {}
+        for full, name, size, mtime in _list_videos():
+            tok = sha1(full.encode("utf-8", "replace")).hexdigest()[:16]
+            cls._clip_index[tok] = full
+            out.append({"token": tok, "name": name, "size": size,
+                        "mtime": int(mtime),
+                        "too_big": size > DISCORD_UPLOAD_LIMIT})
+        return out
+
+    @classmethod
+    async def _serve_clip(cls, request):
+        from aiohttp.web import FileResponse, Response
+        tok = request.query.get("t", "")
+        path = cls._clip_index.get(tok)
+        if not path or not os.path.isfile(path):
+            return Response(status=404, text="unknown clip")
+        return FileResponse(path)
+
+    @classmethod
+    async def send_video(cls, channel_id, token):
+        """Fait tirer le fichier par le client plutôt que de le pousser.
+
+        Les captures d'écran transitent en base64 par la websocket ; une vidéo
+        de plusieurs dizaines de Mio y gonflerait d'un tiers et bloquerait la
+        boucle qui sert aussi la voix. Le client va le chercher en HTTP local et
+        le remet à CloudUpload, qui sait déjà téléverser vers le CDN Discord.
+        """
+        entry = cls._clip_index.get(token)
+        if not entry:
+            return False
+        await cls.evt_handler.send_client(
+            {"type": "$clip", "channel_id": channel_id,
+             "url": f"http://127.0.0.1:65123/clip?t={token}",
+             "filename": os.path.basename(entry)})
+        return True
 
     @classmethod
     async def post_screenshot(cls, channel_id, data):

@@ -934,8 +934,16 @@ window.Vencord.Plugins.plugins.Steamcord = {
         let CloudUpload;
         CloudUpload = Vencord.Webpack.findLazy(m => m.prototype?.trackUploadFinished);;
         function sendAttachmentToChannel(channelId, attachment_b64, filename) {
+            const file = dataURLtoFile(`data:text/plain;base64,${attachment_b64}`, filename);
+            return uploadFileToChannel(channelId, file);
+        }
+
+        // #40 : même téléversement, mais à partir d'un File déjà constitué. Une
+        // vidéo ne peut pas passer par la websocket en base64 (un tiers de
+        // volume en plus, sur la boucle qui sert aussi la voix) : le client va
+        // la chercher en HTTP local et la remet ici.
+        function uploadFileToChannel(channelId, file) {
             return new Promise((resolve, reject) => {
-                const file = dataURLtoFile(`data:text/plain;base64,${attachment_b64}`, filename);
                 const upload = new CloudUpload({
                     file: file,
                     isClip: false,
@@ -1049,6 +1057,28 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         "options": MediaEngineStore.getSettings().modeOptions
                                     });
                                     return;
+                                case "$clip": {
+                                    // Le backend ne pousse qu'un JETON et une URL locale ;
+                                    // il ne nous laisse jamais désigner un chemin, sinon
+                                    // n'importe quel fichier du disque serait lisible.
+                                    try {
+                                        const r = await fetch(data.url);
+                                        if (!r.ok) throw new Error("HTTP " + r.status);
+                                        const blob = await r.blob();
+                                        const file = new File([blob], data.filename,
+                                            { type: blob.type || "video/mp4" });
+                                        const ok = await uploadFileToChannel(data.channel_id, file);
+                                        window.STEAMCORD_WS.send(JSON.stringify({
+                                            type: "$diag",
+                                            m: "[clip] " + data.filename + " (" + blob.size + " o) → " + (ok ? "envoyé" : "refusé par Discord")
+                                        }));
+                                    } catch (e) {
+                                        window.STEAMCORD_WS.send(JSON.stringify({
+                                            type: "$diag", m: "[clip] échec : " + (e && e.message ? e.message : e)
+                                        }));
+                                    }
+                                    return;
+                                }
                                 case "$screenshot":
                                     result = await sendAttachmentToChannel(data.channel_id, data.attachment_b64, "screenshot.jpg");
                                     break;
@@ -1123,10 +1153,18 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     break;
                                 }
                                 case "$golive": {
+                                    // #42 : tout ce qui suit l'acquisition se passait dans la console
+                                    // de Vesktop, inaccessible en mode jeu — un utilisateur dont le
+                                    // Go Live échoue APRÈS la capture ne pouvait rien nous envoyer
+                                    // d'exploitable. On trace les étapes vers le log backend.
+                                    const scdiag = (m) => {
+                                        try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag", m: "[golive] " + m })); } catch (_) {}
+                                    };
                                     const selChStore = Vencord.Webpack.findStore("SelectedChannelStore");
                                     const golive_channel_id = selChStore?.getVoiceChannelId?.();
                                     if (!golive_channel_id) {
                                         console.warn("[Steamcord] Go Live: pas dans un salon vocal");
+                                        scdiag("abandon : pas dans un salon vocal");
                                         return;
                                     }
                                     const golive_channel = Vencord.Webpack.Common.ChannelStore.getChannel(golive_channel_id);
@@ -1176,6 +1214,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             if (!startFn) {
                                                 window.STEAMCORD_GOLIVE_ACTIVE = false;
                                                 console.warn("[Steamcord] Go Live: action STREAM_START introuvable");
+                                                scdiag("abandon : action STREAM_START introuvable dans le bundle Discord");
                                                 return;
                                             }
                                             // Bundle Discord ≥ 19/07/2026 : STREAM_START seul ne lance plus
@@ -1254,12 +1293,24 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                         try { eng.desktopInputPool?.get?.(srcId)?.destroy?.(); } catch (_) {}
                                                         console.log("[Steamcord] Go Live: annulé pendant l'acquisition, source libérée");
                                                     } else {
+                                                        scdiag("source acquise (id=" + JSON.stringify(srcId) + ") guild="
+                                                            + golive_guild_id + " channel=" + golive_channel_id + " → STREAM_START");
                                                         startFn(golive_guild_id, golive_channel_id, { pid: null, sourceId: srcId, sourceName: null });
                                                         console.log("[Steamcord] Go Live START envoyé (source pool: " + JSON.stringify(srcId) + ")");
+                                                        // Le point aveugle de #42 : l'appel ne rend rien. La seule
+                                                        // preuve qu'un stream EXISTE est le store, 2 s plus tard.
+                                                        setTimeout(() => {
+                                                            try {
+                                                                const st = WP.findStore("ApplicationStreamingStore")?.getCurrentUserActiveStream?.();
+                                                                scdiag(st ? ("stream publié : channel=" + st.channelId + " state=" + st.state)
+                                                                          : "AUCUN stream dans le store 2 s après STREAM_START — Discord ne l'a pas créé");
+                                                            } catch (e) { scdiag("relecture du store impossible: " + e); }
+                                                        }, 2000);
                                                     }
                                                 } catch (e) {
                                                     if (myGen === window.STEAMCORD_GOLIVE_GEN) window.STEAMCORD_GOLIVE_ACTIVE = false;
                                                     console.error("[Steamcord] Go Live: acquisition écran échouée:", e);
+                                                    scdiag("échec avant/pendant l'acquisition : " + (e && e.message ? e.message : e));
                                                 } finally {
                                                     if (myGen === window.STEAMCORD_GOLIVE_GEN) {
                                                         window.STEAMCORD_GOLIVE_PENDING = false;
@@ -1274,6 +1325,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         }
                                     } catch (e) {
                                         console.error("[Steamcord] Go Live échec:", e);
+                                        scdiag("exception : " + (e && e.message ? e.message : e));
                                     }
                                     return;
                                 }
@@ -1377,8 +1429,22 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                 // La liste arrive triée du plus récemment démarré au
                                                 // plus ancien : le premier exécutable reconnu est le
                                                 // jeu qu'on vient d'ouvrir, pas un résidu.
+                                                // #41 : réglages utilisateur. Un titre imposé gagne sur
+                                                // TOUT — c'est la seule réponse aux cas que la base de
+                                                // Discord ne sait pas distinguer (toute la série Need for
+                                                // Speed classique partage speed.exe, et Discord ne connaît
+                                                // qu'un « Most Wanted »). L'interrupteur, lui, coupe la
+                                                // substitution sans couper le Rich Presence.
+                                                const forced = String(data.override || "").trim();
+                                                if (forced) {
+                                                    rpcName = forced;
+                                                    appId = window.__sc_rpcAppIds.get(forced.toLowerCase())
+                                                        || window.__sc_rpcAppIdsNorm?.get(window.rpcNormName(forced))
+                                                        || window.__sc_rpcAppIdsLoose?.get(window.rpcNormNameLoose(forced))
+                                                        || "0";
+                                                }
                                                 const isLauncher = SC_LAUNCHERS.has(window.rpcNormNameLoose(raw));
-                                                if (isLauncher || appId === "0") {
+                                                if (!forced && data.detect !== false && (isLauncher || appId === "0")) {
                                                     const titleKey = window.rpcNormNameLoose(raw);
                                                     for (const proc of (data.procs || [])) {
                                                         const hit = window.__sc_rpcExecs?.get(String(proc).toLowerCase());
@@ -1405,20 +1471,32 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                 }
                                             } catch (_) { /* hors-ligne/API KO : nom brut */ }
                                         }
+                                        // Le backend re-émet périodiquement pour rattraper un jeu
+                                        // lancé DEPUIS un lanceur (Steam ne nous en dit rien, #41).
+                                        // On ne redispatche que si le résultat a VRAIMENT changé,
+                                        // sinon on enverrait la même activité toutes les 20 s.
+                                        const sig = data.game ? appId + "|" + rpcName : "";
+                                        if (sig === window.__sc_lastRpcSig) return;
+                                        window.__sc_lastRpcSig = sig;   // passé ici = la signature A changé
+                                        // #41 : `started_at` du backend suit le titre STEAM, qui reste
+                                        // « Heroic » du début à la fin. Le compteur ne repartait donc
+                                        // jamais : en fermant son jeu, @imrprogamer voyait Heroic
+                                        // reprendre le temps écoulé, puis le jeu suivant le continuer.
+                                        // Quand c'est NOUS qui avons substitué le jeu, c'est le
+                                        // changement de signature qui fait foi. Sinon on garde la date
+                                        // du backend, qui elle survit à une reconnexion du client.
+                                        const substituted = rpcName !== data.game;
+                                        if (substituted) window.__sc_rpcStartedAt = Date.now();
+                                        const startAt = substituted
+                                            ? (window.__sc_rpcStartedAt || Date.now())
+                                            : data.started_at;
                                         const activity = data.game ? {
                                             application_id: appId,
                                             name: rpcName,
                                             type: 0, // Playing
                                             flags: 1, // INSTANCE
-                                            timestamps: data.started_at ? { start: data.started_at } : undefined,
+                                            timestamps: startAt ? { start: startAt } : undefined,
                                         } : null;
-                                        // Le backend re-émet périodiquement pour rattraper un jeu
-                                        // lancé DEPUIS un lanceur (Steam ne nous en dit rien, #41).
-                                        // On ne redispatche que si le résultat a VRAIMENT changé,
-                                        // sinon on enverrait la même activité toutes les 20 s.
-                                        const sig = activity ? appId + "|" + rpcName : "";
-                                        if (sig === window.__sc_lastRpcSig) return;
-                                        window.__sc_lastRpcSig = sig;
                                         FluxDispatcher.dispatch({
                                             type: "LOCAL_ACTIVITY_UPDATE",
                                             socketId: "steamcord-rpc",
