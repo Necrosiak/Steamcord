@@ -16,6 +16,53 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.27.0 — 2026-08-25
+
+Three reports, three different needs: someone whose Go Live fails silently,
+someone whose Rich Presence names the wrong game, and someone who wanted to
+send a clip without going through their phone.
+
+### Added
+
+- **Send a video clip to Discord from the plugin**
+  ([#40](https://github.com/Necrosiak/Steamcord/issues/40)). A film icon next to
+  the screenshot button lists the videos in your Videos, Downloads and Desktop
+  folders — under their localised names too — along with any clips you have
+  exported from Steam, newest first. Files above Discord's 10 MiB limit are
+  listed but greyed out with their size, rather than hidden as if they did not
+  exist. Steam's own recordings live as `.m4s` fragments and are not playable
+  files, so only exported clips appear.
+
+  The file never travels through the plugin's websocket: Discord fetches it from
+  a local address and hands it to the same uploader the client uses for its own
+  attachments. The backend only ever issues opaque tokens, never paths.
+
+### Fixed
+
+- **The play timer never restarted when the detected game changed**
+  ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). The timer followed
+  the title Steam reports, which stays "Heroic" from beginning to end. Closing a
+  game therefore left Heroic carrying on with the game's elapsed time, and the
+  next game continued from there. It now restarts whenever the game actually
+  shown changes.
+
+- **Nothing after the screen capture was visible in the logs**
+  ([#42](https://github.com/Necrosiak/Steamcord/issues/42)). Go Live acquires the
+  screen and then asks Discord to publish it. Everything past the first step was
+  written to Vesktop's console, which is out of reach in Gaming Mode — so a
+  report where the capture starts and the stream never appears contained nothing
+  to work with. Each step is now recorded in the backend log, including whether
+  Discord actually created a stream two seconds after being asked to.
+
+### Changed
+
+- **You can override which game is shown**
+  ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). Discord's database
+  maps one executable to one title, and some series share a single program file
+  — every classic Need for Speed runs `speed.exe`, and Discord lists only one
+  *Most Wanted*. No amount of guessing fixes that, so there are now two settings:
+  one to switch launcher detection off, and one to force an exact title.
+
 ## 1.26.1 — 2026-08-24
 
 Same-day follow-up to v1.26.0, from @imrprogamer testing it properly.

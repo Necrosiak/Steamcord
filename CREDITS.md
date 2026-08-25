@@ -50,6 +50,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@Havok027](https://github.com/Havok027)
 
 - The screen randomly dimming as if the game had gone to the background, on a Legion Go S, and the follow-up suggestion of letting people choose which notifications come through while playing — which is what shaped the setting ([#25](https://github.com/Necrosiak/Steamcord/issues/25), setting added in v1.20.0)
+- The request that became clip sending: he was exporting gameplay clips to his phone just to post them to Discord ([#40](https://github.com/Necrosiak/Steamcord/issues/40), added in v1.27.0)
 
 ### [@william097y](https://github.com/william097y)
 
@@ -99,10 +100,11 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@imrprogamer](https://github.com/imrprogamer)
 
 - The side-by-side comparison of Rich Presence in Gaming Mode against Desktop Mode, with screenshots of each case ([#41](https://github.com/Necrosiak/Steamcord/issues/41)). Reporting that a game launched from Heroic showed up as "Heroic", that a non-Steam shortcut got its name but no artwork, and that the same setup behaved differently in Desktop Mode, is what exposed a duplicated `switch` branch that had silently disabled the artwork matching since v1.16.0 — and prompted detecting games by their executable, the way the official client does.
+- Then he tested the fix the same day and caught two things wrong with it: an unrelated background program could take over the status, and games started inside a launcher were still missed. He also found that the play timer never restarted, which no one had noticed in ten releases ([#41](https://github.com/Necrosiak/Steamcord/issues/41), fixed in v1.26.1 and v1.27.0)
 
 ### [@ZyreonX](https://github.com/ZyreonX)
 
-- The Go Live failure on an ASUS ROG Xbox Ally under Bazzite 44, with the full backend log attached ([#42](https://github.com/Necrosiak/Steamcord/issues/42)). The traceback in it pinned an `AttributeError` that had been reachable from the Desktop Mode fallback the whole time, and the log line numbers confirmed which release it came from.
+- The Go Live failure on an ASUS ROG Xbox Ally under Bazzite 44, with the full backend log attached ([#42](https://github.com/Necrosiak/Steamcord/issues/42)). The traceback in it pinned an `AttributeError` that had been reachable from the Desktop Mode fallback the whole time, and the log line numbers confirmed which release it came from. His answer to the follow-up ruled out the worse hypothesis — that Gaming Mode was dropping him on its own — and his second log showed the capture starting while Discord never published the stream, which is what prompted logging that half of Go Live at all.
 
 ---
 
