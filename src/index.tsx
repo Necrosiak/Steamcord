@@ -11,6 +11,7 @@ import {
   ToggleField,
   SliderField,
   Dropdown,
+  TextField,
   findModuleExport,
   SteamSpinner,
 } from "@decky/ui";
@@ -472,6 +473,51 @@ const RpcToggle = () => {
         checked={on}
         onChange={(v: boolean) => { setOn(v); setRpcEnabledCache(v); call("set_rpc_enabled", v).catch(() => {}); }}
         bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
+// #41 : la base de jeux détectables de Discord associe un exécutable à UN seul
+// titre. Toute la série Need for Speed classique partage speed.exe, et Discord
+// ne connaît qu'un « Most Wanted » — aucune heuristique ne peut trancher. On
+// rend donc la main : couper la détection, ou imposer le titre exact.
+const RpcDetectToggle = () => {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    call<[], boolean>("get_rpc_detect").then((v) => setOn(!!v)).catch(() => setOn(true));
+  }, []);
+  if (on === null) return null;
+  return (
+    <SR>
+      <ToggleField
+        label={t("rpc_detect")}
+        description={t("rpc_detect_desc")}
+        checked={on}
+        onChange={(v: boolean) => { setOn(v); call("set_rpc_detect", v).catch(() => {}); }}
+        bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
+const RpcOverrideField = () => {
+  const [val, setVal] = useState<string | null>(null);
+  useEffect(() => {
+    call<[], string>("get_rpc_override").then((v) => setVal(v || "")).catch(() => setVal(""));
+  }, []);
+  if (val === null) return null;
+  return (
+    <SR>
+      <TextField
+        label={t("rpc_override")}
+        description={t("rpc_override_desc")}
+        value={val}
+        bShowClearAction
+        // Envoi à la VALIDATION et non à chaque frappe : un set_rpc par
+        // caractère rejouerait l'activité Discord à chaque lettre.
+        onChange={(e: any) => setVal(e?.target?.value ?? "")}
+        onBlur={() => { call("set_rpc_override", val).catch(() => {}); }}
       />
     </SR>
   );
@@ -1386,6 +1432,8 @@ const ConfigPanel = () => {
       </SR>
       <StatusAutoToggle />
       <RpcToggle />
+      <RpcDetectToggle />
+      <RpcOverrideField />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcJoystick /> {t("config_shortcut")}</div>
