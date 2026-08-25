@@ -16,6 +16,44 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.28.0 — 2026-08-25
+
+Clip sending, as shipped in v1.27.0 and v1.27.1, did not work for the clips
+people actually have. Those two releases have been withdrawn.
+
+### Fixed
+
+- **Steam clips were invisible, and could not have been sent anyway**
+  ([#40](https://github.com/Necrosiak/Steamcord/issues/40)). A Steam clip is not
+  a file: it is a folder holding a thumbnail, a timeline and the recording split
+  into DASH fragments (`init-stream0.m4s` plus a run of `chunk-stream0-*.m4s`,
+  and the same again for audio). The previous releases looked for video files,
+  so a clip recorded a minute earlier appeared nowhere. Clips are now listed
+  first, named after the game and the time they were taken, and rebuilt on send
+  by stitching the fragments back together — in numerical order, since sorting
+  them as text puts chunk 100 before chunk 2.
+
+- **Clips are compressed to fit instead of being refused.** Twenty-five seconds
+  of 1080p comes to about 32 MiB, three times what Discord accepts, so greying
+  those out would have meant offering none of them. The bitrate is now derived
+  from the clip's length to land just under the limit — that example becomes
+  8.4 MiB in around thirteen seconds, still 1080p. Beyond ten minutes, or where
+  the required bitrate would ruin the picture, Steamcord says so rather than
+  grinding away at it.
+
+- **`ffmpeg` inherited the plugin loader's PyInstaller environment** and died on
+  `OPENSSL_3.2.0 not found`, which surfaced as "could not send this clip". This
+  is the same defect fixed for the GStreamer children in v1.25.0; the media
+  tooling added in v1.27.0 had not been routed through the same cleanup.
+
+- **Attachments arrived with a doubled extension** and an internal working name.
+  A clip now arrives as `clip-20260825-073545.mp4`.
+
+### Changed
+
+- Preparing a clip takes a few seconds, so the picker now stays open and says
+  what it is doing instead of closing as though nothing had happened.
+
 ## 1.27.1 — 2026-08-25
 
 ### Fixed
