@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errText, t } from "../i18n";
 import { Btn, ChipBtn, Message, MessageRow, draftByChannel, failReason, notifyTypingThrottled, isInteractingWithMessage, lastMessageInteractionAt, onMessageFocus, qamWatchedChannel } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
+import { ClipPickerButton } from "./ClipPicker";
 import { ActionCard, ACCENT, focusHalo } from "./Styled";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 
@@ -706,6 +707,7 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
               {sending ? "…" : t("send")}
             </SendBtn>
             <ScreenshotPickerButton channelId={channelId} />
+            <ClipPickerButton channelId={channelId} />
           </Focusable>
           {error && <div style={{ color: "#ff6b6b", fontSize: 11, marginTop: 4 }}>{error}</div>}
         </div>
