@@ -16,6 +16,19 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.27.1 — 2026-08-25
+
+### Fixed
+
+- **Clips that were not already MP4 arrived as a download instead of a video**
+  ([#40](https://github.com/Necrosiak/Steamcord/issues/40)). Discord only plays
+  MP4, WebM and MOV inline. A Matroska clip uploaded perfectly well and then sat
+  in the conversation as a file to download, which defeats the point of sending
+  a clip at all. Anything in another container is now repackaged as MP4 before
+  it is sent — the streams are copied, not re-encoded, so it is near-instant and
+  loses no quality. If the streams cannot go into an MP4 the original is sent
+  unchanged rather than not sent at all.
+
 ## 1.27.0 — 2026-08-25
 
 Three reports, three different needs: someone whose Go Live fails silently,
