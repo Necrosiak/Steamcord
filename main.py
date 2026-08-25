@@ -1467,6 +1467,11 @@ class Plugin:
     # Jeton → chemin, rempli par list_videos(). On ne prend JAMAIS un chemin
     # fourni par le client : sans ça, /clip?path=… lirait n'importe quel fichier
     # du disque via une requête locale. Le client ne manipule que des jetons.
+    # 3 tours de 15 s : un blocage passager ne dérange plus personne, un vrai
+    # wedge (définitif) alerte au bout de ~45 s.
+    PW_WEDGE_ALERT_AFTER = 3
+    _pw_wedge_misses = 0
+
     _clip_index = {}
     # Copies mp4 temporaires, effacées au déchargement du plugin.
     _clip_tmp = set()
@@ -2048,14 +2053,28 @@ class Plugin:
                             p.kill()
                         except ProcessLookupError:
                             pass
-                        logger.warning("[screendiag] pw-dump muet après 5s — PipeWire ne répond plus")
-                        if not getattr(cls, "_pw_wedge_toasted", False):
+                        # Un VRAI wedge est définitif : pw-dump ne revient jamais.
+                        # Un sondage isolé qui expire, lui, se rétablit au tour
+                        # suivant — vu 5 fois le 25/08, tout est reparti en 15 s
+                        # à chaque fois. Alerter au premier échec revenait donc à
+                        # conseiller de redémarrer la console pour un incident
+                        # déjà résolu. On exige 3 tours consécutifs (~45 s de
+                        # silence) avant de déranger l'utilisateur.
+                        misses = getattr(cls, "_pw_wedge_misses", 0) + 1
+                        cls._pw_wedge_misses = misses
+                        logger.warning(f"[screendiag] pw-dump muet après 5s "
+                                       f"({misses}/{cls.PW_WEDGE_ALERT_AFTER}) — PipeWire ne répond plus")
+                        if misses >= cls.PW_WEDGE_ALERT_AFTER and not getattr(cls, "_pw_wedge_toasted", False):
                             cls._pw_wedge_toasted = True
                             await cls._toast("Steamcord",
                                              "Audio system (PipeWire) stopped responding — "
                                              "restart the console to recover streaming/audio.")
                         await sleep(15)
                         continue
+                    if getattr(cls, "_pw_wedge_misses", 0):
+                        logger.info(f"[screendiag] PipeWire répond de nouveau "
+                                    f"(après {cls._pw_wedge_misses} sondage(s) muet(s))")
+                    cls._pw_wedge_misses = 0
                     cls._pw_wedge_toasted = False
                     for n in loads(out.decode() or "[]"):
                         if not str(n.get("type", "")).endswith("Node"):
