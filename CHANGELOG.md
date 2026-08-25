@@ -16,6 +16,20 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.28.1 — 2026-08-25
+
+### Fixed
+
+- **"Audio system (PipeWire) stopped responding" appeared for hiccups that had
+  already passed.** The screen-source poll gives PipeWire five seconds to answer
+  and warned on the very first miss, telling people to restart their console.
+  But a genuine wedge never recovers, whereas a single slow answer does: five
+  such misses were observed in one afternoon, always in pairs twenty seconds
+  apart, always back to normal on the next poll, with nothing wrong in
+  PipeWire's own logs. The warning now needs three consecutive silent polls —
+  about forty-five seconds — before it says anything. A real wedge still raises
+  it, and a recovery is noted in the log.
+
 ## 1.28.0 — 2026-08-25
 
 Clip sending, as shipped in v1.27.0 and v1.27.1, did not work for the clips
