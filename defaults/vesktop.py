@@ -174,16 +174,30 @@ def _current_file():
 _STEAM_ROOTS = ("~/.steam/steam", "~/.local/share/Steam", "~/.steam/root")
 
 
+_STEAM_EPOCH = 76561197960265728
+
+
 def steam_account_id():
     """AccountID (32-bit, as string) of the ACTIVE Steam session.
-    registry.vdf ActiveUser first (updated live on user switch; 0 while logged
-    out — ignored), then loginusers.vdf MostRecent (SteamID64 → accountid).
-    Falls back to "default" so Vesktop still works without Steam."""
+
+    Steam CHANGED both files it used to be read from (seen 2026-08-25):
+    registry.vdf no longer publishes a numeric "ActiveUser", it publishes
+    "AutoLoginUser" holding the account NAME; and loginusers.vdf no longer
+    carries "MostRecent", replaced by "AutoLogin" + "Timestamp". Both original
+    probes returned nothing, so every profile collapsed onto "default" — the
+    multi-account Discord profiles silently stopped switching. The old keys are
+    still tried first so an older Steam behaves exactly as before.
+    Falls back to "default" so Vesktop still works without Steam.
+    """
+    autologin_name = ""
     try:
         reg = (Path.home() / ".steam/registry.vdf").read_text(errors="ignore")
         m = re.search(r'"ActiveUser"\s+"(\d+)"', reg)
         if m and m.group(1) != "0":
             return m.group(1)
+        m = re.search(r'"AutoLoginUser"\s+"([^"]+)"', reg)
+        if m:
+            autologin_name = m.group(1)
     except OSError:
         pass
     for root in _STEAM_ROOTS:
@@ -192,10 +206,24 @@ def steam_account_id():
             data = p.read_text(errors="ignore")
         except OSError:
             continue
+        by_name = by_flag = by_time = None
+        newest = -1
         for m in re.finditer(r'"(\d{17})"\s*\{(.*?)\}', data, re.S):
             sid, block = m.groups()
-            if re.search(r'"MostRecent"\s+"1"', block):
-                return str(int(sid) - 76561197960265728)
+            nm = re.search(r'"AccountName"\s+"([^"]*)"', block)
+            if autologin_name and nm and nm.group(1) == autologin_name:
+                by_name = by_name or sid
+            if by_flag is None and (re.search(r'"MostRecent"\s+"1"', block)
+                                    or re.search(r'"AutoLogin"\s+"1"', block)):
+                by_flag = sid
+            ts = re.search(r'"Timestamp"\s+"(\d+)"', block)
+            if ts and int(ts.group(1)) > newest:
+                newest, by_time = int(ts.group(1)), sid
+        # Du plus sûr au moins sûr : le nom que Steam dit connecter, puis le
+        # drapeau, puis la session la plus récemment ouverte.
+        for sid in (by_name, by_flag, by_time):
+            if sid:
+                return str(int(sid) - _STEAM_EPOCH)
     return "default"
 
 
