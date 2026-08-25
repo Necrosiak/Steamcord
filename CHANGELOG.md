@@ -16,6 +16,21 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.28.2 — 2026-08-25
+
+Consequence here: the per-Steam-account Discord profiles stopped switching — every account was served the same generic profile.
+
+### Fixed
+
+- **The active Steam account could no longer be identified, after Steam changed
+  its files.** Steam stopped publishing a numeric `ActiveUser` in `registry.vdf`
+  — it now publishes `AutoLoginUser`, holding the account *name* — and dropped
+  `MostRecent` from `loginusers.vdf` in favour of `AutoLogin` and `Timestamp`.
+  Both probes came back empty and everything fell back to a generic profile.
+  The account is now resolved from `AutoLoginUser` matched by name, then
+  `AutoLogin`, then the most recent `Timestamp`; the older keys are still tried
+  first, so an older Steam behaves exactly as before.
+
 ## 1.28.1 — 2026-08-25
 
 ### Fixed
