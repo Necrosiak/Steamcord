@@ -11,6 +11,7 @@ import signal
 import aiohttp_cors  # type: ignore
 from json import dumps
 from pathlib import Path
+import tempfile
 from subprocess import PIPE, DEVNULL
 
 import sys
@@ -284,6 +285,10 @@ def _running_executables(cap=400):
 # EXPORTÉ par Steam qu'on peut envoyer. On ratisse donc les dossiers où
 # atterrissent les vidéos, sans supposer une langue d'interface.
 VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".mov", ".m4v")
+# Discord ne LIT en ligne que ces conteneurs. Un .mkv se téléverse très bien
+# mais arrive en pièce jointe à télécharger, ce qui rate tout l'intérêt d'un
+# clip. On remuxe donc les autres vers mp4 avant l'envoi (voir _playable_copy).
+DISCORD_PLAYABLE = (".mp4", ".webm", ".mov")
 # Discord refuse au-delà de 10 Mio pour un compte sans Nitro. On liste quand
 # même les fichiers plus gros : mieux vaut les montrer grisés avec leur taille
 # que laisser l'utilisateur croire qu'ils n'existent pas.
@@ -304,6 +309,40 @@ def _video_dirs():
     out += [d for d in glob.glob(os.path.join(
         home, ".local/share/Steam/userdata/*/gamerecordings/clips")) if os.path.isdir(d)]
     return out
+
+
+async def _playable_copy(path):
+    """Rend un chemin lisible EN LIGNE par Discord, ou None si rien à faire.
+
+    Le remuxage (`-c copy`) ne réencode rien : il déplace les mêmes pistes dans
+    un conteneur mp4, donc c'est quasi instantané et sans perte — mais il échoue
+    si les codecs n'entrent pas dans du mp4 (VP9/Opus d'un enregistrement OBS,
+    par exemple). Dans ce cas on renvoie None et l'original part tel quel :
+    une pièce jointe à télécharger vaut mieux que pas de clip du tout.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext in DISCORD_PLAYABLE:
+        return None
+    out = os.path.join(tempfile.gettempdir(),
+                       "steamcord-clip-" + os.path.splitext(os.path.basename(path))[0] + ".mp4")
+    try:
+        proc = await create_subprocess_exec(
+            "ffmpeg", "-y", "-loglevel", "error", "-i", path,
+            "-c", "copy", "-movflags", "+faststart", out,
+            stdout=DEVNULL, stderr=PIPE)
+        _, err = await wait_for(proc.communicate(), timeout=120)
+        if proc.returncode == 0 and os.path.isfile(out) and os.path.getsize(out) > 0:
+            return out
+        logger.warning("remux mp4 impossible (%s) : %s",
+                       os.path.basename(path), (err or b"").decode("utf-8", "replace")[:200])
+    except Exception as e:
+        logger.warning(f"remux mp4 impossible: {e!r}")
+    try:
+        if os.path.exists(out):
+            os.unlink(out)
+    except OSError:
+        pass
+    return None
 
 
 def _list_videos(cap=40):
@@ -1253,6 +1292,8 @@ class Plugin:
     # fourni par le client : sans ça, /clip?path=… lirait n'importe quel fichier
     # du disque via une requête locale. Le client ne manipule que des jetons.
     _clip_index = {}
+    # Copies mp4 temporaires, effacées au déchargement du plugin.
+    _clip_tmp = set()
 
     @classmethod
     async def list_videos(cls):
@@ -1288,10 +1329,24 @@ class Plugin:
         entry = cls._clip_index.get(token)
         if not entry:
             return False
+        # Discord ne lit en ligne ni le .mkv ni le .m4v : sans ce remuxage le
+        # clip arrive en pièce jointe à télécharger, ce qui rate le but. On
+        # substitue la copie mp4 DANS L'INDEX, pour que la route serve bien
+        # celle-ci — le client, lui, ne manipule toujours qu'un jeton.
+        send_path, send_name = entry, os.path.basename(entry)
+        remuxed = await _playable_copy(entry)
+        if remuxed:
+            cls._clip_index[token] = remuxed
+            cls._clip_tmp.add(remuxed)
+            send_path, send_name = remuxed, os.path.basename(remuxed)
+            logger.info(f"clip remuxé en mp4 pour la lecture Discord : {send_name}")
+        if os.path.getsize(send_path) > DISCORD_UPLOAD_LIMIT:
+            logger.warning(f"clip trop lourd après conversion : {send_name}")
+            return False
         await cls.evt_handler.send_client(
             {"type": "$clip", "channel_id": channel_id,
              "url": f"http://127.0.0.1:65123/clip?t={token}",
-             "filename": os.path.basename(entry)})
+             "filename": send_name})
         return True
 
     @classmethod
@@ -3481,6 +3536,14 @@ class Plugin:
 
     @classmethod
     async def _unload(cls):
+        # Copies mp4 faites pour Discord : rien d'autre ne les effacerait, et
+        # elles vivent dans /tmp avec la taille d'un clip.
+        for f in list(getattr(cls, "_clip_tmp", ())):
+            try:
+                os.unlink(f)
+            except OSError:
+                pass
+        cls._clip_tmp = set()
         # Fermer les fd /dev/input AVANT tout le reste : un rechargement de plugin
         # détruit les objets Python sans tuer le processus, donc rien ne les
         # refermerait tout seul (fuite de fd + lecteur fantôme).
