@@ -311,6 +311,139 @@ def _video_dirs():
     return out
 
 
+def _media_env():
+    """Env pour ffmpeg/ffprobe, débarrassé de celui de plugin_loader.
+
+    MÊME PIÈGE QUE #38, et je suis retombé dedans : plugin_loader est un binaire
+    PyInstaller, il pointe LD_LIBRARY_PATH sur ses libs embarquées, et tout
+    enfant en hérite. ffmpeg chargeait alors le libssl du bundle et mourait sur
+    « OPENSSL_3.2.0 not found » — donc « impossible d'envoyer ce clip » alors que
+    la logique était juste. Les tests isolés ne peuvent PAS l'attraper : ils
+    tournent hors de cet environnement.
+    """
+    import vesktop as _vesktop
+    return _vesktop._user_env()
+
+
+def _send_filename(entry, prepared):
+    """Nom lisible pour la pièce jointe Discord.
+
+    Le fichier préparé s'appelle `steamcord-clip_2584270_20260825_073545.mp4.small.mp4`
+    — nom interne, double extension : ça part chez le destinataire, autant que
+    ce soit présentable. Un clip Steam devient `clip-20260825-073545.mp4`, un
+    fichier ordinaire garde SON nom avec la bonne extension finale.
+    """
+    ext = os.path.splitext(prepared)[1] or ".mp4"
+    if os.path.isdir(entry):
+        parts = os.path.basename(entry).split("_")      # clip_<appid>_<date>_<heure>
+        stamp = "-".join(parts[2:]) if len(parts) >= 4 else parts[-1]
+        return f"clip-{stamp}{ext}"
+    return os.path.splitext(os.path.basename(entry))[0] + ext
+
+
+async def _run_ffmpeg(args, timeout=900):
+    proc = await create_subprocess_exec("ffmpeg", "-y", "-loglevel", "error", *args,
+                                        stdout=DEVNULL, stderr=PIPE, env=_media_env())
+    _, err = await wait_for(proc.communicate(), timeout=timeout)
+    return proc.returncode, (err or b"").decode("utf-8", "replace")
+
+
+async def _assemble_steam_clip(clip_dir, out):
+    """Reconstruit un mp4 lisible depuis les fragments DASH d'un clip Steam.
+
+    Les fragments se recollent par simple concaténation d'octets — `init` puis
+    les `chunk` DANS L'ORDRE NUMÉRIQUE, ce que ne donne PAS un tri lexical dès
+    qu'on passe la centaine de fragments. On obtient un flux par piste, qu'on
+    mux ensuite sans réencoder.
+    """
+    import glob, re
+    frag = _clip_fragment_dir(clip_dir)
+    if not frag:
+        return None
+    def num(p):
+        m = re.search(r"(\d+)\.m4s$", p)
+        return int(m.group(1)) if m else 0
+    tmp = []
+    for idx in (0, 1):
+        init = os.path.join(frag, f"init-stream{idx}.m4s")
+        chunks = sorted(glob.glob(os.path.join(frag, f"chunk-stream{idx}-*.m4s")), key=num)
+        if not os.path.isfile(init) or not chunks:
+            continue
+        part = out + f".s{idx}.mp4"
+        try:
+            with open(part, "wb") as w:
+                for src in [init] + chunks:
+                    with open(src, "rb") as r:
+                        while True:
+                            b = r.read(1 << 20)
+                            if not b:
+                                break
+                            w.write(b)
+        except OSError as e:
+            logger.warning(f"assemblage clip: {e!r}")
+            return None
+        tmp.append(part)
+    if not tmp:
+        return None
+    args = []
+    for t in tmp:
+        args += ["-i", t]
+    rc, err = await _run_ffmpeg(args + ["-c", "copy", "-movflags", "+faststart", out])
+    for t in tmp:
+        try:
+            os.unlink(t)
+        except OSError:
+            pass
+    if rc == 0 and os.path.isfile(out) and os.path.getsize(out) > 0:
+        return out
+    logger.warning(f"mux du clip Steam impossible : {err[:200]}")
+    return None
+
+
+async def _media_duration(path):
+    proc = await create_subprocess_exec(
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "csv=p=0", path, stdout=PIPE, stderr=DEVNULL, env=_media_env())
+    out, _ = await wait_for(proc.communicate(), timeout=30)
+    try:
+        return float((out or b"").decode().strip())
+    except ValueError:
+        return 0.0
+
+
+async def _shrink_to_limit(path, out):
+    """Réencode pour tenir sous la limite Discord, ou None si déraisonnable.
+
+    Un clip Steam de 25 s en 1080p pèse ~32 Mio : plus de trois fois la limite.
+    Sans cette étape la fonctionnalité ne sert à rien pour de VRAIS clips — ce
+    que le fichier de test, une vidéo déjà légère, avait masqué.
+    On vise 90 % de la limite pour garder de la marge sur l'entête et l'audio.
+    """
+    dur = await _media_duration(path)
+    if dur <= 0:
+        return None
+    # Au-delà, l'encodage logiciel (le BC-250 n'a aucun encodeur matériel)
+    # prendrait des minutes, et le débit tomberait si bas que l'image serait
+    # inregardable. Mieux vaut le dire que produire une bouillie.
+    if dur > 600:
+        logger.warning(f"clip trop long pour être compressé ({dur:.0f}s)")
+        return None
+    total_kbps = DISCORD_UPLOAD_LIMIT * 8 / dur / 1000 * 0.90
+    video_kbps = int(total_kbps - 128)
+    if video_kbps < 400:
+        logger.warning(f"débit cible trop bas ({video_kbps} kbps) — compression abandonnée")
+        return None
+    rc, err = await _run_ffmpeg([
+        "-i", path, "-c:v", "libx264", "-preset", "veryfast",
+        "-b:v", f"{video_kbps}k", "-maxrate", f"{video_kbps}k",
+        "-bufsize", f"{video_kbps * 2}k",
+        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out])
+    if rc == 0 and os.path.isfile(out) and os.path.getsize(out) > 0:
+        return out
+    logger.warning(f"compression impossible : {err[:200]}")
+    return None
+
+
 async def _playable_copy(path):
     """Rend un chemin lisible EN LIGNE par Discord, ou None si rien à faire.
 
@@ -326,15 +459,11 @@ async def _playable_copy(path):
     out = os.path.join(tempfile.gettempdir(),
                        "steamcord-clip-" + os.path.splitext(os.path.basename(path))[0] + ".mp4")
     try:
-        proc = await create_subprocess_exec(
-            "ffmpeg", "-y", "-loglevel", "error", "-i", path,
-            "-c", "copy", "-movflags", "+faststart", out,
-            stdout=DEVNULL, stderr=PIPE)
-        _, err = await wait_for(proc.communicate(), timeout=120)
-        if proc.returncode == 0 and os.path.isfile(out) and os.path.getsize(out) > 0:
+        rc, err = await _run_ffmpeg(
+            ["-i", path, "-c", "copy", "-movflags", "+faststart", out], timeout=120)
+        if rc == 0 and os.path.isfile(out) and os.path.getsize(out) > 0:
             return out
-        logger.warning("remux mp4 impossible (%s) : %s",
-                       os.path.basename(path), (err or b"").decode("utf-8", "replace")[:200])
+        logger.warning("remux mp4 impossible (%s) : %s", os.path.basename(path), err[:200])
     except Exception as e:
         logger.warning(f"remux mp4 impossible: {e!r}")
     try:
@@ -342,6 +471,53 @@ async def _playable_copy(path):
             os.unlink(out)
     except OSError:
         pass
+    return None
+
+
+def _steam_clips():
+    """[(dossier, appid, taille, mtime)] des clips enregistrés par Steam.
+
+    Un clip Steam n'est PAS un fichier : c'est un dossier `clip_<appid>_<date>/`
+    contenant une miniature, une timeline et des fragments DASH
+    (`init-stream0.m4s` + `chunk-stream0-*.m4s` pour l'image, `stream1` pour le
+    son). Rien n'y est lisible tel quel — d'où l'assemblage dans
+    `_assemble_steam_clip`. La v1.27.0 ne listait que de vrais fichiers vidéo,
+    donc un clip fraîchement enregistré n'apparaissait nulle part.
+    """
+    import glob
+    out = []
+    pattern = os.path.expanduser(
+        "~/.local/share/Steam/userdata/*/gamerecordings/clips/clip_*")
+    for d in glob.glob(pattern):
+        if not os.path.isdir(d):
+            continue
+        frags = glob.glob(os.path.join(d, "video", "*", "*.m4s"))
+        if not frags:
+            continue
+        total = 0
+        for f in frags:
+            try:
+                total += os.path.getsize(f)
+            except OSError:
+                pass
+        appid = ""
+        base = os.path.basename(d).split("_")
+        if len(base) >= 2 and base[1].isdigit():
+            appid = base[1]
+        try:
+            mtime = os.path.getmtime(d)
+        except OSError:
+            continue
+        out.append((d, appid, total, mtime))
+    return out
+
+
+def _clip_fragment_dir(clip_dir):
+    """Le sous-dossier `video/fg_*` qui porte réellement les fragments."""
+    import glob
+    for d in sorted(glob.glob(os.path.join(clip_dir, "video", "*"))):
+        if os.path.isdir(d) and glob.glob(os.path.join(d, "init-stream*.m4s")):
+            return d
     return None
 
 
@@ -1300,12 +1476,23 @@ class Plugin:
         from hashlib import sha1
         out = []
         cls._clip_index = {}
+        # Clips Steam d'abord : c'est ce que les gens viennent d'enregistrer.
+        for d, appid, size, mtime in _steam_clips():
+            tok = sha1(d.encode("utf-8", "replace")).hexdigest()[:16]
+            cls._clip_index[tok] = d
+            out.append({"token": tok, "name": os.path.basename(d), "size": size,
+                        "mtime": int(mtime), "kind": "steam", "appid": appid,
+                        # Un clip Steam dépasse presque toujours la limite : il
+                        # sera assemblé puis compressé, pas refusé.
+                        "will_convert": True})
         for full, name, size, mtime in _list_videos():
             tok = sha1(full.encode("utf-8", "replace")).hexdigest()[:16]
             cls._clip_index[tok] = full
             out.append({"token": tok, "name": name, "size": size,
-                        "mtime": int(mtime),
-                        "too_big": size > DISCORD_UPLOAD_LIMIT})
+                        "mtime": int(mtime), "kind": "file", "appid": "",
+                        "will_convert": size > DISCORD_UPLOAD_LIMIT
+                                        or not name.lower().endswith(DISCORD_PLAYABLE)})
+        out.sort(key=lambda e: e["mtime"], reverse=True)
         return out
 
     @classmethod
@@ -1333,16 +1520,40 @@ class Plugin:
         # clip arrive en pièce jointe à télécharger, ce qui rate le but. On
         # substitue la copie mp4 DANS L'INDEX, pour que la route serve bien
         # celle-ci — le client, lui, ne manipule toujours qu'un jeton.
-        send_path, send_name = entry, os.path.basename(entry)
-        remuxed = await _playable_copy(entry)
-        if remuxed:
-            cls._clip_index[token] = remuxed
-            cls._clip_tmp.add(remuxed)
-            send_path, send_name = remuxed, os.path.basename(remuxed)
-            logger.info(f"clip remuxé en mp4 pour la lecture Discord : {send_name}")
+        send_path = entry
+        # ① Clip Steam : recoller les fragments, sinon il n'y a aucun fichier.
+        if os.path.isdir(entry):
+            asm = os.path.join(tempfile.gettempdir(),
+                               "steamcord-" + os.path.basename(entry) + ".mp4")
+            built = await _assemble_steam_clip(entry, asm)
+            if not built:
+                logger.warning(f"clip Steam illisible : {entry}")
+                return False
+            cls._clip_tmp.add(built)
+            send_path = built
+            logger.info(f"clip Steam assemblé : {os.path.basename(built)} "
+                        f"({os.path.getsize(built) / 1048576:.1f} Mio)")
+        else:
+            # ② Fichier ordinaire dans un conteneur que Discord ne lit pas.
+            remuxed = await _playable_copy(entry)
+            if remuxed:
+                cls._clip_tmp.add(remuxed)
+                send_path = remuxed
+                logger.info(f"clip remuxé en mp4 : {os.path.basename(remuxed)}")
+        # ③ Trop lourd : compresser plutôt que refuser. Un clip Steam de 25 s
+        # pèse ~32 Mio, soit trois fois la limite — sans ceci la fonctionnalité
+        # ne servirait qu'aux petites vidéos déjà prêtes.
         if os.path.getsize(send_path) > DISCORD_UPLOAD_LIMIT:
-            logger.warning(f"clip trop lourd après conversion : {send_name}")
-            return False
+            small = send_path + ".small.mp4"
+            done = await _shrink_to_limit(send_path, small)
+            if not done:
+                logger.warning("clip trop lourd et non compressible")
+                return False
+            cls._clip_tmp.add(done)
+            send_path = done
+            logger.info(f"clip compressé : {os.path.getsize(done) / 1048576:.1f} Mio")
+        cls._clip_index[token] = send_path
+        send_name = _send_filename(entry, send_path)
         await cls.evt_handler.send_client(
             {"type": "$clip", "channel_id": channel_id,
              "url": f"http://127.0.0.1:65123/clip?t={token}",
