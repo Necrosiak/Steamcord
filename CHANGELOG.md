@@ -16,6 +16,31 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.28.3 — 2026-08-30
+
+Go Live could not work on any real installation. Not on some hardware, not
+intermittently: the local WebRTC pipeline could never be built, because the ICE
+plugin it depends on was looked for in a directory that does not exist once
+Decky has installed the plugin.
+
+### Fixed
+
+- **Go Live never started, and the client waited 20 seconds for a screen source
+  that never arrived.** `webrtcbin` builds its ICE transport from `nicesrc` and
+  `nicesink`, provided by the GStreamer `nice` plugin. That plugin is absent
+  from the Bazzite image, so Steamcord ships its own copy in
+  `gst-plugins/libgstnice.so` and adds it to `GST_PLUGIN_PATH` — no system
+  install, no reboot. The path pointed at `<plugin>/defaults/gst-plugins`,
+  but Decky flattens `defaults/` into the plugin root at install time, so that
+  directory only ever existed on a development checkout. The plugin was never
+  loaded, `webrtcbin` had no ICE, and the pipeline died on `could not link
+  queue1 to send … Your GStreamer installation is missing a plug-in`, leaving
+  `getDesktopSource` to time out. Both locations are now passed, so the vendored
+  plugin is found in a release install and in a development tree alike.
+- **A missing ICE plugin now says so.** `nicesrc` joins the pre-flight element
+  check, so a future regression on that path reports which plugin is missing
+  instead of failing with an opaque caps-negotiation error.
+
 ## 1.28.2 — 2026-08-25
 
 Consequence here: the per-Steam-account Discord profiles stopped switching — every account was served the same generic profile.
