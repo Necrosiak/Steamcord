@@ -48,6 +48,12 @@ PIPELINE_DESC = """
 # explication ; le rapporteur a mis longtemps à trouver que c'était ça).
 REQUIRED_ELEMENTS = {
     "webrtcbin": "gst-plugins-bad (gstreamer1-plugins-bad-free)",
+    # webrtcbin fabrique lui-même un nicesrc/nicesink pour l'ICE : sans le plugin
+    # `nice`, la demande de pad sur webrtcbin échoue et parse_launch ne dit que
+    # « send can't handle caps … missing a plug-in » (#42). Le plugin est vendoré
+    # dans <plugin>/gst-plugins ; le tester ici transforme une régression de
+    # GST_PLUGIN_PATH en message lisible au lieu d'un Go Live muet.
+    "nicesrc": "libnice-gstreamer1 (vendoré dans le plugin : gst-plugins/libgstnice.so)",
     "pipewiresrc": "gstreamer1-plugin-pipewire / pipewire-gstreamer",
     "vp8enc": "gst-plugins-good (libvpx)",
     "rtpvp8pay": "gst-plugins-good",

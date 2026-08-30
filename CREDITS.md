@@ -51,6 +51,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - The screen randomly dimming as if the game had gone to the background, on a Legion Go S, and the follow-up suggestion of letting people choose which notifications come through while playing — which is what shaped the setting ([#25](https://github.com/Necrosiak/Steamcord/issues/25), setting added in v1.20.0)
 - The request that became clip sending: he was exporting gameplay clips to his phone just to post them to Discord ([#40](https://github.com/Necrosiak/Steamcord/issues/40), added in v1.27.0)
+- The critique of the clip picker once it shipped: a list of file names gives no way to tell one clip from another, so it should be a grid of thumbnails filtered by game, the way a Steam library looks ([#40](https://github.com/Necrosiak/Steamcord/issues/40))
 
 ### [@william097y](https://github.com/william097y)
 
@@ -105,6 +106,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@ZyreonX](https://github.com/ZyreonX)
 
 - The Go Live failure on an ASUS ROG Xbox Ally under Bazzite 44, with the full backend log attached ([#42](https://github.com/Necrosiak/Steamcord/issues/42)). The traceback in it pinned an `AttributeError` that had been reachable from the Desktop Mode fallback the whole time, and the log line numbers confirmed which release it came from. His answer to the follow-up ruled out the worse hypothesis — that Gaming Mode was dropping him on its own — and his second log showed the capture starting while Discord never published the stream, which is what prompted logging that half of Go Live at all.
+- Then he kept attaching logs through five releases that each failed to fix his problem, and said plainly that none of them had. He was right: every one of those logs carried the same `could not link queue … missing a plug-in` line, which turned out to be Steamcord pointing `GST_PLUGIN_PATH` at `defaults/gst-plugins` — a directory Decky flattens away at install time, so the bundled ICE plugin was never loaded on any real installation. Without his refusal to let it drop, that path bug would still be in the code ([#42](https://github.com/Necrosiak/Steamcord/issues/42), fixed in v1.28.3)
 
 ---
 

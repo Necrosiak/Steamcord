@@ -642,7 +642,21 @@ class Plugin:
         # Bazzite de base → webrtcbin échouait à construire le pipeline VP8 ("missing
         # plug-in") et getDisplayMedia se bloquait. On embarque libgstnice.so et on
         # l'ajoute au GST_PLUGIN_PATH (pas d'install système / pas de reboot).
-        gst_plugins_dir = str(Path(DECKY_PLUGIN_DIR) / "defaults" / "gst-plugins")
+        # Decky APLATIT defaults/ dans la racine du plugin à l'installation : le
+        # dossier vendoré arrive en <plugin>/gst-plugins, et <plugin>/defaults/
+        # n'existe PAS dans une install réelle (il n'existe que sur un deploy dev).
+        # Ne viser que defaults/ pointait donc GST_PLUGIN_PATH sur un dossier
+        # inexistant → libgstnice.so jamais chargé → webrtcbin sans ICE → « could
+        # not link queueN to send … missing a plug-in » et getDesktopSource qui
+        # expire (#42). On passe les DEUX chemins, ceux qui existent.
+        gst_plugins_dir = os.pathsep.join(
+            str(_p)
+            for _p in (
+                Path(DECKY_PLUGIN_DIR) / "gst-plugins",
+                Path(DECKY_PLUGIN_DIR) / "defaults" / "gst-plugins",
+            )
+            if _p.is_dir()
+        )
         # #38 : partir de _user_env() et NON de os.environ. plugin_loader est un
         # binaire PyInstaller : il exporte LD_LIBRARY_PATH/LD_PRELOAD vers ses libs
         # embarquées (/tmp/_MEI...). Le GStreamer SYSTÈME lancé ici héritait de ces
