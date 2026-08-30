@@ -16,6 +16,31 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.29.0 — 2026-08-30
+
+### Added
+
+- **Clips are picked from a grid of thumbnails, not a list of file names.** A
+  list gave no way to tell one recording from another — nobody remembers a clip
+  by its timestamp. Each clip is now a tile: the picture on top, the game name
+  and the date underneath. Nine tiles per page, with a pager below the grid that
+  appears only when there are more.
+
+  Steam already writes a `thumbnail.jpg` into every clip folder, so nothing has
+  to be extracted for Steam clips. The original is 1920x1080 for roughly 290 KiB,
+  far too much to attach to the listing: sending those in base64 over the
+  websocket that also carries voice would push several MiB per open. Each tile
+  therefore requests its own thumbnail, scaled to 320 px and cached — about
+  8 KiB, a quarter of a MiB for a full page — and only the tiles actually on
+  screen ask for one, so a hundred clips do not trigger a hundred conversions.
+
+  Videos that are not Steam clips have no thumbnail of their own and keep a
+  plain tile with their name and date.
+
+Thanks to [@Havok027](https://github.com/Havok027), who pointed out that the
+picker shipped in v1.27.0 was unreadable and described what it should look like
+([#40](https://github.com/Necrosiak/Steamcord/issues/40)).
+
 ## 1.28.3 — 2026-08-30
 
 Go Live could not work on any real installation. Not on some hardware, not
