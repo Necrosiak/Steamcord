@@ -1501,6 +1501,9 @@ class Plugin:
             cls._clip_index[tok] = d
             out.append({"token": tok, "name": os.path.basename(d), "size": size,
                         "mtime": int(mtime), "kind": "steam", "appid": appid,
+                        # Steam dépose lui-même une vignette dans le dossier du
+                        # clip : rien à extraire, il suffit de la réduire.
+                        "has_thumb": os.path.isfile(os.path.join(d, "thumbnail.jpg")),
                         # Un clip Steam dépasse presque toujours la limite : il
                         # sera assemblé puis compressé, pas refusé.
                         "will_convert": True})
@@ -1509,10 +1512,60 @@ class Plugin:
             cls._clip_index[tok] = full
             out.append({"token": tok, "name": name, "size": size,
                         "mtime": int(mtime), "kind": "file", "appid": "",
+                        # Une vidéo ordinaire n'a pas de vignette fournie ; on
+                        # n'en extrait pas (une passe ffmpeg par fichier à
+                        # l'ouverture du sélecteur), la tuile reste neutre.
+                        "has_thumb": False,
                         "will_convert": size > DISCORD_UPLOAD_LIMIT
                                         or not name.lower().endswith(DISCORD_PLAYABLE)})
         out.sort(key=lambda e: e["mtime"], reverse=True)
         return out
+
+    # Vignettes déjà réduites, indexées par jeton. Un clip ne change pas : une
+    # fois la miniature fabriquée elle reste valable jusqu'au déchargement.
+    _clip_thumbs: dict = {}
+
+    @classmethod
+    async def clip_thumb(cls, token):
+        """Vignette d'un clip Steam, en data URI prête à poser dans un <img>.
+
+        Demandée PAR TUILE depuis l'interface plutôt que jointe à la liste :
+        l'originale de Steam fait 1920x1080 pour ~290 Kio, et les empiler dans
+        la réponse de `list_videos` ferait transiter plusieurs Mio en base64 sur
+        la websocket qui sert aussi la voix. Réduite à 320 px, une vignette pèse
+        une vingtaine de Kio.
+
+        Réduction par ffmpeg et non par Pillow : ffmpeg est déjà une dépendance
+        déclarée du plugin, avec son environnement nettoyé, alors que
+        python3-pillow n'est pas garanti sur SteamOS.
+        """
+        cached = cls._clip_thumbs.get(token)
+        if cached is not None:
+            return cached
+        entry = cls._clip_index.get(token)
+        if not entry or not os.path.isdir(entry):
+            return ""
+        src = os.path.join(entry, "thumbnail.jpg")
+        if not os.path.isfile(src):
+            return ""
+        out = os.path.join(tempfile.gettempdir(), f"steamcord-thumb-{token}.jpg")
+        if not os.path.isfile(out):
+            rc, err = await _run_ffmpeg(
+                ["-i", src, "-vf", "scale=320:-1", "-q:v", "6", out],
+                timeout=20)
+            if rc != 0 or not os.path.isfile(out):
+                logger.warning(f"vignette illisible pour le clip {token}: {err.strip()}")
+                cls._clip_thumbs[token] = ""
+                return ""
+        try:
+            import base64
+            data = "data:image/jpeg;base64," + base64.b64encode(
+                open(out, "rb").read()).decode("ascii")
+        except OSError as e:
+            logger.warning(f"vignette illisible ({e}) pour le clip {token}")
+            data = ""
+        cls._clip_thumbs[token] = data
+        return data
 
     @classmethod
     async def _serve_clip(cls, request):
