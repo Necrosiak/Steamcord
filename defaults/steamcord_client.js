@@ -242,7 +242,13 @@ window.Vencord.Plugins.plugins.Steamcord = {
             window.old_enumerate_devices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
             navigator.mediaDevices.enumerateDevices = async () => {
                 const devices = await window.old_enumerate_devices();
-                return devices.filter(f => f.label != "Filter Chain Source" && f.label != "Virtual Source" && !(f.label == "" && f.deviceId == "default"))
+                // "vencord-screen-share" est le device venmic : c'est la sortie
+                // système destinée au STREAM, jamais une entrée micro. Tant qu'il
+                // restait énumérable, Discord pouvait le prendre pour micro et
+                // renvoyer le salon dans le salon (larsen, 31/08). Le retirer ici
+                // n'empêche pas Vesktop de s'en servir : screenShareFixes l'ouvre
+                // par deviceId exact, sans passer par enumerateDevices.
+                return devices.filter(f => f.label != "Filter Chain Source" && f.label != "Virtual Source" && f.label != "vencord-screen-share" && !(f.label == "" && f.deviceId == "default"))
             }
         }
 
@@ -1238,8 +1244,19 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             // Horodatage pour le chemin START : une ré-ouverture trop
                                             // rapide doit laisser le teardown (session portail, source
                                             // du pool, venmic) se finir avant de ré-acquérir (issue #12).
+                                            // venmic doit mourir AVEC le partage. L'auto-validation le
+                                            // démarre (`startSystem`) pour donner le son du jeu aux
+                                            // spectateurs, mais rien ne l'arrêtait : le device
+                                            // "vencord-screen-share" survivait au STOP, restait la seule
+                                            // source audio RUNNING (steamcord_silence, lui, se met en
+                                            // SUSPENDED) et finissait par servir de MICRO. L'utilisateur
+                                            // renvoyait alors le son du salon dans le salon — l'autre
+                                            // participante entendait un larsen ("bip bip bip"), stream
+                                            // actif ou non. Signalé le 31/08, reproduit : une seule capture
+                                            // vesktop, sur `vencord-screen-share`.
+                                            try { await window.VesktopNative?.virtmic?.stop?.(); } catch (_) {}
                                             window.STEAMCORD_GOLIVE_LAST_STOP = Date.now();
-                                            console.log("[Steamcord] Go Live STOP envoyé");
+                                            console.log("[Steamcord] Go Live STOP envoyé (venmic arrêté)");
                                         } else {
                                             // Autorise l'auto-validation de la modale Vesktop (watcher
                                             // en tête de fichier) pour CE partage initié par Steamcord.

@@ -2718,6 +2718,33 @@ class Plugin:
     # (contrôlable par son volume). Un vrai micro branché = on ne touche à rien.
     _golive_silence_restore = None   # source à restaurer au stop (None = inactif)
 
+    @staticmethod
+    def _real_capture_source(sources):
+        """Nom d'une VRAIE source de capture, ou None. Un `.monitor` est la
+        sortie qu'on renvoie dans le micro, pas une entrée ; nos propres
+        montages (silence, venmic) n'en sont pas non plus."""
+        for s in sources or []:
+            name = str(s.get("name", ""))
+            if (not name or name.endswith(".monitor")
+                    or "steamcord_" in name or "vencord-screen-share" in name):
+                continue
+            return name
+        return None
+
+    @classmethod
+    async def _golive_mic_silence_if_no_capture(cls):
+        """Silence permanent sur une machine sans micro. Ne fait rien dès qu'un
+        vrai périphérique de capture existe : c'est lui que l'utilisateur veut."""
+        from json import loads
+        try:
+            await sleep(2)  # laisser PipeWire finir d'énumérer au boot
+            if cls._real_capture_source(
+                    loads(await cls._pactl("list", "sources", want_json=True) or "[]")):
+                return
+            await cls._golive_mic_silence(True)
+        except Exception as e:
+            logger.warning(f"[golive] silence au démarrage: {e!r}")
+
     @classmethod
     async def _golive_mic_silence(cls, enable):
         from json import loads
@@ -2749,6 +2776,23 @@ class Plugin:
                     return
                 src = cls._golive_silence_restore
                 cls._golive_silence_restore = None
+                # Ne JAMAIS remettre le monitor de la sortie en micro quand la
+                # machine n'a aucun périphérique de capture : c'est un larsen
+                # garanti dès que l'utilisateur est en vocal — il rediffuse la
+                # voix de ses interlocuteurs, qui l'entendent revenir en bips
+                # (signalé le 31/08 ; BC-250 vérifiée : `arecord -l` ne liste
+                # AUCUN matériel de capture). Le silence n'est utile que pendant
+                # le stream ; le monitor, lui, n'est jamais un micro valable.
+                # Si un VRAI micro est apparu entre-temps, c'est lui qu'on rend.
+                real = cls._real_capture_source(
+                    loads(await cls._pactl("list", "sources", want_json=True) or "[]"))
+                if real is None:
+                    cls._golive_silence_restore = src
+                    logger.info("[golive] aucun périphérique de capture sur la "
+                                "machine — on GARDE la capture voix silencieuse "
+                                f"(restaurer {src} rediffuserait le son système)")
+                    return
+                src = real
                 await cls._pactl("set-default-source", src)
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
@@ -3317,6 +3361,12 @@ class Plugin:
                 await cls._ga_cleanup_modules()
         except Exception as e:
             logger.warning(f"[gameaudio] boot cleanup: {e!r}")
+        # APRÈS la purge, jamais en parallèle : cette purge décharge TOUS les
+        # modules steamcord_*, silence compris. Lancées côte à côte, les deux
+        # tâches se couraient après et le silence disparaissait une fois sur
+        # deux (31/08, reproduit), laissant le monitor de la sortie en micro —
+        # donc le larsen en vocal.
+        await cls._golive_mic_silence_if_no_capture()
 
     @classmethod
     async def _ga_cleanup_modules(cls):
