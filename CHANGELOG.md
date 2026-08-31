@@ -16,6 +16,74 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.29.1 — 2026-08-31
+
+Go Live could not start at all in Gaming Mode, and the microphone broadcast the
+system output to everyone in the call. Both are fixed.
+
+### Fixed
+
+- **The share picker was never confirmed, so Go Live hung and did nothing.** In
+  Gaming Mode the Vesktop window is hidden, so Steamcord confirms that modal on
+  the user's behalf. Two separate things had broken that. It located the modal by
+  a container Vesktop no longer renders — the class survives only in dead CSS
+  inside the app bundle, which is exactly why searching the bundle still finds it
+  and makes it look present. And even once the button is found, clicking it does
+  nothing: those are Discord's new design-system buttons, whose handler is not
+  wired to the DOM event. Verified on a device: a plain click and a full pointer
+  and mouse event sequence both had no effect at all, while invoking the button's
+  React handler closed the modal and resolved the capture immediately.
+
+  A timing bug hid the consequences. The acquisition watchdog gave up after 20
+  seconds while the native portal path takes up to 25 before falling back to the
+  local relay, so the fallback could never finish — it negotiated into a void and
+  the source that arrived late was thrown away. The watchdog now outlasts what it
+  is watching.
+
+  Measured after the fix: acquisition in 1.8 seconds instead of hanging, through
+  the native portal, at 1920x1080.
+
+- **The microphone carried the system output, so other people heard themselves
+  come back as feedback.** On a machine with no capture hardware the default
+  audio source is the monitor of the output — everything the user can hear,
+  including the voices of everyone else in the call. Steamcord already replaced
+  that with a silent device, but only for the duration of a share, and it put the
+  monitor back afterwards. The monitor is never restored now; the silence is in
+  place from startup, and a real microphone plugged in later is handed back
+  instead.
+
+  The system-audio device used to give viewers the game sound was also never
+  stopped. It outlived the share, stayed the only running audio source, and ended
+  up serving as the microphone. It now stops with the share and can no longer be
+  selected as an input.
+
+- **A stuck screen-capture query no longer kills Go Live.** The picker issues
+  several capture requests within two seconds, and concurrent PipeWire queries
+  can wedge each other — after which the portal reported no screen at all,
+  although the screen was there and had answered moments earlier. Go Live then
+  fell back to the local relay at 960x540 instead of the native path at 1920x1080.
+  Those queries are now serialised and cached, a recently seen screen is reused
+  rather than failing outright, and a wedged query is recovered from
+  automatically. Steamcord no longer suggests restarting the console for this.
+
+- **The Quick Access Menu could claim a stream was live when it was not.** If the
+  Discord window is restarted while sharing, the new page starts with no
+  knowledge of the previous stream and can never report it as stopped, so the
+  button kept offering to stop a share that no longer existed — while the other
+  participants saw nothing at all. The backend now forgets its stream state when
+  the Discord window dies.
+
+- **A startup race could leave voice stuck connecting.** The call that
+  un-occludes the hidden Discord view could run before that view existed and
+  threw instead. Chromium freezes WebRTC negotiation in an occluded view, so
+  losing that call can leave the voice connection hanging at handshake.
+
+Thanks to [@ZyreonX](https://github.com/ZyreonX), who reported after v1.28.3 that
+Go Live still did not work and attached the log that proved it. That log is what
+made the second failure visible: the pipeline error was gone, which left the real
+blocker alone in plain sight
+([#42](https://github.com/Necrosiak/Steamcord/issues/42)).
+
 ## 1.29.0 — 2026-08-30
 
 ### Added
