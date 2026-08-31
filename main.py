@@ -984,6 +984,25 @@ class Plugin:
         logger.info("Setting discord visibility to true")
         return Response(text="OK")
 
+    # Déclaré au niveau CLASSE : l'onglet n'est affecté qu'à l'initialisation, or
+    # le client appelle /voice_render dès qu'il ouvre sa connexion vocale — c'est-
+    # à-dire potentiellement AVANT. On tombait alors sur « type object 'Plugin' has
+    # no attribute 'shared_js_tab' » (vu le 31/08 chez le user), et comme cet appel
+    # est ce qui dé-occulte la BrowserView, son échec laisse Chromium geler la
+    # négociation WebRTC : la voix peut rester bloquée en DTLS_CONNECTING.
+    shared_js_tab = None
+
+    @classmethod
+    async def _await_shared_tab(cls, tries=40, delay=0.25):
+        """L'onglet SharedJSContext dès qu'il existe, ou None au bout de
+        `tries * delay` secondes. Compté en tours : `time` n'est pas importé
+        dans ce module et ce n'est pas la place pour l'y ajouter."""
+        for _ in range(tries):
+            if cls.shared_js_tab is not None:
+                return cls.shared_js_tab
+            await sleep(delay)
+        return cls.shared_js_tab
+
     @classmethod
     async def _voice_render(cls, request):
         # Chromium freezes WebRTC in the occluded (hidden) BrowserView, so the voice
@@ -991,6 +1010,10 @@ class Plugin:
         # un-backgrounds the renderer so the handshake completes. The JS calls this
         # while the voice connection is establishing, then /voice_hide once connected.
         try:
+            if await cls._await_shared_tab() is None:
+                logger.warning("voice_render: SharedJSContext toujours absent "
+                               "après 10s — BrowserView non dé-occultée")
+                return Response(text="OK")
             await cls.shared_js_tab.ensure_open()
             await cls.shared_js_tab.evaluate("""
                 try {
@@ -1005,6 +1028,8 @@ class Plugin:
     @classmethod
     async def _voice_hide(cls, request):
         try:
+            if cls.shared_js_tab is None:
+                return Response(text="OK")
             await cls.shared_js_tab.ensure_open()
             await cls.shared_js_tab.evaluate("""
                 try {
