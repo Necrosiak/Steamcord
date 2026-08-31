@@ -2131,11 +2131,27 @@ class Plugin:
                         cls._pw_wedge_misses = misses
                         logger.warning(f"[screendiag] pw-dump muet après 5s "
                                        f"({misses}/{cls.PW_WEDGE_ALERT_AFTER}) — PipeWire ne répond plus")
+                        # Ce n'est PAS PipeWire qui meurt : c'est un client
+                        # pw-dump pendu qui bloque tous les suivants. Mesuré le
+                        # 31/08 : `pactl` répondait normalement, `pw-dump` et
+                        # `pw-cli` étaient muets, et tuer l'unique pw-dump pendu
+                        # a tout rétabli sur-le-champ. On le purge donc au 2e
+                        # échec au lieu d'aller conseiller un redémarrage de
+                        # console — remède que je croyais obligatoire et qui ne
+                        # l'est pas.
+                        if misses >= 2:
+                            try:
+                                await (await create_subprocess_exec(
+                                    "pkill", "-x", "pw-dump",
+                                    stdout=DEVNULL, stderr=DEVNULL)).wait()
+                                logger.info("[screendiag] clients pw-dump pendus purgés")
+                            except Exception as e:
+                                logger.warning(f"[screendiag] purge pw-dump: {e!r}")
                         if misses >= cls.PW_WEDGE_ALERT_AFTER and not getattr(cls, "_pw_wedge_toasted", False):
                             cls._pw_wedge_toasted = True
                             await cls._toast("Steamcord",
-                                             "Audio system (PipeWire) stopped responding — "
-                                             "restart the console to recover streaming/audio.")
+                                             "Screen capture stopped responding. Recovery was "
+                                             "attempted automatically — try Go Live again.")
                         await sleep(15)
                         continue
                     if getattr(cls, "_pw_wedge_misses", 0):

@@ -182,8 +182,46 @@ def in_game_mode():
 # ── gamescope PipeWire node ──────────────────────────────────────────────────
 # Même filtrage que gst_webrtc._find_screen_node : jamais un device v4l2 (ni
 # notre ancienne webcam virtuelle), préférence au node gamescope/screen.
-async def find_screen_node():
-    """(node_id:int, (w,h)|None) du node écran gamescope, ou (None, None)."""
+# Cache + verrou : le sélecteur de Vesktop enchaîne PLUSIEURS Start en moins de
+# 2 s (aperçu de la modale, puis la capture réelle). Sans sérialisation ça
+# lançait autant de pw-dump concurrents, et PipeWire se coince exactement comme
+# décrit plus bas — vu le 31/08 chez le user : deux « pw-dump muet après 5s »
+# d'affilée puis « aucun node écran gamescope → Response(2) », alors que le node
+# 56 était vivant et répondait 5 s plus tôt. Le portail natif échouait donc pour
+# rien et le Go Live partait sur le relais.
+_node_cache = {"node": None, "size": None, "t": 0.0}
+_node_lock = asyncio.Lock()
+# Le node gamescope est stable sur toute une session (vérifié : 76 relevés
+# consécutifs sur le même id, jeu lancé au milieu). 3 s suffisent à absorber la
+# rafale du sélecteur sans risquer de servir un id périmé.
+_NODE_TTL = 3.0
+# Repli quand pw-dump ne répond plus : un node connu il y a moins d'une minute
+# vaut infiniment mieux qu'un Response(2), qui casse le Go Live pour de bon.
+_NODE_STALE_OK = 60.0
+
+
+async def find_screen_node(allow_stale=False):
+    """(node_id:int, (w,h)|None) du node écran gamescope, ou (None, None).
+
+    `allow_stale` : en dernier recours, accepter le dernier node connu même si
+    pw-dump vient de timeouter (PipeWire coincé)."""
+    async with _node_lock:
+        age = time.monotonic() - _node_cache["t"]
+        if _node_cache["node"] is not None and age < _NODE_TTL:
+            return _node_cache["node"], _node_cache["size"]
+        node, size = await _find_screen_node_uncached()
+        if node is not None:
+            _node_cache.update(node=node, size=size, t=time.monotonic())
+            return node, size
+        if (allow_stale and _node_cache["node"] is not None
+                and age < _NODE_STALE_OK):
+            log.warning(f"pw-dump KO — on repart sur le dernier node connu "
+                        f"({_node_cache['node']}, vu il y a {age:.0f}s)")
+            return _node_cache["node"], _node_cache["size"]
+        return None, None
+
+
+async def _find_screen_node_uncached():
     try:
         proc = await asyncio.create_subprocess_exec(
             "pw-dump", stdout=asyncio.subprocess.PIPE,
@@ -199,8 +237,21 @@ async def find_screen_node():
                 proc.kill()
             except ProcessLookupError:
                 pass
-            log.warning("pw-dump muet après 5s — PipeWire ne répond plus "
-                        "(redémarrer la session/console pour récupérer)")
+            # PipeWire n'est PAS mort : c'est UN client pw-dump pendu qui bloque
+            # tous les suivants. Mesuré le 31/08 — `pw-cli`/`pw-dump` muets,
+            # `pactl` répondait très bien, et tuer l'unique pw-dump pendu a tout
+            # débloqué instantanément. Le tuer ici rend la main aux appels
+            # suivants au lieu de condamner le Go Live jusqu'au redémarrage de
+            # session, qui était le remède que je croyais nécessaire.
+            try:
+                await (await asyncio.create_subprocess_exec(
+                    "pkill", "-x", "pw-dump",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL)).wait()
+            except Exception:
+                pass
+            log.warning("pw-dump muet après 5s — clients pw-dump pendus purgés, "
+                        "réessai au prochain tour")
             return None, None
         data = json.loads(out)
     except Exception as e:
@@ -477,6 +528,10 @@ class PortalShim:
             if node is not None:
                 break
             await asyncio.sleep(0.5)
+        if node is None:
+            # Dernière chance avant de condamner le Go Live : servir le dernier
+            # node connu. PipeWire coincé n'implique pas que gamescope a disparu.
+            node, size = await find_screen_node(allow_stale=True)
         if node is None or session not in self.sessions:
             log.warning("Start: aucun node écran gamescope → Response(2)")
             self._respond_later(sender, req, 2, {})
