@@ -215,6 +215,14 @@ async def watchdog(tab: Tab):
             break
 
     logger.info("Discord has died. Re-initializing...")
+    # La page repart de zéro : tout Go Live connu avant la mort est caduc, et la
+    # nouvelle page ne pourra JAMAIS en émettre le STREAM_STOP (son ensemble de
+    # streams démarre vide). Sans cet oubli, le QAM restait bloqué sur « Arrêter
+    # le Go Live » pour un stream qui n'existait plus (31/08).
+    try:
+        Plugin.evt_handler.reset_stream_state()
+    except Exception as e:
+        logger.warning(f"reset_stream_state: {e!r}")
 
     while True:
         try:

@@ -557,6 +557,25 @@ class EventHandler:
         self.notifications.put_nowait(
             {"title": "", "body": user.name or "", "kind": kind, "icon": icon})
 
+    def reset_stream_state(self):
+        """Oublier tous les Go Live connus. À appeler quand la page Discord est
+        repartie de zéro (Vesktop tué/relancé).
+
+        Sans ça, un stream lancé AVANT le redémarrage restait « en direct » pour
+        toujours : la nouvelle page démarre avec un ensemble de streams VIDE,
+        donc son poll de resynchronisation ne peut émettre aucun STREAM_STOP pour
+        une clé qu'elle n'a jamais vue — et le QAM continuait d'afficher
+        « Arrêter le Go Live » alors que plus rien ne streamait. Vécu le 31/08 :
+        Vesktop s'est terminé 9 s après un Go Live, le bouton mentait, et côté
+        interlocuteur il n'y avait rien du tout. Le poll du client ré-émettra un
+        STREAM_START pour tout partage réellement actif au tour suivant.
+        """
+        self.streaming_users = set()
+        if self.me is not None:
+            self.me.is_live = False
+        for user in self.vc_members.values():
+            user.is_live = False
+
     async def _stream_start(self, data):
         # Reflect Go Live state in the QAM. Discord emits STREAM_START for any
         # participant; the streamer is the last segment of the stream key
