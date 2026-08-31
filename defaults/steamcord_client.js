@@ -161,6 +161,21 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
         }
         _f.remove();
     } catch (_) {}
+    // Un el.click() ne suffit PLUS : depuis que les boutons de la modale sont
+    // ceux du design system Discord (`data-mana-component`), le handler n'est pas
+    // branché sur l'événement DOM — le clic partait dans le vide et la modale
+    // restait ouverte (issue #42). On appelle onClick des props React, avec repli
+    // sur le clic DOM pour les boutons Vencord (`vc-btn-*`, versions antérieures).
+    const scReactClick = (el) => {
+        const k = Object.keys(el).find((n) => n.startsWith("__reactProps"));
+        const onClick = k && el[k] && el[k].onClick;
+        if (typeof onClick === "function") {
+            onClick({ preventDefault() {}, stopPropagation() {}, currentTarget: el, target: el, type: "click" });
+            return "react";
+        }
+        el.click();
+        return "dom";
+    };
     window.STEAMCORD_PICKER_WATCHER = setInterval(async () => {
         try {
             // GATE : on n'auto-valide QUE les partages initiés par Steamcord
@@ -169,24 +184,43 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // ce gate, le clic auto validait le choix de l'utilisateur en 500 ms
             // (audio système imposé, qualité non choisie).
             if (!window.STEAMCORD_GOLIVE_ACTIVE) return;
-            // TOUS les footers, pas le premier : à un stop→start rapproché la
-            // modale du partage précédent peut encore être dans le DOM (déjà
-            // auto-cliquée, scAuto=1) — querySelector la retournait ELLE et la
-            // NOUVELLE modale n'était jamais validée → getDisplayMedia pendait
-            // pour toujours et le bouton Go Live restait mort (issue #12).
-            const footer = Array.from(document.querySelectorAll(".vcd-screen-picker-footer"))
-                .find(f => !f.dataset.scAuto);
-            if (!footer) return;
-            const btn = Array.from(footer.querySelectorAll("button"))
-                .find(b => !b.disabled && /go live/i.test(b.textContent || ""));
-            if (!btn) return;
-            footer.dataset.scAuto = "1";
+            // La modale ne se repère PLUS par .vcd-screen-picker-footer : Vesktop
+            // a déplacé Cancel/Go Live dans les `actions` de la modale Discord et
+            // ce conteneur a disparu du rendu (la classe ne survit que dans le CSS
+            // mort). Le sélecteur ne trouvait donc plus rien, la modale n'était
+            // jamais validée et getDisplayMedia pendait jusqu'au watchdog — Go Live
+            // mort pour tout le monde en mode jeu (issue #42). On s'ancre sur ce qui
+            // reste à nous — un descendant .vcd-screen-picker-* — puis on remonte à
+            // la modale. TOUTES, pas la première : à un stop→start rapproché la
+            // modale précédente peut encore être dans le DOM (déjà validée,
+            // scAuto=1) et la NOUVELLE ne serait jamais traitée (issue #12).
+            const dlg = Array.from(document.querySelectorAll("[class*='vcd-screen-picker']"))
+                .map((el) => el.closest("[role=dialog]"))
+                .find((d) => d && !d.dataset.scAuto);
+            if (!dlg) return;
+            const buttons = Array.from(dlg.querySelectorAll("button"));
+            const btn = buttons.find((b) => !b.disabled && /go live/i.test(b.textContent || ""));
+            if (!btn) {
+                // Première étape du sélecteur (grille de sources) : Go Live reste
+                // désactivé tant qu'aucun écran n'est choisi. En mode jeu le portail
+                // n'expose qu'une source et cette étape est sautée, mais le bureau
+                // multi-écrans la montre. On prend la première source et on repassera
+                // au tick suivant, quand Go Live sera actif.
+                const screen = dlg.querySelector("[class*='vcd-screen-picker-screen']");
+                if (screen) scReactClick(screen);
+                return;
+            }
+            dlg.dataset.scAuto = "1";
             // venmic AVANT le clic : le device "vencord-screen-share" doit exister
             // quand screenShareFixes attache l'audio au stream. Échec toléré
             // (venmic absent/pipewire KO) → partage vidéo seule.
             try { await window.VesktopNative?.virtmic?.startSystem?.([]); } catch (_) {}
-            btn.click();
-            console.log("[Steamcord] modale Vesktop de partage auto-validée (audio système via venmic)");
+            const how = scReactClick(btn);
+            console.log("[Steamcord] modale Vesktop de partage auto-validée (" + how + ", audio système via venmic)");
+            // Même canal de diagnostic que $golive (scdiag y est local) : sans
+            // cette ligne, un échec d'auto-validation reste invisible dans le log
+            // backend — le seul artefact qu'un utilisateur peut nous envoyer.
+            try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag", m: "[golive] modale de partage auto-validée (" + how + ")" })); } catch (_) {}
         } catch (_) {}
     }, 500);
 }
@@ -1266,6 +1300,12 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     // laisser le bouton mort pour toujours ; si la promesse se
                                                     // résout tardivement, la garde de génération ci-dessous
                                                     // libère la source au lieu de démarrer un stream fantôme.
+                                                    // 45s, PAS 20 : getDisplayMedia (webrtc_client.js) essaie le
+                                                    // portail natif pendant 25s AVANT de se replier sur le relais
+                                                    // GStreamer (~4s). À 20s ce watchdog tirait le premier, donc le
+                                                    // repli n'a JAMAIS pu aboutir : la source arrivait après coup et
+                                                    // se faisait libérer ici même. C'est la 2e moitié de #42 — le
+                                                    // relais réparé en v1.28.3 négociait dans le vide.
                                                     const acqPromise = eng.getDesktopSource({ width: 1920, height: 1080 }, true);
                                                     // Résolution APRÈS timeout : source acquise pour rien →
                                                     // la libérer (sinon session portail qui fuit à chaque
@@ -1280,7 +1320,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     try {
                                                         srcId = await Promise.race([
                                                             acqPromise,
-                                                            new Promise((_, rej) => setTimeout(() => rej(new Error("getDesktopSource timeout (20s)")), 20000)),
+                                                            new Promise((_, rej) => setTimeout(() => rej(new Error("getDesktopSource timeout (45s)")), 45000)),
                                                         ]);
                                                     } finally {
                                                         raceSettled = true;
