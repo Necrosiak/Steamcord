@@ -1084,6 +1084,22 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 case "$get_screen_bounds":
                                     result = { width: screen.width, height: screen.height }
                                     break;
+                                // Vérité de Discord sur un partage en cours. Le
+                                // backend s'en sert AVANT de redémarrer Vesktop
+                                // pour libérer une capture orpheline : son propre
+                                // `is_live` peut se désynchroniser (vu le 31/08,
+                                // le QAM restait bloqué sur « Arrêter le Go Live »
+                                // pour un stream disparu). Se fier à lui seul
+                                // risquerait de TUER un partage bien vivant.
+                                case "$get_active_stream": {
+                                    let st = null;
+                                    try {
+                                        st = Vencord.Webpack.findStore("ApplicationStreamingStore")
+                                                ?.getCurrentUserActiveStream?.() || null;
+                                    } catch (_) { st = null; }
+                                    result = { active: !!st, state: st?.state ?? null };
+                                    break;
+                                }
                                 case "$ptt":
                                     try {
                                         MediaEngineStore.getMediaEngine().connections.values().next().value.setForceAudioInput(data.value);
@@ -1297,13 +1313,21 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     // faisait se chevaucher teardown de session portail et
                                                     // nouvelle acquisition → getDisplayMedia coincé, bouton
                                                     // mort). On attend que le stream actif ait disparu du
-                                                    // store ET ≥1,2s depuis le STOP, 5s max.
+                                                    // store ET ≥3,5s depuis le STOP, 9s max.
+                                                    //
+                                                    // 1,2s ne suffisaient pas (mesuré le 01/09) : à ce
+                                                    // rythme, pw-dump était encore coincé par le churn du
+                                                    // partage précédent et `Start` mettait 14s au lieu de
+                                                    // 30ms — le budget du client sautait et le Go Live
+                                                    // était perdu. Le bouton du QAM grise déjà 6s après un
+                                                    // arrêt ; ce garde-fou couvre les autres chemins
+                                                    // (raccourci manette, double appel du backend).
                                                     const ASS2 = WP.findStore("ApplicationStreamingStore");
                                                     const t0 = Date.now();
-                                                    while (Date.now() - t0 < 5000) {
+                                                    while (Date.now() - t0 < 9000) {
                                                         const busy = ASS2?.getCurrentUserActiveStream?.();
                                                         const sinceStop = Date.now() - (window.STEAMCORD_GOLIVE_LAST_STOP || 0);
-                                                        if (!busy && sinceStop >= 1200) break;
+                                                        if (!busy && sinceStop >= 3500) break;
                                                         if (window.STEAMCORD_GOLIVE_STOP_REQUESTED) break;
                                                         await new Promise(r => setTimeout(r, 200));
                                                     }
