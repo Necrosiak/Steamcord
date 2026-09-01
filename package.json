@@ -1,6 +1,6 @@
 {
   "name": "steamcord",
-  "version": "1.29.1",
+  "version": "1.30.0",
   "type": "module",
   "description": "Discord in Steam Gaming Mode — voice chat, DMs, QR login",
   "scripts": {

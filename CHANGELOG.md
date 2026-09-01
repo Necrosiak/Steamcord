@@ -16,6 +16,80 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.30.0 — 2026-09-01
+
+Viewers saw a **frozen picture** a few seconds after you went live, while
+Discord still reported the stream as active and your "Live" badge showed up
+normally. The cause was Steamcord's own Go Live thumbnail.
+
+### Fixed
+
+- **Go Live froze for viewers after a few seconds.** The QAM thumbnail attached
+  a *second* PipeWire consumer to the gamescope node. Consumers of one node
+  share its buffers, and a buffer is only recycled once **every** consumer has
+  released it — the thumbnail never completed its format negotiation, so it
+  never released anything. gamescope ran out of buffers and had no frame left to
+  send. Measured on a BC-250 with a game running: **880 `out of buffers` in 15 s
+  with the thumbnail, 0 without**, and a clean consumer received **0 frames in
+  14 s**. This is also the cause of
+  [#42](https://github.com/Necrosiak/Steamcord/issues/42).
+- **A hung `pw-dump` blocked screen detection instead of being cleared.** The
+  purge already used elsewhere was missing from this path, so each attempt
+  piled up one more stuck client — 40 s lost in a real log before another
+  component cleaned up. An empty reply (a concurrent purge killing our own call)
+  is handled too, instead of surfacing a raw `JSONDecodeError`.
+- **Screen detection could pick an audio node.** Matching on "screen" also
+  matched `vencord-screen-share`, which is an `Audio/Source/Virtual`; whether it
+  was chosen depended on `pw-dump` ordering. Video nodes only, now.
+
+### Changed
+
+- **The Go Live thumbnail is removed for now.** The QAM says so in one line and
+  keeps the LIVE badge; sharing itself is untouched. Both ways of producing a
+  live thumbnail cost too much: a second PipeWire consumer is what froze the
+  stream in the first place, and a `gamescopectl` screenshot per second measures
+  at **+67 points of a CPU core for gamescope alone** (6 % → 74 %) plus ~0.6
+  core-second of ffmpeg per frame — not acceptable while a game runs and video
+  is encoded in software. A one-shot capture taken when the share starts costs
+  ~1.3 core-seconds and nothing in between; that path is implemented in the
+  backend and will come back once it has been validated in real conditions.
+
+- **Chaining Go Live / stop / Go Live broke the share.** Two things: the
+  `pw-dump` timeout was paid **twice** — the first probe waited 5 s and gave up,
+  then the fallback that is supposed to reuse the already-known node probed for
+  another 5 s before accepting it. `Start` took 14 s instead of 30 ms, the
+  client's budget ran out, the GStreamer relay took over — and the relay closes
+  every portal session, including the one just created. The known-node cache
+  also expired after 3 s, far too short for a stop/start cycle. Fixed: a probe
+  that just failed skips the next one, and the cache now holds for 20 s.
+- **The Go Live button's cooldown is now asymmetric** — 2.5 s after starting
+  (nothing is tearing down, and you must be able to stop quickly), **6 s after
+  stopping**, which is when Chromium releases its PipeWire descriptors, the shim
+  its sessions and venmic stops. The client-side guard went from 1.2 s to 3.5 s.
+- **A failed share used to block every later one, until Vesktop was restarted
+  by hand.** When `getDisplayMedia` never completes, Chromium keeps its PipeWire
+  stream on the gamescope node forever. That orphan then makes *everything*
+  fail — the native portal and the relay both hit the negotiation assertion
+  trying to be the second consumer. Signalling the portal shim does **not**
+  release it; the lock is inside Chromium. Steamcord now watches for a
+  gamescope → Vesktop capture link that survives 45 s with no active share, and
+  restarts Vesktop itself to clear it. Before doing anything it asks Discord
+  whether a share is running, rather than trusting its own cached state — that
+  state has been seen out of sync, and acting on it alone could have killed a
+  live share.
+
+### Known, not fixed here
+
+- **ScreenCast portal sessions still leak.** Chromium never calls
+  `Session.Close`, so each Go Live leaves three sessions behind (9 created /
+  0 closed in one test run) until the gamescope session ends. They hold
+  gamescope buffers, which makes buffer pressure worse — but they are not what
+  froze the stream, and releasing them on every stop proved risky: the release
+  path was written as a last resort for sessions already known to be orphaned,
+  and firing it during a normal teardown left the next Go Live hung on
+  acquisition. A safe version needs to target only the sessions of the share
+  that ended, and wait for Chromium to drop its file descriptors.
+
 ## 1.29.1 — 2026-08-31
 
 Go Live could not start at all in Gaming Mode, and the microphone broadcast the
