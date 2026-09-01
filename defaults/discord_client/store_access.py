@@ -195,6 +195,10 @@ class StoreAccess:
     async def set_automatic_gain_control(self, enabled):
         return await self._store_access_request("$set_automatic_gain_control", enabled=enabled)
 
+    async def get_active_stream(self):
+        """Ce que DISCORD dit d'un partage en cours (pas notre cache `is_live`)."""
+        return await self._store_access_request("$get_active_stream")
+
     async def set_stream_quality(self, resolution, frameRate):
         return await self._store_access_request(
             "$set_stream_quality", resolution=resolution, frameRate=frameRate)

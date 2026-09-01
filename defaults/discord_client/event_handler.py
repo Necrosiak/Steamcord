@@ -601,3 +601,18 @@ class EventHandler:
             self.streaming_users.discard(owner_id)
         if (self.me.id and self.me.id in stream_key) or not stream_key:
             self.me.is_live = False
+            # ⚠️ NE PAS relâcher les sessions portail ici (essayé le 01/09,
+            # retiré le jour même). Ça FONCTIONNE — les 3 sessions se ferment
+            # enfin au lieu de fuir — mais `close_all` est un mécanisme de
+            # DERNIER RECOURS : à l'origine il n'était appelé qu'APRÈS un échec
+            # du getDisplayMedia natif, donc sur des sessions forcément
+            # orphelines, et avec 0,5 s d'attente pour laisser Chromium digérer
+            # le `Closed`. Dans le chemin normal, Discord émet deux STREAM_STOP
+            # à 5 s d'écart → deux `close_all` pendant que Chromium démonte
+            # encore son flux ; le Go Live suivant a pendu à l'acquisition et
+            # Vesktop est mort 13 s plus tard. Corrélation, pas preuve (un même
+            # crash s'était produit plus tôt le même jour sans ce code) — mais
+            # la fuite de sessions n'est qu'un facteur AGGRAVANT du gel, pas sa
+            # cause, et ça ne vaut pas ce risque. À reprendre proprement :
+            # débouncer, ne cibler que les sessions de CE partage, et attendre
+            # que Chromium ait lâché ses fds. Cf. vesktop.release_portal_sessions.

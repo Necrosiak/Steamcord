@@ -714,3 +714,83 @@ async def get_discord_tab(client_js) -> Tab:
             await tab._send_devtools_cmd({"method": "Page.reload", "params": {}}, False)
             return tab
         await sleep(1)
+
+
+async def kill_for_recovery(tag="[recover]"):
+    """Tue Vesktop pour qu'il soit relancé PROPREMENT par le plugin.
+
+    ⛔ Ne JAMAIS passer par `systemctl --user restart steamcord-vesktop` : ça
+    court-circuite `launch()`, donc l'injection du client JS. Vesktop revient
+    sans `STEAMCORD_WS` et le QAM ne pilote plus rien — vécu le 01/09, le user ne
+    pouvait même plus quitter le vocal. Ici on se contente de TUER : la boucle de
+    surveillance de `main.py` voit « Discord has died », rappelle `initialize()`,
+    qui relance ET réinjecte.
+
+    Même logique que le nettoyage d'avant-lancement de `launch()` : arrêter
+    l'unité ne suffit pas, l'app sandboxée peut échapper au cgroup et Electron
+    est mono-instance.
+    """
+    env = _user_env()
+    if not await _running():
+        return False
+    try:
+        if backend() == "flatpak":
+            killer = await create_subprocess_exec(
+                "flatpak", "kill", VESKTOP_APP, stdout=DEVNULL, stderr=DEVNULL, env=env,
+            )
+            await killer.wait()
+        else:
+            proc_kill(_PROC_PATTERN)
+        for _ in range(10):
+            await sleep(1)
+            if not await _running():
+                break
+    except Exception as e:
+        logger.warning(f"{tag} arrêt de Vesktop KO: {e!r}")
+        return False
+    logger.info(f"{tag} Vesktop arrêté — le plugin va le relancer et réinjecter")
+    return True
+
+
+def release_portal_sessions(tag="[portal]"):
+    """SIGUSR1 au portal_shim → close_all(), qui émet Session.Closed pour chacune.
+
+    Pourquoi ça existe (mesuré le 01/09/2026) : Chromium n'appelle JAMAIS
+    `Session.Close` sur nos sessions ScreenCast. Chaque Go Live en créait donc
+    trois, relâchées seulement à la fin de la session gamescope — relevé chez le
+    user : **9 créées, 0 fermées**. Chaque session orpheline retient des tampons
+    du node gamescope ; le pool se vide et le partage finit par se figer chez les
+    spectateurs (59 échecs `out of buffers`/s mesurés, retombés à 0 après un
+    SIGUSR1). On l'appelle donc à l'arrêt de NOTRE partage, sans attendre.
+
+    On vise un PID lu dans un pidfile, JAMAIS `pkill -f portal_shim.py` : ce
+    motif matche aussi un shell ou un éditeur dont la ligne de commande cite le
+    fichier, et l'action par défaut de SIGUSR1 est de TUER. Le pidfile pouvant
+    être périmé (PID recyclé par le noyau), on relit /proc/<pid>/cmdline pour
+    confirmer que c'est bien notre shim avant de signaler.
+    """
+    import signal
+    rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    pidfile = os.path.join(rt, "steamcord-portal-shim.pid")
+    try:
+        with open(pidfile) as f:
+            pid = int(f.read().strip())
+    except Exception:
+        return False                # pas de shim (mode bureau) : rien à libérer
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmdline = f.read().decode("utf-8", "replace")
+    except OSError:
+        logger.info(f"{tag} pidfile shim périmé (processus absent)")
+        return False
+    if "portal_shim.py" not in cmdline:
+        logger.warning(f"{tag} PID {pid} n'est pas portal_shim.py — pas de signal")
+        return False
+    try:
+        os.kill(pid, signal.SIGUSR1)
+        logger.info(f"{tag} SIGUSR1 -> portal_shim ({pid}) : sessions portail relâchées")
+        return True
+    except OSError as e:
+        logger.warning(f"{tag} SIGUSR1 portal_shim KO: {e!r}")
+        return False
+
