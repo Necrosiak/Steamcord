@@ -16,7 +16,7 @@ import sys
 import time
 import json
 import logging
-from subprocess import run, PIPE, DEVNULL
+from subprocess import run, PIPE, DEVNULL, TimeoutExpired
 from gi import require_version  # type: ignore
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout,
@@ -61,22 +61,64 @@ def open_device_out():
     return fd
 
 
-def find_screen_node():
-    """Node PipeWire de l'écran gamescope (publie l'écran complet en mode jeu).
-    Renvoie l'id (str) ou None."""
+def _purge_hung_pw_dump():
+    """Tue les clients pw-dump pendus. PipeWire n'est PAS mort quand pw-dump
+    timeoute : c'est UN client pendu qui bloque tous les suivants (mesuré le
+    31/08 — `pactl` répondait très bien pendant ce temps, et tuer l'unique
+    pw-dump pendu a tout débloqué instantanément). Sans ça, chaque tour de
+    boucle EMPILAIT un pendu de plus : chez le user le feeder a perdu 40 s en
+    trois timeouts d'affilée avant qu'un autre composant ne purge pour lui."""
+    try:
+        run(["pkill", "-x", "pw-dump"], stdout=DEVNULL, stderr=DEVNULL,
+            timeout=5)
+    except Exception:
+        pass
+
+
+def _node_size(info):
+    """Meilleure taille (w,h) trouvable dans les params du node, sinon None."""
+    try:
+        for plist in (info.get("params", {}) or {}).values():
+            if not isinstance(plist, list):
+                continue
+            for prm in plist:
+                if isinstance(prm, dict) and isinstance(prm.get("size"), dict):
+                    sz = prm["size"]
+                    if sz.get("width") and sz.get("height"):
+                        return int(sz["width"]), int(sz["height"])
+    except Exception:
+        pass
+    return None
+
+
+def find_screen_node_with_size():
+    """(node_id:str, (w,h)|None) du node écran gamescope, ou (None, None)."""
     try:
         # timeout : un PipeWire qui n'enregistre plus de clients laisse pw-dump
         # pendu pour toujours (wedge du 19/07) — mieux vaut échouer proprement.
-        data = json.loads(run(["pw-dump"], stdout=PIPE, stderr=DEVNULL,
-                              timeout=5, text=True).stdout)
+        out = run(["pw-dump"], stdout=PIPE, stderr=DEVNULL,
+                  timeout=5, text=True).stdout
+    except TimeoutExpired:
+        _purge_hung_pw_dump()
+        log.warning("pw-dump muet après 5s — clients pw-dump pendus purgés, "
+                    "réessai au prochain tour")
+        return None, None
     except Exception as e:
         log.warning(f"pw-dump KO: {e!r}")
-        return None
+        return None, None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        # stdout vide = notre propre pw-dump vient d'être tué par la purge d'un
+        # autre composant. Rien d'anormal, on réessaie au tour suivant.
+        log.warning("pw-dump n'a rien rendu (purge concurrente ?) — réessai")
+        return None, None
     vids = []
     for n in data:
         if not str(n.get("type", "")).endswith("Node"):
             continue
-        p = (n.get("info", {}) or {}).get("props", {}) or {}
+        info = n.get("info", {}) or {}
+        p = info.get("props", {}) or {}
         mc = str(p.get("media.class", ""))
         name = str(p.get("node.name", ""))
         desc = str(p.get("node.description", ""))
@@ -89,17 +131,33 @@ def find_screen_node():
         if ("video42" in blob or "steamcord" in blob or "loopback" in blob
                 or "v4l2" in name.lower()):
             continue
-        if "video/source" in mc.lower() or "gamescope" in blob or "screen" in blob or "video/output" in mc.lower():
-            vids.append((n.get("id"), name, mc))
+        # Le node DOIT être vidéo. Sinon « screen » attrape aussi
+        # `vencord-screen-share`, qui est un Audio/Source/Virtual : on ouvrait
+        # alors un pipewiresrc sur de l'AUDIO, le format rendu n'avait aucune
+        # intersection avec un pipeline vidéo, et pipewiresrc mourait sur
+        # `assertion 'gst_caps_is_fixed (pwsrc->caps)' failed` sans jamais
+        # poster d'erreur sur le bus. L'ordre de pw-dump décidait seul si on
+        # tombait dessus ou pas.
+        if not mc.lower().startswith("video/"):
+            continue
+        if ("video/source" in mc.lower() or "gamescope" in blob
+                or "screen" in blob or "video/output" in mc.lower()):
+            vids.append((n.get("id"), name, mc, info))
     if vids:
-        log.info(f"nodes vidéo candidats: {vids}")
-    for nid, name, mc in vids:
+        log.info(f"nodes vidéo candidats: {[(i, n, m) for i, n, m, _ in vids]}")
+    for nid, name, mc, info in vids:
         if "gamescope" in name.lower() or "screen" in name.lower():
-            return str(nid)
-    for nid, name, mc in vids:
+            return str(nid), _node_size(info)
+    for nid, name, mc, info in vids:
         if "video/source" in mc.lower():
-            return str(nid)
-    return None
+            return str(nid), _node_size(info)
+    return None, None
+
+
+def find_screen_node():
+    """Node PipeWire de l'écran gamescope (publie l'écran complet en mode jeu).
+    Renvoie l'id (str) ou None."""
+    return find_screen_node_with_size()[0]
 
 
 def find_x_display():

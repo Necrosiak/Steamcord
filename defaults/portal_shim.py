@@ -189,12 +189,28 @@ def in_game_mode():
 # d'affilée puis « aucun node écran gamescope → Response(2) », alors que le node
 # 56 était vivant et répondait 5 s plus tôt. Le portail natif échouait donc pour
 # rien et le Go Live partait sur le relais.
-_node_cache = {"node": None, "size": None, "t": 0.0}
+_node_cache = {"node": None, "size": None, "t": 0.0, "fail_t": 0.0}
 _node_lock = asyncio.Lock()
 # Le node gamescope est stable sur toute une session (vérifié : 76 relevés
-# consécutifs sur le même id, jeu lancé au milieu). 3 s suffisent à absorber la
-# rafale du sélecteur sans risquer de servir un id périmé.
-_NODE_TTL = 3.0
+# consécutifs sur le même id, jeu lancé au milieu).
+# 3 s absorbaient la rafale du SÉLECTEUR (plusieurs Start en <2 s) mais pas un
+# enchaînement Go Live → stop → Go Live, où les deux partages sont séparés de
+# 10-20 s : le second re-sondait, tombait sur un pw-dump coincé par la rafale
+# précédente, et perdait 5 s par appel (mesuré le 01/09 : Start en 14 s, budget
+# du client dépassé, Go Live perdu). 20 s couvrent ce cycle sans sonder.
+# Le risque assumé est de servir un id périmé pendant au plus 20 s si gamescope
+# perd son flux — c'est strictement moins risqué que le repli `allow_stale`, qui
+# accepte déjà un node vu il y a 60 s.
+_NODE_TTL = 20.0
+# Fenêtre pendant laquelle un pw-dump qui vient de timeouter dispense de
+# re-sonder. Sans elle, l'appelant payait le délai DEUX fois : le premier appel
+# sonde 5 s et rend None, puis l'appel `allow_stale=True` re-sonde 5 s avant
+# seulement de consentir au cache. Mesuré chez le user le 01/09 sur un
+# enchaînement Go Live/stop/Go Live à 5 s d'intervalle : Start a mis 14 s au
+# lieu de 30 ms, le budget du client a sauté, le repli relais s'est déclenché et
+# a fermé toutes les sessions — la neuve comprise. Le Go Live échouait alors sur
+# « timeout gst (aucune source) ».
+_PROBE_FAIL_COOLDOWN = 10.0
 # Repli quand pw-dump ne répond plus : un node connu il y a moins d'une minute
 # vaut infiniment mieux qu'un Response(2), qui casse le Go Live pour de bon.
 _NODE_STALE_OK = 60.0
@@ -209,10 +225,20 @@ async def find_screen_node(allow_stale=False):
         age = time.monotonic() - _node_cache["t"]
         if _node_cache["node"] is not None and age < _NODE_TTL:
             return _node_cache["node"], _node_cache["size"]
+        # Un pw-dump vient d'échouer et on a un node connu : le servir TOUT DE
+        # SUITE. Re-sonder ne ferait qu'empiler un client pendu de plus et
+        # coûterait 5 s au Go Live en cours, pour une réponse qu'on a déjà.
+        if (allow_stale and _node_cache["node"] is not None
+                and age < _NODE_STALE_OK
+                and time.monotonic() - _node_cache["fail_t"] < _PROBE_FAIL_COOLDOWN):
+            log.warning(f"pw-dump vient d'échouer — node connu servi sans "
+                        f"re-sonder ({_node_cache['node']}, vu il y a {age:.0f}s)")
+            return _node_cache["node"], _node_cache["size"]
         node, size = await _find_screen_node_uncached()
         if node is not None:
             _node_cache.update(node=node, size=size, t=time.monotonic())
             return node, size
+        _node_cache["fail_t"] = time.monotonic()
         if (allow_stale and _node_cache["node"] is not None
                 and age < _NODE_STALE_OK):
             log.warning(f"pw-dump KO — on repart sur le dernier node connu "
@@ -269,6 +295,12 @@ async def _find_screen_node_uncached():
         blob = (mc + " " + name + " " + desc).lower()
         if ("v4l2" in blob or "video42" in blob or "steamcord" in blob
                 or "loopback" in blob):
+            continue
+        # Le node DOIT être vidéo : sinon « screen » attrape aussi
+        # `vencord-screen-share`, qui est un Audio/Source/Virtual (vu dans les
+        # journaux du 31/08). Un pipewiresrc ouvert sur de l'audio ne peut rien
+        # négocier avec un pipeline vidéo et meurt sans erreur sur le bus.
+        if not mc.lower().startswith("video/"):
             continue
         if ("video/source" in mc.lower() or "gamescope" in blob
                 or "screen" in blob or "video/output" in mc.lower()):

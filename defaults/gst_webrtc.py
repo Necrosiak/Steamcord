@@ -157,6 +157,12 @@ def _find_screen_node():
         # laisser le client basculer sur le portail natif.
         if "v4l2" in blob or "video42" in blob or "steamcord" in blob or "loopback" in blob:
             continue
+        # Le node DOIT être vidéo : sinon « screen » attrape aussi
+        # `vencord-screen-share`, qui est un Audio/Source/Virtual (vu dans les
+        # journaux du 31/08). Un pipewiresrc ouvert sur de l'audio ne peut rien
+        # négocier avec un pipeline vidéo et meurt sans erreur sur le bus.
+        if not mc.lower().startswith("video/"):
+            continue
         if "video/source" in mc.lower() or "gamescope" in blob or "screen" in blob or "video/output" in mc.lower():
             vids.append((n.get("id"), name, mc))
     log.info(f"[screen] nodes vidéo candidats: {vids}")
