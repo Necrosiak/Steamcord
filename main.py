@@ -2192,19 +2192,106 @@ class Plugin:
                                     f"(après {cls._pw_wedge_misses} sondage(s) muet(s))")
                     cls._pw_wedge_misses = 0
                     cls._pw_wedge_toasted = False
-                    for n in loads(out.decode() or "[]"):
+                    objs = loads(out.decode() or "[]")
+                    nodes = {}
+                    for n in objs:
                         if not str(n.get("type", "")).endswith("Node"):
                             continue
                         pr = (n.get("info", {}) or {}).get("props", {}) or {}
                         mc = str(pr.get("media.class", "")); nm = str(pr.get("node.name", ""))
+                        nodes[n.get("id")] = (nm, mc)
                         if "Video" in mc or "gamescope" in (nm + mc).lower() or "screen" in nm.lower():
                             vids.append(f"{n.get('id')}:{nm}:{mc}")
+                    await cls._watch_ghost_capture(objs, nodes)
                 except Exception as e:
                     vids = [f"pw-dump err {e!r}"]
                 logger.info(f"[screendiag] gamescope={in_game} video_nodes={vids}")
             except Exception as e:
                 logger.warning(f"[screendiag] {e!r}")
             await sleep(15)
+
+    # Nombre de tours de screendiag (15 s chacun) pendant lesquels un
+    # consommateur fantôme doit persister avant qu'on redémarre Vesktop.
+    GHOST_TICKS_BEFORE_RECOVERY = 3
+
+    @classmethod
+    async def _watch_ghost_capture(cls, objs, nodes):
+        """Détecte un flux de capture Vesktop ORPHELIN sur le node gamescope.
+
+        Quand un `getDisplayMedia` n'aboutit pas (modale jamais validée, portail
+        muet), Chromium garde son flux PipeWire sur le node gamescope POUR
+        TOUJOURS. Ce consommateur fantôme fait ensuite échouer *tout* Go Live
+        suivant : le portail natif comme le relais GStreamer butent sur
+        `assertion 'gst_caps_is_fixed (pwsrc->caps)' failed` en tentant d'être le
+        2e consommateur. Mesuré chez le user le 01/09 — plus aucun partage
+        possible jusqu'à ce qu'on redémarre Vesktop à la main.
+        `SIGUSR1` au portal_shim NE LE LIBÈRE PAS : le blocage est dans Chromium.
+
+        On exige un LIEN gamescope → vesktop, pas seulement l'existence d'un node
+        vesktop : regarder le partage de quelqu'un d'autre crée aussi des nodes
+        vidéo, et les tuer serait une régression. Et on exige
+        GHOST_TICKS_BEFORE_RECOVERY tours consécutifs (~45 s) : pendant une
+        acquisition normale le consommateur apparaît ~4 s avant que `is_live` ne
+        passe à vrai, ce qui serait un faux positif garanti à un seul tour.
+        """
+        live = False
+        try:
+            live = bool(cls.evt_handler.me.is_live)
+        except Exception:
+            live = True          # doute → on ne touche à rien
+        ghost = False
+        if not live:
+            src = {i for i, (nm, mc) in nodes.items() if "gamescope" in nm.lower()}
+            for o in objs:
+                if not str(o.get("type", "")).endswith("Link"):
+                    continue
+                info = o.get("info", {}) or {}
+                out_id = info.get("output-node-id")
+                in_id = info.get("input-node-id")
+                if out_id in src and "vesktop" in (nodes.get(in_id, ("", ""))[0]).lower():
+                    ghost = True
+                    break
+        if not ghost:
+            cls._ghost_ticks = 0
+            return
+        cls._ghost_ticks = getattr(cls, "_ghost_ticks", 0) + 1
+        logger.warning(f"[screendiag] capture Vesktop orpheline sur le node gamescope "
+                       f"({cls._ghost_ticks}/{cls.GHOST_TICKS_BEFORE_RECOVERY}) — "
+                       f"aucun partage actif")
+        if cls._ghost_ticks < cls.GHOST_TICKS_BEFORE_RECOVERY:
+            return
+        # DERNIÈRE VÉRIFICATION avant un geste destructeur : demander à DISCORD,
+        # pas à notre propre cache. `is_live` peut se désynchroniser — vu le
+        # 31/08, le QAM restait bloqué sur « Arrêter le Go Live » pour un stream
+        # qui n'existait plus. Si la désynchro part dans l'autre sens (is_live
+        # faux alors que la personne partage vraiment), redémarrer Vesktop lui
+        # tuerait son partage EN COURS : une régression bien pire que le bug
+        # qu'on répare. Dans le doute — client absent, requête en échec — on
+        # s'abstient et on réessaiera au prochain tour.
+        try:
+            api = getattr(cls.evt_handler, "api", None)
+            if api is None:
+                raise RuntimeError("client Discord absent")
+            st = await wait_for(api.get_active_stream(), 10)
+            if st and st.get("active"):
+                logger.info(f"[screendiag] Discord signale un partage actif "
+                            f"(state={st.get('state')}) — pas de redémarrage, "
+                            f"notre is_live était désynchronisé")
+                cls._ghost_ticks = 0
+                return
+        except Exception as e:
+            logger.warning(f"[screendiag] état du partage illisible ({e!r}) — "
+                           f"on s'abstient de redémarrer Vesktop")
+            cls._ghost_ticks = 0
+            return
+        cls._ghost_ticks = 0
+        logger.warning("[screendiag] redémarrage de Vesktop pour libérer la capture "
+                       "orpheline (sinon plus aucun Go Live n'est possible)")
+        import vesktop as _v
+        if await _v.kill_for_recovery("[screendiag]"):
+            await cls._toast("Steamcord",
+                             "Screen capture was stuck and has been released. "
+                             "Discord is reconnecting — Go Live works again.")
 
     @classmethod
     async def logout_discord(cls):
@@ -3182,17 +3269,22 @@ class Plugin:
 
     # ── Aperçu du Go Live NATIF ──────────────────────────────────────────────
     # Quand le partage passe par le portail (portal_shim), la capture vit DANS
-    # le Chromium de Vesktop → le QAM n'a aucune poignée sur le flux. Ce feeder
-    # léger (gst_preview.py) capture le node gamescope → JPEG/2s, uniquement
-    # tant que la tuile d'aperçu est montée (start au montage, stop au démontage).
+    # le Chromium de Vesktop → le QAM n'a aucune poignée sur le flux.
+    #
+    # ⚠️ On a longtemps branché ici un 2e `pipewiresrc` sur le node gamescope
+    # (gst_preview.py, JPEG/2s). C'ÉTAIT LA CAUSE de l'écran figé chez les
+    # spectateurs — voir _snapshot_once pour la mesure. Ce chemin est mort ;
+    # l'aperçu est désormais UNE capture `gamescopectl`, prise au montage de la
+    # tuile et rafraîchie seulement à la demande.
+    #
     # Refcount + verrou (issue #12) : au flicker LIVE→pas LIVE→LIVE la tuile se
     # démonte/remonte en <1s, et le stop du 1er montage pouvait être traité APRÈS
-    # le start du 2e → il tuait le feeder tout neuf et l'aperçu restait mort
-    # (« Starting preview… » éternel). start/stop s'équilibrent ; on ne tue le
-    # feeder que quand plus AUCUNE tuile n'est montée.
+    # le start du 2e → il effaçait l'instantané tout neuf. start/stop s'équilibrent ;
+    # on ne nettoie que quand plus AUCUNE tuile n'est montée.
     _preview_seq_lock = None
     _preview_refs = 0
     _preview_fallback_task = None
+    _preview_cleanup = None
 
     @classmethod
     def _preview_lock(cls):
@@ -3202,139 +3294,188 @@ class Plugin:
         return cls._preview_seq_lock
 
     @classmethod
-    def _preview_running(cls):
-        proc = getattr(cls, "golive_preview", None)
-        if proc is not None and proc.returncode is None:
-            return True
-        task = cls._preview_fallback_task
-        return task is not None and not task.done()
+    async def _snapshot_once(cls):
+        """UNE capture d'écran → /tmp/steamcord-golive-preview.jpg.
 
-    @classmethod
-    async def _golive_preview_fallback(cls):
-        """Aperçu SANS GStreamer (SteamOS stock, issue #12 : pas de
-        gst-plugin-pipewire) : gamescopectl screenshot (instantané, natif
-        gamescope) + ffmpeg pour la vignette JPEG. Les deux binaires sont dans
-        l'image SteamOS de base — l'aperçu marche donc sur Deck stock."""
+        `gamescopectl screenshot` + ffmpeg, JAMAIS un 2e `pipewiresrc`.
+        MESURÉ le 01/09/2026 sur BC-250, jeu lancé + Go Live actif : un second
+        consommateur PipeWire sur le node gamescope empêche le recyclage des
+        tampons (un tampon n'est rendu que quand TOUS les consommateurs l'ont
+        rendu) → gamescope tombe à court, n'a plus une seule image à envoyer, et
+        le spectateur voit un écran FIGÉ pendant que Discord affiche ACTIVE.
+        Chiffres : 880 `out of buffers` / 15 s avec l'aperçu, 0 sans.
+        C'est la cause de l'issue #42 et du « elle ne voit rien » du user.
+
+        Ce chemin-ci ne touche pas au pool… mais il n'est pas gratuit non plus :
+        mesuré à +67 points de cœur pour gamescope (6 % → 74 %) à 1 image/s,
+        plus ~0,6 cœur·s d'ffmpeg par vignette (le PNG fait 4,1 Mo en 1080p).
+        D'où la capture UNIQUE au démarrage du partage, rafraîchie seulement à
+        la demande : ~1,3 cœur·seconde ponctuel au lieu d'un coût permanent.
+        """
         import os
         import vesktop
         env = vesktop._user_env()
         raw = "/tmp/steamcord-golive-preview-raw.png"
         path = "/tmp/steamcord-golive-preview.jpg"
         try:
-            while True:
-                try:
-                    try:
-                        os.remove(raw)
-                    except OSError:
-                        pass
-                    p = await create_subprocess_exec(
-                        "gamescopectl", "screenshot", raw,
-                        stdout=DEVNULL, stderr=DEVNULL, env=env)
-                    await p.wait()
-                    # gamescopectl rend la main tout de suite ; gamescope écrit
-                    # le fichier juste après → on attend qu'il apparaisse et
-                    # que sa taille se stabilise (PNG non atomique) plutôt
-                    # qu'une grosse marge fixe (issue #12 : aperçu ~1 fps).
-                    last = -1
-                    for _ in range(12):
-                        await sleep(0.1)
-                        try:
-                            size = os.path.getsize(raw)
-                        except OSError:
-                            continue
-                        if size > 0 and size == last:
-                            break
-                        last = size
-                    p = await create_subprocess_exec(
-                        "ffmpeg", "-y", "-loglevel", "error", "-i", raw,
-                        "-vf", "scale=640:-2", "-q:v", "7", path + ".tmp",
-                        stdout=DEVNULL, stderr=DEVNULL, env=env)
-                    await p.wait()
-                    if os.path.exists(path + ".tmp"):
-                        os.replace(path + ".tmp", path)
-                except Exception as e:
-                    logger.warning(f"[gstprev] fallback screenshot: {e!r}")
-                await sleep(0.5)
-        finally:
-            for f in (raw, path, path + ".tmp"):
-                try:
-                    os.remove(f)
-                except OSError:
-                    pass
+            os.remove(raw)
+        except OSError:
+            pass
+        p = await create_subprocess_exec(
+            "gamescopectl", "screenshot", raw,
+            stdout=DEVNULL, stderr=DEVNULL, env=env)
+        await p.wait()
+        # gamescopectl rend la main tout de suite ; gamescope écrit le fichier
+        # juste après → on attend qu'il apparaisse ET que sa taille se stabilise
+        # (le PNG n'est pas écrit atomiquement).
+        last = -1
+        for _ in range(20):
+            await sleep(0.1)
+            try:
+                size = os.path.getsize(raw)
+            except OSError:
+                continue
+            if size > 0 and size == last:
+                break
+            last = size
+        p = await create_subprocess_exec(
+            "ffmpeg", "-y", "-loglevel", "error", "-i", raw,
+            "-vf", "scale=640:-2", "-q:v", "7", path + ".tmp",
+            stdout=DEVNULL, stderr=DEVNULL, env=env)
+        await p.wait()
+        if os.path.exists(path + ".tmp"):
+            os.replace(path + ".tmp", path)
+        try:
+            os.remove(raw)
+        except OSError:
+            pass
+
+    @classmethod
+    async def _snapshot_task(cls):
+        import os
+        try:
+            await cls._snapshot_once()
+        except BaseException as e:
+            # BaseException et pas Exception : une CancelledError est ce qui
+            # arrivait à CHAQUE capture (voir stop_golive_preview) et elle
+            # passait sous le radar — aucune trace, aperçu éternellement vide.
+            logger.warning(f"[gstprev] capture unique KO: {e!r}")
+            raise
+        try:
+            n = os.path.getsize("/tmp/steamcord-golive-preview.jpg")
+            logger.info(f"[gstprev] instantané écrit ({n} octets)")
+        except OSError:
+            logger.warning("[gstprev] capture terminée mais aucun fichier produit")
+
+    @classmethod
+    def _snapshot_tools_hint(cls):
+        """None si on peut capturer, sinon le hint structuré pour le QAM."""
+        import shutil as _sh
+        missing = [b for b in ("gamescopectl", "ffmpeg") if not _sh.which(b)]
+        if not missing:
+            return None
+        return {"code": "snapshot_tools", "cmd": " ".join(missing)}
 
     @classmethod
     async def start_golive_preview(cls):
+        """Prend UNE capture si on n'en a pas déjà une. Voir _snapshot_once
+        pour la raison : l'ancien feeder PipeWire figeait le stream."""
         import os
-        import shutil as _sh
-        from pathlib import Path as _P
         async with cls._preview_lock():
             cls._preview_refs += 1
-            if cls._preview_running():
+            hint = cls._snapshot_tools_hint()
+            if hint is not None:
+                logger.warning("[gstprev] gamescopectl/ffmpeg absents → "
+                               "pas d'aperçu (le partage n'est pas affecté)")
+                return {"ok": False, **hint}
+            # Un démontage tout juste passé (flicker) avait programmé l'effacement
+            # de l'image : on l'annule, la tuile est de retour.
+            cleanup = getattr(cls, "_preview_cleanup", None)
+            if cleanup is not None and not cleanup.done():
+                cleanup.cancel()
+            cls._preview_cleanup = None
+            if os.path.exists("/tmp/steamcord-golive-preview.jpg"):
                 return {"ok": True}
-            hint = await cls._gst_python_hint()
-            if hint is None:
-                try:
-                    import vesktop
-                    vesktop.proc_kill("gst_preview.py")
-                except Exception:
-                    pass
-                script = _P(DECKY_PLUGIN_DIR) / "gst_preview.py"
-                if not script.exists():
-                    script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_preview.py"
-                cls.golive_preview = await create_subprocess_exec(
-                    sys_python(), str(script),
-                    env=cls._gst_env_or_default(),
-                    stdout=PIPE, stderr=PIPE,
-                )
-                create_task(stream_watcher(cls.golive_preview.stdout, prefix="[gstprev]"))
-                create_task(stream_watcher(cls.golive_preview.stderr, True, prefix="[gstprev]"))
-                return {"ok": True}
-            if _sh.which("gamescopectl") and _sh.which("ffmpeg"):
-                logger.info("[gstprev] bindings GStreamer absents → fallback "
-                            "gamescopectl+ffmpeg")
-                cls._preview_fallback_task = create_task(cls._golive_preview_fallback())
-                return {"ok": True}
-            # Rien pour capturer : le front affiche le hint structuré (i18n).
-            logger.warning(f"[gstprev] {hint['hint']}")
-            return {"ok": False, **hint}
+            if cls._preview_fallback_task is None or cls._preview_fallback_task.done():
+                cls._preview_fallback_task = create_task(cls._snapshot_task())
+            return {"ok": True}
+
+    @classmethod
+    async def refresh_golive_preview(cls):
+        """Bouton « rafraîchir » du QAM : une nouvelle capture, à la demande."""
+        import os
+        async with cls._preview_lock():
+            hint = cls._snapshot_tools_hint()
+            if hint is not None:
+                return {"ok": False, **hint}
+            if cls._preview_fallback_task is not None and not cls._preview_fallback_task.done():
+                return {"ok": True}  # une capture est déjà en vol
+            try:
+                os.remove("/tmp/steamcord-golive-preview.jpg")
+            except OSError:
+                pass
+            cls._preview_fallback_task = create_task(cls._snapshot_task())
+            return {"ok": True}
 
     @classmethod
     async def stop_golive_preview(cls):
+        import os
         async with cls._preview_lock():
             cls._preview_refs = max(0, cls._preview_refs - 1)
             if cls._preview_refs:
                 return True
-            proc = getattr(cls, "golive_preview", None)
-            if proc is not None and proc.returncode is None:
-                try:
-                    proc.kill()
-                    await proc.wait()
-                except Exception:
-                    pass
-            cls.golive_preview = None
-            task = cls._preview_fallback_task
-            if task is not None and not task.done():
-                task.cancel()
-            cls._preview_fallback_task = None
+            # ⚠️ NE PAS annuler une capture en vol. Au flicker LIVE→pas LIVE→LIVE
+            # (issue #12) la tuile se démonte/remonte en <1 s, alors que la
+            # capture dure ~1,3 s : on la tuait donc À CHAQUE FOIS, et comme une
+            # CancelledError ne passait pas par le log, l'aperçu restait vide en
+            # silence. Elle est courte et idempotente — on la laisse finir.
+            #
+            # L'effacement est différé pour la même raison : au remontage
+            # immédiat l'image doit encore être là. Elle n'est jetée que si la
+            # tuile reste absente, c'est-à-dire quand le partage est vraiment
+            # fini — sinon on afficherait l'écran du partage PRÉCÉDENT.
+            cleanup = getattr(cls, "_preview_cleanup", None)
+            if cleanup is None or cleanup.done():
+                cls._preview_cleanup = create_task(cls._preview_cleanup_later())
             return True
 
     @classmethod
+    async def _preview_cleanup_later(cls, delay=3.0):
+        import os
+        try:
+            await sleep(delay)
+        except BaseException:
+            return                      # remontage : on garde l'image
+        if cls._preview_refs:
+            return                      # la tuile est revenue entre-temps
+        cls._preview_fallback_task = None
+        for f in ("/tmp/steamcord-golive-preview.jpg",
+                  "/tmp/steamcord-golive-preview.jpg.tmp",
+                  "/tmp/steamcord-golive-preview-raw.png"):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
+    @classmethod
     async def get_golive_preview(cls):
-        """Aperçu Go Live natif : état du feeder + dernier JPEG (gst_preview.py
-        ou fallback gamescopectl)."""
+        """Instantané figé du partage + si une capture est en cours.
+        `oneshot` dit au QAM d'afficher « image figée » plutôt que de laisser
+        croire à un direct."""
         import base64
         import os
-        import time as _t
-        running = cls._preview_running()
         jpg = ""
         path = "/tmp/steamcord-golive-preview.jpg"
         try:
-            if running and os.path.exists(path) and _t.time() - os.path.getmtime(path) < 8:
+            if os.path.exists(path):
                 with open(path, "rb") as f:
                     jpg = base64.b64encode(f.read()).decode()
         except Exception:
             jpg = ""
-        return {"running": running, "jpg": jpg}
+        task = cls._preview_fallback_task
+        pending = task is not None and not task.done()
+        return {"running": pending or bool(jpg), "pending": pending,
+                "oneshot": True, "jpg": jpg}
 
     @classmethod
     async def get_vesktop_backend(cls):

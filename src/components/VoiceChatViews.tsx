@@ -195,46 +195,74 @@ function SelfPreviewTile() {
   return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
 }
 
+// L'aperçu du Go Live est RETIRÉ pour l'instant (décision user, 01/09/2026).
+// Les deux façons de le produire coûtent trop cher :
+//   • un 2e `pipewiresrc` sur le node gamescope empêche le recyclage des
+//     tampons et FIGE le partage chez les spectateurs (mesuré : 880
+//     « out of buffers » / 15 s avec, 0 sans) — c'était la cause de #42 ;
+//   • une capture `gamescopectl` par seconde coûte +67 points de cœur à
+//     gamescope (6 % → 74 %) plus ~0,6 cœur·s d'ffmpeg par image.
+// Le repli retenu (UNE capture au démarrage, rafraîchie à la demande) est écrit
+// et déployé côté backend — il reste seulement à le valider en conditions
+// réelles. En attendant on affiche une confirmation honnête plutôt qu'une
+// vignette qui ment. Rétablissement = repasser ce drapeau à true.
+const GOLIVE_PREVIEW_ENABLED = false;
+
 // Aperçu LOCAL de mon Go Live NATIF (portail). La capture vit dans le Chromium
-// de Vesktop → aucun flux accessible d'ici : le backend lance gst_preview.py
-// (node gamescope → JPEG/2s) tant que cette tuile est montée, et on polle
-// l'instantané comme pour l'aperçu mode jeu.
+// de Vesktop → aucun flux accessible d'ici.
+//
+// ⚠️ C'est un INSTANTANÉ, pas un direct, et c'est délibéré : brancher un 2e
+// consommateur PipeWire sur le node gamescope empêchait le recyclage des
+// tampons et FIGEAIT le partage chez les spectateurs (mesuré le 01/09 :
+// 880 « out of buffers » / 15 s avec, 0 sans). Le backend prend donc une seule
+// capture `gamescopectl` au montage de la tuile ; le bouton la rafraîchit.
 function GoLivePreviewTile() {
   const [snap, setSnap] = useState("");
   // Diagnostic honnête (issue #12 : « Starting Preview… » éternel sur SteamOS) :
-  // si le backend dit qu'il ne PEUT PAS capturer (bindings GStreamer absents et
-  // pas de fallback), on affiche le hint structuré {code, cmd} comme le bouton
-  // caméra ; si le feeder est censé tourner mais ne produit jamais (running
-  // false sur 8 polls), on le dit au lieu d'attendre en silence.
+  // si le backend dit qu'il ne PEUT PAS capturer (gamescopectl/ffmpeg absents),
+  // on affiche le hint structuré {code, cmd} comme le bouton caméra.
   const [hint, setHint] = useState<{ code?: string; cmd?: string } | null>(null);
   const [giveUp, setGiveUp] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     let alive = true;
-    let downPolls = 0;
+    let polls = 0;
     call<[], { ok: boolean; code?: string; cmd?: string }>("start_golive_preview")
       .then((r) => { if (alive && r && r.ok === false) setHint(r); })
       .catch(() => {});
+    // On ne polle QUE jusqu'à obtenir l'image : une fois figée, plus rien à
+    // demander (l'ancien poll 1/s tournait pour toute la durée du partage).
     const poll = setInterval(async () => {
       try {
-        const r = await call<[], { running: boolean; jpg: string }>("get_golive_preview");
+        const r = await call<[], { jpg: string; pending: boolean }>("get_golive_preview");
         if (!alive) return;
-        if (r.jpg) { setSnap(r.jpg); setGiveUp(false); downPolls = 0; return; }
-        downPolls = r.running ? 0 : downPolls + 1;
-        if (downPolls >= 16) setGiveUp(true);
+        if (r.jpg) { setSnap(r.jpg); setBusy(false); clearInterval(poll); return; }
+        if (!r.pending && ++polls >= 12) { setGiveUp(true); clearInterval(poll); }
       } catch (_) { /* backend pas prêt : on retentera */ }
-    }, 1000); // ~1 fps : suit la cadence resserrée du backend (issue #12)
-    return () => {
-      alive = false;
-      clearInterval(poll);
-      call("stop_golive_preview").catch(() => {});
-    };
+    }, 1000);
+    return () => { alive = false; clearInterval(poll); call("stop_golive_preview").catch(() => {}); };
+  }, [tick]);
+  const refresh = useCallback(() => {
+    setBusy(true);
+    setSnap("");
+    setGiveUp(false);
+    call("refresh_golive_preview")
+      .catch(() => {})
+      .finally(() => setTick((n) => n + 1));  // relance le poll ci-dessus
   }, []);
   if (snap) {
     return (
-      <img
-        src={"data:image/jpeg;base64," + snap}
-        style={{ width: "100%", borderRadius: 6, marginTop: 6, display: "block" }}
-      />
+      <div style={{ marginTop: 6 }}>
+        <img src={"data:image/jpeg;base64," + snap}
+             style={{ width: "100%", borderRadius: 6, display: "block" }} />
+        <Focusable flow-children="row" style={{ display: "flex", marginTop: 4 }}>
+          <Btn style={{ flex: 1, minWidth: 0, fontSize: 11, padding: "4px 8px" }}
+               disabled={busy} onClick={refresh}>
+            {busy ? t("self_preview_refreshing") : t("self_preview_refresh")}
+          </Btn>
+        </Focusable>
+      </div>
     );
   }
   if (hint) {
@@ -612,7 +640,13 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {isSelf && !screenCamOn && user?.is_live && (
         <div style={{ padding: "2px 8px 0" }}>
           <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}><IcMonitor /> {t("self_preview_label")}</div>
-          <GoLivePreviewTile />
+          {GOLIVE_PREVIEW_ENABLED ? (
+            <GoLivePreviewTile />
+          ) : (
+            <div style={{ fontSize: 10, opacity: 0.75, padding: "2px 0 4px", lineHeight: 1.35 }}>
+              {t("self_preview_removed")}
+            </div>
+          )}
         </div>
       )}
 
