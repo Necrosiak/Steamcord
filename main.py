@@ -575,6 +575,9 @@ class Plugin:
     _AUDIO_CFG = os.path.expanduser("~/.config/steamcord-audio.json")
     # ── Partage audio du jeu (voir section "Partage AUDIO du jeu") ──
     _ga_active = False
+    # Traitement audio (Krisp/bruit/écho/gain) mis en pause pendant le partage du
+    # son du jeu — dict des réglages du user, ou None si on n'y touche pas.
+    _ga_mic_saved = None
     _ga_modules = []          # ids des modules pactl chargés (ordre de chargement)
     _ga_loop_mod = {}         # branche ("voice"/"game") -> id du module loopback
     _ga_real_sink = None      # vraie sortie à restaurer au stop
@@ -1375,6 +1378,13 @@ class Plugin:
     @classmethod
     async def disconnect_vc(cls):
         logger.info("Disconnecting vc")
+        # Quitter le vocal termine aussi le partage du son du jeu : il n'a plus
+        # d'objet, et surtout il laisserait le traitement audio coupé (Krisp,
+        # bruit, gain) sur le micro du user pour toutes ses conversations
+        # suivantes. Demande explicite : à l'arrêt du partage OU de la conv, on
+        # rétablit.
+        if cls._ga_active:
+            await cls.stop_game_audio()
         return await cls.evt_handler.disconnect_vc()
 
     # ── Push-to-talk : agrégation PAR SOURCE ──
@@ -2214,6 +2224,15 @@ class Plugin:
         """Ré-asserte les réglages micro persistés (appelé à chaque login du
         client Discord) : le plugin est la source de vérité, les défauts ne
         peuvent plus « revenir » après un restart (issue #14)."""
+        if cls._ga_active:
+            # Partage du son du jeu en cours : ré-asserter les réglages du user
+            # rallumerait Krisp SUR LE JEU. On réaffirme l'absence de traitement.
+            logger.info("[gameaudio] partage actif → traitement audio maintenu coupé")
+            try:
+                await cls._ga_push_processing(cls._GA_NO_PROCESSING)
+            except Exception as e:
+                logger.warning(f"[gameaudio] maintien du silence de traitement KO: {e!r}")
+            return
         prefs = dict(cls._mic_prefs)
         if not prefs:
             return
@@ -3804,6 +3823,57 @@ class Plugin:
         except Exception as e:
             logger.warning(f"[gameaudio] purge modules: {e!r}")
 
+    # ── Traitement audio pendant le partage du son du jeu ────────────────────
+    # Ce mode fait passer le son du jeu POUR UN MICRO (steamcord_mic, un
+    # remap-source du mix) : sans ça Discord n'ouvrirait aucune capture, WebRTC
+    # ne listant pas les monitors. Mais du coup Discord lui applique la chaîne
+    # micro — Krisp, suppression de bruit, gain automatique, annulation d'écho.
+    # Krisp est entraîné sur de la voix : il prend la musique et les effets pour
+    # du bruit et les rabote, pendant que le gain auto pompe par-dessus.
+    # On coupe donc TOUT traitement le temps du partage, et on rend au user
+    # EXACTEMENT ses réglages à l'arrêt. `_mic_prefs` (sa volonté, persistée)
+    # n'est jamais réécrit : on passe sous les setters, directement par l'API.
+    _GA_NO_PROCESSING = {"noise": "none", "echoCancellation": False,
+                         "automaticGainControl": False}
+
+    @classmethod
+    async def _ga_mute_processing(cls):
+        if cls._ga_mic_saved is not None:
+            return
+        try:
+            cur = await cls.get_audio_processing()
+            if isinstance(cur, dict) and not cur.get("error"):
+                cls._ga_mic_saved = {k: cur.get(k) for k in cls._GA_NO_PROCESSING}
+            else:
+                # Client muet : on repart de la volonté persistée du user plutôt
+                # que de ne rien pouvoir restaurer.
+                cls._ga_mic_saved = {k: cls._mic_prefs.get(k) for k in cls._GA_NO_PROCESSING}
+            await cls._ga_push_processing(cls._GA_NO_PROCESSING)
+            logger.info(f"[gameaudio] traitement audio coupé (à restaurer: {cls._ga_mic_saved})")
+        except Exception as e:
+            logger.warning(f"[gameaudio] coupure du traitement audio KO: {e!r}")
+
+    @classmethod
+    async def _ga_restore_processing(cls):
+        saved, cls._ga_mic_saved = cls._ga_mic_saved, None
+        if not saved:
+            return
+        try:
+            await cls._ga_push_processing(saved)
+            logger.info(f"[gameaudio] traitement audio restauré: {saved}")
+        except Exception as e:
+            logger.warning(f"[gameaudio] restauration du traitement audio KO: {e!r}")
+
+    @classmethod
+    async def _ga_push_processing(cls, vals):
+        api = cls.evt_handler.api
+        if vals.get("noise") is not None:
+            await api.set_noise_reduction(vals["noise"])
+        if vals.get("echoCancellation") is not None:
+            await api.set_echo_cancellation(bool(vals["echoCancellation"]))
+        if vals.get("automaticGainControl") is not None:
+            await api.set_automatic_gain_control(bool(vals["automaticGainControl"]))
+
     @classmethod
     async def start_game_audio(cls):
         from json import loads
@@ -3849,6 +3919,7 @@ class Plugin:
             await cls._pactl("set-default-source", "steamcord_mic")
             await cls._pactl("set-default-sink", "steamcord_game")
             cls._ga_active = True
+            await cls._ga_mute_processing()
             await cls._apply_audio_routing()  # déplace jeu→steamcord_game, Vesktop→réel/mix
             await cls._ga_apply_volumes()
             logger.info(f"[gameaudio] ACTIF (sortie réelle={real}, micro={mic!r}, "
@@ -3863,6 +3934,7 @@ class Plugin:
     async def stop_game_audio(cls):
         from json import loads
         cls._ga_active = False
+        await cls._ga_restore_processing()
         try:
             real = cls._ga_real_sink or (await cls._pactl("get-default-sink")).strip()
             if not real or "steamcord_" in real:
