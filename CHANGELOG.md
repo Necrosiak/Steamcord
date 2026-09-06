@@ -16,6 +16,68 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.31.2 — 2026-09-06
+
+Two people looked at the same panel this week and said the same thing in
+different words: parts of it do not look like the rest. They were right, and
+following that up turned over a second problem nobody had reported — the reason
+one of them had been testing the wrong version of the plugin for three days.
+
+### Fixed
+
+- **Automatic updates gave up too early, and then never tried again.** The
+  check runs about fourteen seconds after the plugin starts and hands the
+  install to Decky's own installer. On a cold boot in Gaming Mode, Decky's
+  frontend has not always finished loading by then — so the handover found
+  nothing to hand over to, the fallback died on `plugin.json` (which Decky
+  keeps root-owned, along with the plugin directory), and that was the end of
+  it until the next reboot. Being a race, it looked random: some boots updated
+  fine, others silently did not. It now waits for the loader to appear instead
+  of abandoning at the first second, and if both paths genuinely fail it says
+  so — naming the manual install rather than printing an error number.
+  [@ZyreonX](https://github.com/ZyreonX)'s logs are what exposed this: three
+  sessions in a row running 1.30.0 while being asked to test 1.31.
+- **The share dialog was confirmed with a button found before the audio source
+  was chosen.** Picking a source re-renders the dialog, and React can replace
+  that node, leaving the click landing on an element detached from the live
+  tree and carrying the state from before the choice. The button is looked up
+  again after the choice now.
+
+### Changed
+
+- **The whole panel is drawn from one visual kit.** One list — the server list
+  in the voice tab — had been redrawn in 1.31.0, and everything else kept
+  Steam's native button focus: a pale background with dark text where the rest
+  of the plugin has a white ring and an accent glow. That is what made parts of
+  it look like they came from somewhere else, which is what
+  [@Havok027](https://github.com/Havok027) reported in
+  [#45](https://github.com/Necrosiak/Steamcord/issues/45). The kit now lives in
+  one place and every screen draws from it:
+  - **the voice tab** — a person in a call is a card that tints while they are
+    speaking, `LIVE` is a badge rather than a red dot and the word, local
+    previews sit behind an accent rail, and the mute, watch and fullscreen
+    buttons are one button instead of four near-copies;
+  - **the text tab's server list**, which was a second copy of the voice tab's
+    list drawn differently, down to `▲`/`▼` characters instead of icons;
+  - **direct messages**, which had no focus treatment at all and drew avatars
+    at a fixed 24 pixels — half the size of the ones beside them on a 1440p
+    screen;
+  - **the soundboard and the overlay menu**, which now share one collapsible
+    header, and the events panel, forward dialog, clip pager and send button.
+- **Everything scales with the panel.** The controls that still carried
+  Deck-sized pixel values follow the Quick Access panel's own size, as the rest
+  of the plugin already did.
+
+### Known, not fixed
+
+- **Go Live still carries no sound on some setups.** The audio source is
+  selected and the dialog confirms it, so the explanation given in
+  [#42](https://github.com/Necrosiak/Steamcord/issues/42) earlier — that the
+  share went out with audio set to `None` — is wrong. What the logs show is
+  that the dropdown only ever lists applications that are *making a sound at
+  that instant*, and a game that is quiet when the dialog opens is not in it.
+  Being measured before anything is changed.
+
 ## 1.31.1 — 2026-09-06
 
 Follow-ups to the log [@bastiHST90](https://github.com/bastiHST90) attached to
