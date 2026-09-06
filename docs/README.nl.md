@@ -40,6 +40,9 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 - **🕹️ Controller-sneltoets voor spraak** — Leg **elke knoppencombinatie van je controller** vast en koppel die aan **dempen (schakelaar)** of **push-to-talk**. Werkt globaal in-game, zelfs met het QAM gesloten (in te stellen op het tabblad Instellingen).
 - **Schermafbeeldingen versturen** — Stuur een Steam-schermafbeelding rechtstreeks naar het geopende gesprek.
 - **[Vencord](https://vencord.dev/)** is ingebouwd in Vesktop en geeft toegang tot zijn plugin-ecosysteem.
+- **Bijlagen opslaan** — Elk bestand dat in een gesprek is geplaatst, kan in uw map Downloads worden opgeslagen: afbeeldingen, video's en al het andere (pdf's, archieven, logboeken) dat voorheen alleen als een aantal verscheen. Afbeeldingen en video's openen schermvullend in het paneel in plaats van in de Steam-browser.
+- **Berichten doorsturen** — Een bericht, met de bijbehorende afbeeldingen en bestanden, naar een ander kanaal of privébericht sturen zonder het spel te verlaten. De naam van de auteur gaat mee.
+- **Geplande evenementen** — Zien wat eraan komt op uw servers, een evenement openen voor de banner, de beschrijving en de deelnemers, en rechtstreeks deelnemen aan het spraakkanaal van een lopend evenement.
 - 🐧 **Compatibiliteit** — we werken er actief aan om elk OS te ondersteunen dat Steam in gamemodus / Big Picture kan draaien (voorlopig Linux): portable detectie, meegeleverde Python-afhankelijkheden, geen distributiespecifieke aannames. Notities per distributie: [OS-NOTES.md](OS-NOTES.md).
 
 ---

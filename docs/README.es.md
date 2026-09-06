@@ -40,6 +40,9 @@ Pasar a nativo resuelve los problemas difíciles del antiguo enfoque de navegado
 - **🕹️ Atajo de mando para la voz** — Captura **cualquier combinación de botones de tu mando** y asígnala a **silenciar (alternar)** o **pulsar para hablar**. Funciona globalmente dentro del juego, incluso con el QAM cerrado (se configura en la pestaña de Ajustes).
 - **Enviar capturas** — Envía una captura de Steam directamente a la conversación que tengas abierta.
 - **[Vencord](https://vencord.dev/)** está integrado en Vesktop, dando acceso a su ecosistema de plugins.
+- **Guardar archivos adjuntos** — Cualquier archivo publicado en una conversación puede guardarse en su carpeta de Descargas: imágenes, vídeos y todo lo demás (PDF, archivos comprimidos, registros) que antes solo aparecía como un número. Las imágenes y los vídeos se abren a pantalla completa en el panel, no en el navegador de Steam.
+- **Reenviar mensajes** — Enviar un mensaje, con sus imágenes y archivos, a otro canal o mensaje directo sin salir del juego. El nombre del autor lo acompaña.
+- **Eventos programados** — Ver qué está por llegar en sus servidores, abrir un evento para su imagen, su descripción y sus participantes, y unirse directamente al canal de voz de un evento en curso.
 - 🐧 **Compatibilidad** — trabajamos activamente para soportar todos los SO capaces de ejecutar Steam en modo juego / Big Picture (Linux por ahora): detección portable, dependencias Python incluidas, sin suposiciones específicas de distribución. Notas por distribución: [OS-NOTES.md](OS-NOTES.md).
 
 ---

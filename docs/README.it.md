@@ -40,6 +40,9 @@ Il passaggio al nativo risolve i problemi difficili del vecchio approccio a brow
 - **🕹️ Scorciatoia controller per la voce** — Cattura **qualsiasi combinazione di tasti del tuo controller** e assegnala al **muto (interruttore)** o al **push-to-talk**. Funziona globalmente in gioco, anche con il QAM chiuso (si configura nella scheda Impostazioni).
 - **Invio di screenshot** — Invia uno screenshot di Steam direttamente nella conversazione aperta.
 - **[Vencord](https://vencord.dev/)** è integrato in Vesktop, dando accesso al suo ecosistema di plugin.
+- **Salvare gli allegati** — Qualsiasi file pubblicato in una conversazione può essere salvato nella cartella Download: immagini, video e tutto il resto (PDF, archivi, log) che prima appariva solo come un numero. Immagini e video si aprono a schermo intero nel pannello, non nel browser di Steam.
+- **Inoltrare i messaggi** — Inviare un messaggio, con le sue immagini e i suoi file, a un altro canale o a un messaggio diretto senza uscire dal gioco. Il nome dell'autore lo accompagna.
+- **Eventi programmati** — Vedere cosa sta per iniziare sui vostri server, aprire un evento per il suo banner, la sua descrizione e i partecipanti, e unirsi direttamente al canale vocale di un evento già in corso.
 - 🐧 **Compatibilità** — lavoriamo attivamente per supportare ogni OS in grado di eseguire Steam in modalità gioco / Big Picture (Linux per ora): rilevamento portabile, dipendenze Python incluse, nessuna assunzione specifica di distribuzione. Note per distribuzione: [OS-NOTES.md](OS-NOTES.md).
 
 ---

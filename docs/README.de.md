@@ -40,6 +40,9 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 - **🕹️ Controller-Sprachkürzel** — Erfasse **jede beliebige Tastenkombination deines Controllers** und belege sie mit **Stummschalten (Umschalter)** oder **Push-to-Talk**. Funktioniert global im Spiel, sogar bei geschlossenem QAM (einzurichten im Einstellungen-Tab).
 - **Screenshots senden** — Sende einen Steam-Screenshot direkt in die geöffnete Unterhaltung.
 - **[Vencord](https://vencord.dev/)** ist in Vesktop integriert und gibt Zugang zu seinem Plugin-Ökosystem.
+- **Anhänge speichern** — Jede in einer Unterhaltung gepostete Datei lässt sich in Ihrem Download-Ordner speichern: Bilder, Videos und alles andere (PDFs, Archive, Protokolle), das bisher nur als bloße Anzahl erschien. Bilder und Videos öffnen sich im Panel als Vollbild statt im Steam-Browser.
+- **Nachrichten weiterleiten** — Eine Nachricht mit ihren Bildern und Dateien an einen anderen Kanal oder eine Direktnachricht senden, ohne das Spiel zu verlassen. Der Name des Verfassers wird mitgeschickt.
+- **Geplante Events** — Sehen, was auf Ihren Servern ansteht, ein Event für Banner, Beschreibung und Teilnehmer öffnen und einem laufenden Event direkt in seinem Sprachkanal beitreten.
 - 🐧 **Kompatibilität** — wir arbeiten aktiv daran, jedes OS zu unterstützen, das Steam im Gaming Mode / Big Picture ausführen kann (derzeit Linux): portable Erkennung, mitgelieferte Python-Abhängigkeiten, keine distributionsspezifischen Annahmen. Hinweise pro Distribution: [OS-NOTES.md](OS-NOTES.md).
 
 ---

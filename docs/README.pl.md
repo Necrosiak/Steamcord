@@ -40,6 +40,9 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 - **🕹️ Skrót kontrolera do głosu** — Przechwyć **dowolną kombinację przycisków kontrolera** i przypisz ją do **wyciszenia (przełącznik)** lub **push-to-talk**. Działa globalnie w grze, nawet przy zamkniętym QAM (konfiguracja w zakładce Ustawienia).
 - **Wysyłanie zrzutów ekranu** — Wyślij zrzut ekranu Steam prosto do otwartej rozmowy.
 - **[Vencord](https://vencord.dev/)** jest wbudowany w Vesktop, dając dostęp do swojego ekosystemu wtyczek.
+- **Zapisywanie załączników** — Każdy plik opublikowany w rozmowie można zapisać w folderze Pobrane: obrazy, filmy oraz wszystko inne (pliki PDF, archiwa, dzienniki), co wcześniej pojawiało się wyłącznie jako liczba. Obrazy i filmy otwierają się na pełnym ekranie w panelu, a nie w przeglądarce Steam.
+- **Przekazywanie wiadomości** — Wysłanie wiadomości wraz z jej obrazami i plikami na inny kanał lub do wiadomości prywatnej bez wychodzenia z gry. Nazwa autora jest przekazywana razem z nią.
+- **Zaplanowane wydarzenia** — Sprawdzenie, co wkrótce się odbędzie na Twoich serwerach, otwarcie wydarzenia, aby zobaczyć jego baner, opis i uczestników, oraz dołączenie do kanału głosowego trwającego wydarzenia.
 - 🐧 **Kompatybilność** — aktywnie pracujemy nad wsparciem każdego systemu zdolnego uruchomić Steam w trybie gry / Big Picture (na razie Linux): przenośna detekcja, dołączone zależności Pythona, brak założeń specyficznych dla dystrybucji. Notatki dla dystrybucji: [OS-NOTES.md](OS-NOTES.md).
 
 ---

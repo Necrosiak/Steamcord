@@ -16,6 +16,102 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.31.0 — 2026-09-06
+
+Nobody could hear you while you were sharing your screen, and the plugin was
+the reason. Five other things were failing silently for the same underlying
+reason: their errors were being thrown away. This release also brings in five
+fixes contributed by the GameModeCord fork, and adds attachments, forwarding
+and events.
+
+### Fixed
+
+- **Nobody could hear you during a Go Live.** With no real microphone
+  connected, Steamcord puts a silent source in place so the output monitor is
+  not rebroadcast over the voice channel. That silent source was a *monitor*,
+  and WebRTC discards monitors — so Discord did not open a quiet capture, it
+  opened **no capture at all**, and the stream lost its audio along with your
+  voice. Viewers heard nothing whatsoever. The silence is now exposed through
+  `module-remap-source`, so what lands as the default source is a real input.
+- **Plugging a headset in mid-stream changed nothing.** That decision was taken
+  once, when the share started. A real capture device appearing is now noticed,
+  and the microphone handed back.
+- **The Go Live thumbnail never produced a single image.** It is written to a
+  `.tmp` file and renamed, so nobody sees a half-written JPEG — and ffmpeg
+  picks its output format from the extension, which `.tmp` does not provide. It
+  refused to open a muxer at all, and the error was invisible with stderr going
+  to `/dev/null`. The preview is back, on the `gamescopectl` path that does not
+  touch gamescope's buffer pool.
+- **Game Mode screen sharing found no camera unless v4l2loopback was on
+  `/dev/video42`.** The feeder, the module check and the camera pick were all
+  hardcoded to that node and to the "Steamcord Screen" label. Bazzite — and any
+  machine where OBS is already set up — loads the module as "OBS Virtual
+  Camera" on `/dev/video0`: every check failed, the button did nothing, and
+  nothing was logged to say why. *(found and written by
+  [@Memberoffoxhound](https://github.com/Memberoffoxhound))*
+- **Both share buttons vanished from every DM call.** They were gated on
+  `vc.channel_name`, which a DM call does not have. *(found by
+  [@Memberoffoxhound](https://github.com/Memberoffoxhound))*
+- **No audio processing on the game's sound while it is shared.** Sharing game
+  audio feeds it to Discord as a microphone, so Discord ran Krisp, noise
+  suppression and automatic gain over it — Krisp is trained on speech and
+  grinds music and effects down as background noise. All of it is now off for
+  the duration of the share, and your settings are given back exactly as they
+  were when it stops, or when the call ends.
+- **Saving anything from the plugin failed on certificate verification.**
+  plugin_loader's bundled Python ships no CA store, so every TLS request from
+  the backend failed. The system trust store is now named explicitly;
+  verification is never disabled.
+- **Every notification-dispatch retry leaked a socket.** Reconnecting to the
+  Steam UI fetched a fresh tab and dropped the old one, leaving its aiohttp
+  session unclosed. *(reported by
+  [@bastiHST90](https://github.com/bastiHST90))*
+- **The share diagnostic filled the log** with the same line every 15 seconds
+  whether or not anything had changed. It now logs transitions only.
+  *(reported by [@bastiHST90](https://github.com/bastiHST90))*
+
+### Added
+
+- **Notifications can be turned off outside a game too.** The one setting was
+  "Notifications while playing" and did exactly that, so turning it off still
+  let everything through the rest of the time. Both contexts are now separate
+  and both default to All. *(requested by
+  [@bastiHST90](https://github.com/bastiHST90))*
+- **Save any chat attachment** — a PDF, a zip, a log — to your Downloads
+  folder. Anything that was neither image nor video used to arrive as a bare
+  count, with no way to learn its name, let alone get it. Images and videos
+  open in the fullscreen viewer instead of the Steam browser, and video
+  attachments are shown at all, which they were not. *(requested by
+  [@moi952](https://github.com/moi952))*
+- **Forward a message, with its images and files**, to another channel or DM.
+  Discord forwards by reference; there is no such primitive here, so this sends
+  a copy with the author's name — without attribution a forwarded message
+  arrives looking like something you wrote.
+- **Scheduled events**: see what is coming, open one for its banner,
+  description and who is attending, and join an event that is already running
+  straight into its voice channel. Read and take part only — no creating, no
+  editing.
+
+### Changed
+
+- **The QAM scales to the panel** instead of using Steam Deck absolute pixels.
+  On a 1440p or 4K Game Mode session everything rendered tiny and
+  `DialogButton` clipped icons. *(written by
+  [@Memberoffoxhound](https://github.com/Memberoffoxhound))*
+- **B walks back one menu at a time** instead of closing the whole panel from
+  wherever you stood. *(written by
+  [@Memberoffoxhound](https://github.com/Memberoffoxhound))*
+- **The tabs look like tabs.** Voice/Text/Config and Servers/DMs were three
+  buttons in a row with the selected one slightly bluer, and nothing said the
+  choices were exclusive. *(reported by [@moi952](https://github.com/moi952))*
+- **The server list matches the rest of the plugin.** Those rows were the only
+  controls still using Steam's native focus. They now use the shared white ring
+  and accent glow, on rounded cards, and a server's icon becomes a circle when
+  it is open — so you can see which one is expanded without reading the
+  chevron.
+- **The BSD-3 notice names its copyright holder.** It still carried the Decky
+  template's "Hypothetical Plugin Developer" placeholder.
+
 ## 1.30.0 — 2026-09-01
 
 Viewers saw a **frozen picture** a few seconds after you went live, while

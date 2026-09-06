@@ -40,6 +40,9 @@ Le passage au natif règle les problèmes difficiles de l'ancienne approche par 
 - **🕹️ Raccourci manette pour le vocal** — Capture **n'importe quel accord de boutons de ta manette** et assigne-le au **mute (bascule)** ou au **push-to-talk**. Il fonctionne globalement en jeu, même QAM fermé (à configurer dans l'onglet Config).
 - **Envoi de captures** — Envoie une capture d'écran Steam directement dans la conversation ouverte.
 - **[Vencord](https://vencord.dev/)** est intégré à Vesktop, donnant accès à son écosystème de plugins.
+- **Enregistrer les pièces jointes** — Tout fichier posté dans une conversation peut être enregistré dans votre dossier Téléchargements : images, vidéos, et tout le reste (PDF, archives, journaux) qui n'apparaissait que sous forme d'un compteur. Images et vidéos s'ouvrent en plein écran dans le panneau, plus dans le navigateur Steam.
+- **Transférer un message** — Envoyer un message, avec ses images et ses fichiers, vers un autre salon ou une conversation privée sans quitter le jeu. Le nom de l'auteur l'accompagne.
+- **Événements programmés** — Voir ce qui arrive sur vos serveurs, ouvrir un événement pour sa bannière, sa description et ses participants, et rejoindre directement le salon vocal d'un événement en cours.
 - 🐧 **Compatibilité** — nous faisons le nécessaire pour prendre en charge tous les OS capables de faire tourner Steam en mode jeu / Big Picture (Linux pour le moment) : détection portable, dépendances Python embarquées, aucune supposition propre à une distribution. Notes par distribution : [OS-NOTES.md](OS-NOTES.md).
 
 ---
