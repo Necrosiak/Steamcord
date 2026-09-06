@@ -1167,6 +1167,90 @@ class Plugin:
             return {"ok": False, "error": str(e)}
         return {"ok": True, **cfg}
 
+    # ── enregistrer une pièce jointe (issue #43) ─────────────────────────────
+    # moi952 : « si je reçois un message avec une pièce jointe, je ne peux pas la
+    # télécharger ». Ce n'était pas une limite technique, juste jamais écrit : le
+    # QAM savait afficher une image, pas la garder.
+    #
+    # On ne récupère QUE depuis le CDN Discord : cet endpoint est appelable par
+    # n'importe quel JS du contexte Steam, il ne doit pas devenir un
+    # téléchargeur d'URL arbitraires écrivant dans le dossier de l'utilisateur.
+    _ATTACHMENT_HOSTS = ("cdn.discordapp.com", "media.discordapp.net")
+    # Une pièce jointe Discord monte à 100 Mio pour un abonné Nitro ; au-delà ce
+    # n'est plus une pièce jointe, c'est une erreur ou autre chose.
+    _ATTACHMENT_MAX_BYTES = 128 * 1024 * 1024
+
+    @classmethod
+    def _downloads_dir(cls):
+        """Le dossier Téléchargements de l'utilisateur, quel que soit son nom
+        (xdg-user-dirs le localise), avec ~/Downloads en repli."""
+        import subprocess
+        try:
+            r = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True,
+                               text=True, timeout=5)
+            path = r.stdout.strip()
+            if r.returncode == 0 and path and path != os.path.expanduser("~"):
+                return path
+        except Exception:
+            pass
+        return os.path.expanduser("~/Downloads")
+
+    @classmethod
+    async def save_attachment(cls, url, filename=""):
+        from urllib.parse import urlparse, unquote
+        from aiohttp import ClientSession  # type: ignore
+
+        parsed = urlparse(str(url))
+        if parsed.scheme != "https" or parsed.hostname not in cls._ATTACHMENT_HOSTS:
+            logger.warning(f"[attach] refus d'une URL hors CDN Discord: {parsed.hostname!r}")
+            return {"ok": False, "code": "attach_bad_url"}
+
+        # Le nom vient de la pièce jointe ou du chemin de l'URL, jamais d'un
+        # chemin fourni tel quel : basename + retrait des séparateurs empêchent
+        # d'écrire ailleurs que dans le dossier de destination.
+        name = os.path.basename(unquote(filename or parsed.path)) or "discord-attachment"
+        name = name.replace("/", "_").replace("\\", "_").lstrip(".") or "discord-attachment"
+        dest_dir = cls._downloads_dir()
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+        except OSError as e:
+            logger.warning(f"[attach] {dest_dir} non créé: {e!r}")
+            return {"ok": False, "code": "attach_write_failed"}
+
+        # Ne JAMAIS écraser : deux captures Discord partagent souvent le même nom.
+        stem, ext = os.path.splitext(name)
+        path = os.path.join(dest_dir, name)
+        n = 2
+        while os.path.exists(path):
+            path = os.path.join(dest_dir, f"{stem} ({n}){ext}")
+            n += 1
+
+        tmp = path + ".part"
+        try:
+            async with ClientSession() as sess:
+                async with sess.get(url, timeout=120) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"[attach] HTTP {resp.status} sur {name}")
+                        return {"ok": False, "code": "attach_http", "cmd": str(resp.status)}
+                    written = 0
+                    with open(tmp, "wb") as f:
+                        async for chunk in resp.content.iter_chunked(64 * 1024):
+                            written += len(chunk)
+                            if written > cls._ATTACHMENT_MAX_BYTES:
+                                raise ValueError("pièce jointe trop grosse")
+                            f.write(chunk)
+            os.replace(tmp, path)
+        except Exception as e:
+            logger.warning(f"[attach] {name} non enregistré: {e!r}")
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            return {"ok": False, "code": "attach_write_failed"}
+
+        logger.info(f"[attach] enregistré → {path}")
+        return {"ok": True, "path": path, "name": os.path.basename(path)}
+
     # ── qualité du partage d'écran (issue #33) ──────────────────────────────
     # « It would be cool to insert the sharing options to configure the stream
     # resolution » (Havok027). Le levier existe déjà, il n'était simplement pas
