@@ -2214,10 +2214,22 @@ class Plugin:
                     await cls._watch_ghost_capture(objs, nodes)
                 except Exception as e:
                     vids = [f"pw-dump err {e!r}"]
-                logger.info(f"[screendiag] gamescope={in_game} video_nodes={vids}")
+                # Seulement quand ÇA CHANGE (#44 : bastiHST90 a trouvé son journal
+                # noyé sous cette ligne, 4 par minute et jamais deux différentes).
+                # Ce qu'on veut lire dans un log joint à un rapport, ce sont les
+                # transitions — le node qui apparaît, gamescope qui s'en va —, pas
+                # la preuve répétée que rien n'a bougé.
+                line = f"[screendiag] gamescope={in_game} video_nodes={vids}"
+                if line != cls._screendiag_last:
+                    cls._screendiag_last = line
+                    logger.info(line)
             except Exception as e:
                 logger.warning(f"[screendiag] {e!r}")
             await sleep(15)
+
+    # Dernière ligne d'état écrite par screendiag, pour ne journaliser que les
+    # changements (voir la boucle ci-dessus).
+    _screendiag_last = ""
 
     # Nombre de tours de screendiag (15 s chacun) pendant lesquels un
     # consommateur fantôme doit persister avant qu'on redémarre Vesktop.
