@@ -2,6 +2,8 @@
 
 **Discord w trybie gry Steam** — wtyczka [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) dla Steam Deck / Bazzite / SteamOS.
 
+Czat głosowy, wiadomości prywatne i udostępnianie ekranu z menu szybkiego dostępu — bez wychodzenia z trybu gry i bez drugiego urządzenia.
+
 🌍 **Języki:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · [Nederlands](README.nl.md) · **Polski** · [Русский](README.ru.md)
 
 > **Steamcord to niezależny projekt.** Pierwotnie zainspirowany przez

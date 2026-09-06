@@ -2,6 +2,8 @@
 
 **Discord в игровом режиме Steam** — плагин [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) для Steam Deck / Bazzite / SteamOS.
 
+Голосовой чат, личные сообщения и демонстрация экрана прямо из меню быстрого доступа — не выходя из игрового режима и без второго устройства.
+
 🌍 **Языки:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · [Nederlands](README.nl.md) · [Polski](README.pl.md) · **Русский**
 
 > **Steamcord — независимый проект.** Изначально он был вдохновлён
