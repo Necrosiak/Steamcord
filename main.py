@@ -3560,9 +3560,15 @@ class Plugin:
             last = size
         if not size:
             raise Exception(f"gamescope n'a écrit aucun PNG dans {raw}")
+        # `-f image2` EXPLICITE : on écrit d'abord un `.tmp` (renommé ensuite,
+        # pour qu'aucun lecteur ne voie un JPEG à moitié écrit), et ffmpeg déduit
+        # le format de l'extension — « .tmp » ne lui dit rien, il refusait donc
+        # de muxer : « Unable to choose an output format ». L'aperçu n'a jamais
+        # produit une seule vignette depuis que l'écriture est atomique, et
+        # l'erreur restait invisible, stderr partant dans /dev/null.
         p = await create_subprocess_exec(
             "ffmpeg", "-y", "-loglevel", "error", "-i", raw,
-            "-vf", "scale=640:-2", "-q:v", "7", path + ".tmp",
+            "-vf", "scale=640:-2", "-q:v", "7", "-f", "image2", path + ".tmp",
             stdout=DEVNULL, stderr=PIPE, env=env)
         _, err = await p.communicate()
         if p.returncode:
