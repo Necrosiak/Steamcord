@@ -2,6 +2,8 @@
 
 **Discord in Steam Gaming Mode** — a [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin for Steam Deck / Bazzite / SteamOS.
 
+Voice chat, private messages and screen sharing from the Quick Access Menu, without leaving Game Mode and without a second device.
+
 🌍 **Languages:** **English** · [Français](docs/README.fr.md) · [Deutsch](docs/README.de.md) · [Español](docs/README.es.md) · [Italiano](docs/README.it.md) · [Português](docs/README.pt.md) · [Nederlands](docs/README.nl.md) · [Polski](docs/README.pl.md) · [Русский](docs/README.ru.md)
 
 > **Steamcord is an independent project.** It was originally inspired by
