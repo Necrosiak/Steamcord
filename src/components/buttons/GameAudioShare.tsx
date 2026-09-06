@@ -1,13 +1,12 @@
-import { DialogButton, SliderField } from "@decky/ui";
+import { SliderField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaVolumeUp, FaStop } from "react-icons/fa";
 import { IcController, IcMic } from "../Icons";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
-import { focusHalo, ACCENT, DANGER } from "../Styled";
+import { DANGER, InlineBtn, Notice } from "../Styled";
 
-const Btn = DialogButton as any;
 const Slider = SliderField as any;
 
 // Partage du SON du jeu dans le vocal : le backend mixe micro + audio du jeu dans
@@ -18,7 +17,6 @@ export function GameAudioShare() {
   const state = useSteamcordState();
   const [on, setOn] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [focused, setFocused] = useState(false);
   const [voice, setVoice] = useState(100);
   const [game, setGame] = useState(60);
   const [hasMic, setHasMic] = useState(true);
@@ -52,26 +50,12 @@ export function GameAudioShare() {
 
   return (
     <div>
-      <Btn
-        onClick={toggle}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onGamepadFocus={() => setFocused(true)}
-        onGamepadBlur={() => setFocused(false)}
-        style={{
-          width: "100%", margin: 0, padding: "6px 0", minHeight: 0,
-          boxSizing: "border-box",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          fontSize: 12, fontWeight: 600,
-          color: "#fff", borderRadius: 6,
-          background: on ? DANGER : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
-          opacity: busy ? 0.6 : 1,
-          ...focusHalo(on ? DANGER : ACCENT, focused),
-        }}
-      >
+      {/* Bouton d'action commun (#45) : ce bloc etait la 3e copie du meme
+          dessin dans le plugin, avec ses tailles en dur. */}
+      <InlineBtn big on={on} color={DANGER} tone="accent" disabled={busy} onClick={toggle}>
         {on ? <FaStop /> : <FaVolumeUp />}
         {on ? t("game_audio_stop") : t("game_audio_start")}
-      </Btn>
+      </InlineBtn>
       {on && (
         <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
           {hasMic ? (
@@ -83,9 +67,7 @@ export function GameAudioShare() {
               bottomSeparator="none"
             />
           ) : (
-            <div style={{ fontSize: 11, opacity: 0.7, padding: "4px 0" }}>
-              {t("game_audio_nomic")}
-            </div>
+            <Notice>{t("game_audio_nomic")}</Notice>
           )}
           <Slider
             label={<><IcController /> {t("game_audio_game")} {game}%</>}

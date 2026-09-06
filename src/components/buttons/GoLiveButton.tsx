@@ -58,7 +58,7 @@ export function GoLiveButton() {
         boxSizing: "border-box", overflow: "visible",
         display: "flex", alignItems: "center", justifyContent: "center", gap: px(8),
         fontSize: px(13), fontWeight: 600,
-        color: "#fff", borderRadius: 6,
+        color: "#fff", borderRadius: px(6),
         background: live ? DANGER : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
         opacity: coolingDown ? 0.5 : 1,
         ...focusHalo(live ? DANGER : ACCENT, focused),

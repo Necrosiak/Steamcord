@@ -3,13 +3,16 @@ import { memo, ReactNode, useCallback, useEffect, useMemo, useState } from "reac
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { t } from "../i18n";
 import {
-  IcCameraVideo, IcChevronDown, IcController, IcFilm, IcMic, IcMicMute, IcMicMuteFill,
+  IcCameraVideo, IcController, IcFilm, IcMic, IcMicMute, IcMicMuteFill,
   IcMonitor, IcSoundboard, IcSpeaker, IcSpeakerMuteFill,
 } from "./Icons";
 import { SliderField, DialogButton, Dropdown, Focusable, ModalRoot, showModal, ToggleField } from "@decky/ui";
 import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
-import { focusHalo, ACCENT, DANGER, ActionCard, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
+import {
+  focusHalo, ACCENT, DANGER, ONLINE, ActionCard, FULL_BLEED, chromeHideMarkerRef,
+  Card, CollapseBody, CollapseHeader, InlineBtn, Notice, Pill, SectionLabel, hexA,
+} from "./Styled";
 import { useQamUi } from "../qamUi";
 import { VideoGridModal } from "./VideoGridFullscreen";
 
@@ -54,26 +57,15 @@ const trackLabel = (kind: string) =>
 function SingleTrackTile({ userId, track, onFullscreen }:
   { userId: string; track: MediaStreamTrack; onFullscreen: () => void }) {
   const ms = useMemo(() => new MediaStream([track]), [track]);
-  const [fsFocused, setFsFocused] = useState(false);
+  const { px } = useQamUi();
   return (
     <div>
       <VideoTile stream={ms} />
-      <Btn
-        onClick={onFullscreen}
-        onFocus={() => setFsFocused(true)}
-        onBlur={() => setFsFocused(false)}
-        onGamepadFocus={() => setFsFocused(true)}
-        onGamepadBlur={() => setFsFocused(false)}
-        style={{
-          width: "100%", margin: "2px 0 0", padding: "4px 0", minHeight: 0, fontSize: 10, fontWeight: 600,
-          borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          color: "#fff",
-          background: fsFocused ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.08)",
-          ...focusHalo(ACCENT, fsFocused),
-        }}
-      >
-        <>⛶ {trackLabel(getTrackKind(userId, track.id))}</>
-      </Btn>
+      <div style={{ marginTop: px(3) }}>
+        <InlineBtn onClick={onFullscreen}>
+          <>⛶ {trackLabel(getTrackKind(userId, track.id))}</>
+        </InlineBtn>
+      </div>
     </div>
   );
 }
@@ -186,14 +178,8 @@ function SelfPreviewTile() {
       />
     );
   }
-  if (giveUp && feederUp === false) {
-    return (
-      <div style={{ fontSize: 10, color: "#ffb74d", padding: "6px 4px", lineHeight: 1.35 }}>
-        {t("self_preview_nogamemode")}
-      </div>
-    );
-  }
-  return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
+  if (giveUp && feederUp === false) return <Notice tone="warn">{t("self_preview_nogamemode")}</Notice>;
+  return <Notice>{t("self_preview_wait")}</Notice>;
 }
 
 // L'aperçu du Go Live avait été RETIRÉ le 01/09/2026, le temps de comprendre
@@ -258,36 +244,29 @@ function GoLivePreviewTile() {
       <div style={{ marginTop: 6 }}>
         <img src={"data:image/jpeg;base64," + snap}
              style={{ width: "100%", borderRadius: 6, display: "block" }} />
-        <Focusable flow-children="row" style={{ display: "flex", marginTop: 4 }}>
-          <Btn style={{ flex: 1, minWidth: 0, fontSize: 11, padding: "4px 8px" }}
-               disabled={busy} onClick={refresh}>
+        <div style={{ marginTop: 4 }}>
+          <InlineBtn disabled={busy} onClick={refresh}>
             {busy ? t("self_preview_refreshing") : t("self_preview_refresh")}
-          </Btn>
-        </Focusable>
+          </InlineBtn>
+        </div>
       </div>
     );
   }
   if (hint) {
     const msg = hint.code ? t("hint_" + hint.code) : "";
     return (
-      <div style={{ fontSize: 10, color: "#ffb74d", padding: "6px 4px", lineHeight: 1.35 }}>
+      <Notice tone="warn">
         {msg && msg !== "hint_" + hint.code ? msg : t("self_preview_failed")}
         {hint.cmd && (
           <code style={{ display: "block", marginTop: 4, userSelect: "text", wordBreak: "break-all" }}>
             {hint.cmd}
           </code>
         )}
-      </div>
+      </Notice>
     );
   }
-  if (giveUp) {
-    return (
-      <div style={{ fontSize: 10, color: "#ffb74d", padding: "6px 4px", lineHeight: 1.35 }}>
-        {t("self_preview_failed")}
-      </div>
-    );
-  }
-  return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
+  if (giveUp) return <Notice tone="warn">{t("self_preview_failed")}</Notice>;
+  return <Notice>{t("self_preview_wait")}</Notice>;
 }
 
 // Réagit aux changements d'état du partage d'écran (on/off).
@@ -342,6 +321,7 @@ function useInCall(): boolean {
 // Styled.tsx) pour rester dans le même langage visuel que le reste du plugin.
 function SoundTile({ sound, playing, onClick }: { sound: SoundboardSound; playing: boolean; onClick: () => void }) {
   const [focused, setFocused] = useState(false);
+  const { px } = useQamUi();
   return (
     <Btn
       // PAS de `disabled` : un DialogButton désactivé sort de la navigation
@@ -354,16 +334,16 @@ function SoundTile({ sound, playing, onClick }: { sound: SoundboardSound; playin
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       style={{
-        flex: "1 1 0", minWidth: 0, margin: 0, padding: "6px 4px", minHeight: 0,
-        boxSizing: "border-box", borderRadius: 6,
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-        color: "#fff", fontSize: 10, lineHeight: 1.2,
+        flex: "1 1 0", minWidth: 0, margin: 0, padding: `${px(6)}px ${px(4)}px`, minHeight: px(46),
+        boxSizing: "border-box", borderRadius: px(8), overflow: "visible",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: px(2),
+        color: "#fff", fontSize: px(10), lineHeight: 1.2,
         background: playing ? ACCENT : "rgba(255,255,255,0.06)",
         opacity: playing ? 0.75 : 1,
         ...focusHalo(ACCENT, focused),
       }}
     >
-      <span style={{ fontSize: 16 }}>{sound.emoji || "🔊"}</span>
+      <span style={{ fontSize: px(16) }}>{sound.emoji || "🔊"}</span>
       <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {sound.name}
       </span>
@@ -390,7 +370,6 @@ export const SoundboardPanel = memo(function SoundboardPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const [headerFocused, setHeaderFocused] = useState(false);
 
   const toggle = () => {
     const next = !open;
@@ -445,44 +424,28 @@ export const SoundboardPanel = memo(function SoundboardPanel() {
 
   return (
     <div style={{ marginBottom: 6 }}>
-      <Btn
-        onClick={toggle}
-        onFocus={() => setHeaderFocused(true)}
-        onBlur={() => setHeaderFocused(false)}
-        onGamepadFocus={() => setHeaderFocused(true)}
-        onGamepadBlur={() => setHeaderFocused(false)}
-        style={{
-          width: "100%", padding: "5px 8px", fontSize: 11, minHeight: 0, margin: 0,
-          boxSizing: "border-box", borderRadius: 6, display: "flex", gap: 6, alignItems: "center",
-          color: "#fff", fontWeight: open ? 700 : 400,
-          background: open ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
-          ...focusHalo(ACCENT, headerFocused),
-        }}
-      >
-        <IcSoundboard /><span style={{ flex: 1, textAlign: "left" }}>{t("soundboard_title")}</span>
-        <span style={{ display: "flex", transform: open ? "rotate(180deg)" : "none", transition: "transform .12s ease" }}>
-          <IcChevronDown size={11} />
-        </span>
-      </Btn>
+      <CollapseHeader open={open} icon={<IcSoundboard />} onClick={toggle}>
+        {t("soundboard_title")}
+      </CollapseHeader>
       {open && (
-        <div style={{ marginTop: 4, padding: "6px 6px 2px", borderRadius: 6, background: "rgba(255,255,255,0.03)", display: "flex", flexDirection: "column", gap: 6 }}>
-          {loading && <div style={{ fontSize: 11, opacity: 0.6 }}>{t("loading")}</div>}
-          {error && <div style={{ fontSize: 11, color: "#ff6b6b" }}>{error}</div>}
-          {isEmpty && <div style={{ fontSize: 11, opacity: 0.5 }}>{t("soundboard_empty")}</div>}
+        <CollapseBody>
+          {loading && <Notice>{t("loading")}</Notice>}
+          {error && <Notice tone="error">{error}</Notice>}
+          {isEmpty && <Notice>{t("soundboard_empty")}</Notice>}
           {data && data.default.length > 0 && <Grid sounds={data.default} guildId={null} />}
           {data?.guild && data.guild.sounds.length > 0 && (
             <div>
-              <div style={{ fontSize: 10, opacity: 0.5, marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.3 }}>{data.guild.guildName}</div>
+              <SectionLabel>{data.guild.guildName}</SectionLabel>
               <Grid sounds={data.guild.sounds} guildId={null} />
             </div>
           )}
           {data?.everywhere.map((g) => (
             <div key={g.guildId}>
-              <div style={{ fontSize: 10, opacity: 0.5, marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.3 }}>{g.guildName}</div>
+              <SectionLabel>{g.guildName}</SectionLabel>
               <Grid sounds={g.sounds} guildId={g.guildId} />
             </div>
           ))}
-        </div>
+        </CollapseBody>
       )}
     </div>
   );
@@ -538,9 +501,6 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       .catch(() => {});
     return () => { alive = false; };
   }, [user.id]);
-  // Halo de focus des boutons (texte blanc + anneau, pas d'inversion de couleur).
-  const [muteFocused, setMuteFocused] = useState<boolean>(false);
-  const [videoFocused, setVideoFocused] = useState<boolean>(false);
 
   const onVolumeChange = async (val: number) => {
     setVolume(val);
@@ -583,8 +543,13 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
 
   const { px } = useQamUi();
   const av = px(32);
+  // Le bloc d'un participant est une Card comme les autres surfaces du plugin
+  // (#45) : même arrondi, même liseré. Il se teinte de vert PENDANT la prise de
+  // parole — le halo de l'avatar disait déjà qui parle, la carte le dit sans
+  // qu'on ait à viser l'avatar sur un écran de télé.
   return (
-    <li style={{ listStyle: "none", marginBottom: px(8), padding: `${px(8)}px 0`, background: "rgba(255,255,255,0.04)", borderRadius: px(6), overflow: "visible", boxSizing: "border-box", width: "100%", maxWidth: "100%" }}>
+    <li style={{ listStyle: "none", marginBottom: px(6), width: "100%", maxWidth: "100%" }}>
+    <Card tint={ONLINE} active={!!speaking} style={{ padding: `${px(8)}px 0` }}>
       <div style={{ display: "flex", alignItems: "center", gap: px(8), padding: `0 ${px(8)}px` }}>
         <div style={{ position: "relative", flexShrink: 0, width: av, height: av }}>
           <img
@@ -617,8 +582,8 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
         </div>
         <span style={{ flex: 1, fontSize: px(13), opacity: muted ? 0.45 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {user?.username}
-          {user?.is_live && <span style={{ marginLeft: 4, color: "#ed4245", fontSize: 9 }}>● LIVE</span>}
         </span>
+        {user?.is_live && <Pill color={DANGER}>LIVE</Pill>}
         {/* Toujours monté (jamais ajouté/retiré du DOM) : la pastille "en train
             de parler" ne fait que changer d'opacité. Un ajout/retrait de nœud
             ici, dans une rangée qui bouge à CHAQUE prise de parole, faisait
@@ -626,8 +591,8 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
             "scroll suit le focus" de la GamepadUI, déjà vu sur TextChat #17) —
             garder une géométrie fixe évite le reflow qui le déclenche. */}
         <div style={{
-          width: 8, height: 8, borderRadius: "50%", background: "#23a55a", flexShrink: 0,
-          boxShadow: "0 0 6px 1px rgba(35,165,90,0.8)",
+          width: px(8), height: px(8), borderRadius: "50%", background: ONLINE, flexShrink: 0,
+          boxShadow: `0 0 ${px(6)}px 1px ${hexA(ONLINE, 0.8)}`,
           opacity: speaking ? 1 : 0,
           transition: "opacity 0.08s ease-out",
         }} />
@@ -635,23 +600,17 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {/* Aperçu de MON partage d'écran (mode jeu), juste sous mon pseudo, pour
           voir ce que les autres voient. */}
       {isSelf && screenCamOn && (
-        <div style={{ padding: "2px 8px 0" }}>
-          <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}><IcController /> {t("self_preview_label")}</div>
+        <div style={{ padding: `${px(4)}px ${px(8)}px 0` }}>
+          <SectionLabel><IcController /> {t("self_preview_label")}</SectionLabel>
           <SelfPreviewTile />
         </div>
       )}
       {/* Aperçu de MON Go Live natif (portail) — même idée, snapshots backend.
           Pas quand le partage mode jeu tourne : SelfPreviewTile s'en charge. */}
       {isSelf && !screenCamOn && user?.is_live && (
-        <div style={{ padding: "2px 8px 0" }}>
-          <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}><IcMonitor /> {t("self_preview_label")}</div>
-          {GOLIVE_PREVIEW_ENABLED ? (
-            <GoLivePreviewTile />
-          ) : (
-            <div style={{ fontSize: 10, opacity: 0.75, padding: "2px 0 4px", lineHeight: 1.35 }}>
-              {t("self_preview_removed")}
-            </div>
-          )}
+        <div style={{ padding: `${px(4)}px ${px(8)}px 0` }}>
+          <SectionLabel><IcMonitor /> {t("self_preview_label")}</SectionLabel>
+          {GOLIVE_PREVIEW_ENABLED ? <GoLivePreviewTile /> : <Notice>{t("self_preview_removed")}</Notice>}
         </div>
       )}
 
@@ -669,23 +628,10 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {/* Mute LOCAL : bouton pleine largeur (sélectionnable manette) collé sous la
           barre voix. C'est côté plugin-user seulement (l'autre ne le sait pas). */}
       {!isSelf && (
-        <div style={{ padding: "2px 6px 0", boxSizing: "border-box", width: "100%" }}>
-          <Btn
-            onClick={toggleLocalMute}
-            onFocus={() => setMuteFocused(true)}
-            onBlur={() => setMuteFocused(false)}
-            onGamepadFocus={() => setMuteFocused(true)}
-            onGamepadBlur={() => setMuteFocused(false)}
-            style={{
-              width: "100%", margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600,
-              borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              color: "#fff",
-              background: localMuted ? DANGER : (muteFocused ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.08)"),
-              ...focusHalo(localMuted ? DANGER : ACCENT, muteFocused),
-            }}
-          >
+        <div style={{ padding: `${px(4)}px ${px(8)}px 0`, boxSizing: "border-box", width: "100%" }}>
+          <InlineBtn on={localMuted} color={DANGER} onClick={toggleLocalMute}>
             {localMuted ? <><IcMicMute /> {t("unmute_voice")}</> : <><IcMic /> {t("mute_voice")}</>}
-          </Btn>
+          </InlineBtn>
         </div>
       )}
 
@@ -720,24 +666,11 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
 
       {/* Live (Go Live) OU caméra : bouton Voir + vidéo relayée dans le bloc. */}
       {(user?.is_live || user?.is_video) && !isSelf && (
-        <div style={{ padding: "2px 8px 0" }}>
-          <Btn
-            onClick={() => (watching ? stopVideo(user.id) : watchVideo(user.id))}
-            onFocus={() => setVideoFocused(true)}
-            onBlur={() => setVideoFocused(false)}
-            onGamepadFocus={() => setVideoFocused(true)}
-            onGamepadBlur={() => setVideoFocused(false)}
-            style={{
-              width: "100%", margin: 0, padding: "5px 0", minHeight: 0, fontSize: 11, fontWeight: 600,
-              borderRadius: 6,
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              color: "#fff",
-              background: watching ? DANGER : (videoFocused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.45)"),
-              ...focusHalo(watching ? DANGER : ACCENT, videoFocused),
-            }}
-          >
+        <div style={{ padding: `${px(4)}px ${px(8)}px 0` }}>
+          <InlineBtn on={watching} color={DANGER} tone="accent"
+                     onClick={() => (watching ? stopVideo(user.id) : watchVideo(user.id))}>
             {watching ? t("video_stop") : <>{user?.is_live ? <IcMonitor /> : <IcCameraVideo />} {t("video_watch")}</>}
-          </Btn>
+          </InlineBtn>
           {watching && remoteVideo && (
             <MultiVideoTiles
               userId={user.id}
@@ -750,11 +683,10 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
               }}
             />
           )}
-          {watching && !remoteVideo && (
-            <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("video_connecting")}</div>
-          )}
+          {watching && !remoteVideo && <Notice>{t("video_connecting")}</Notice>}
         </div>
       )}
+    </Card>
     </li>
   );
 }
@@ -812,11 +744,11 @@ function OverlayMenu() {
 
   return (
     <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>
-      <ActionCard onClick={() => setOpen((v) => !v)} center>
-        <IcController /> {t("overlay_menu")} {open ? "▴" : "▾"}
-      </ActionCard>
+      <CollapseHeader open={open} icon={<IcController />} onClick={() => setOpen((v) => !v)}>
+        {t("overlay_menu")}
+      </CollapseHeader>
       {open && (
-        <div style={{ padding: "2px 2px 0" }}>
+        <CollapseBody>
           {/* ① Overlay vocal */}
           <ToggleFieldAny
             label={t("overlay_voice")}
@@ -854,9 +786,7 @@ function OverlayMenu() {
           {/* ② Overlay POV vidéo — masqué là où il ne peut pas fonctionner,
               avec la raison, plutôt qu'un interrupteur qui retombe tout seul. */}
           {!povSupported ? (
-            <div style={{ padding: "6px 8px", fontSize: 12, opacity: 0.6 }}>
-              {t("overlay_pov")} — {t("overlay_pov_unsupported")}
-            </div>
+            <Notice>{t("overlay_pov")} — {t("overlay_pov_unsupported")}</Notice>
           ) : (
             <ToggleFieldAny
               label={t("overlay_pov")}
@@ -893,7 +823,7 @@ function OverlayMenu() {
               />
             </>
           )}
-        </div>
+        </CollapseBody>
       )}
     </div>
   );

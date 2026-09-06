@@ -7,15 +7,14 @@
 //
 // Volontairement limité à « transférer » : pas de commentaire, pas d'édition.
 // Une action, pas un éditeur — le QAM n'est pas la place pour rédiger.
-import { DialogButton, Focusable, ModalRoot, showModal } from "@decky/ui";
+import { Focusable, ModalRoot, showModal } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
-import { ACCENT, focusHalo, useFillHeight } from "./Styled";
+import { ACCENT, focusHalo, useFillHeight, InlineBtn, Notice } from "./Styled";
 import { IcChat, IcHome, IcUser } from "./Icons";
 
 const ModalRootAny = ModalRoot as any;
-const Btn = DialogButton as any;
 
 type Target = { id: string; label: string; kind: "dm" | "text"; guild?: string };
 
@@ -118,12 +117,12 @@ export function ForwardModal({ payload, closeModal }: { payload: ForwardPayload;
         {done ? (
           <div style={{ fontSize: 13, color: "#3ba55c" }}>{t("forward_done")} {done}</div>
         ) : err ? (
-          <div style={{ fontSize: 12, color: "#ffcc66", whiteSpace: "pre-wrap" }}>{err}</div>
+          <div style={{ whiteSpace: "pre-wrap" }}><Notice tone="warn">{err}</Notice></div>
         ) : null}
         {targets === null ? (
-          <div style={{ fontSize: 12, opacity: 0.6 }}>{t("forward_loading")}</div>
+          <Notice>{t("forward_loading")}</Notice>
         ) : targets.length === 0 ? (
-          <div style={{ fontSize: 12, opacity: 0.6 }}>{t("forward_no_target")}</div>
+          <Notice>{t("forward_no_target")}</Notice>
         ) : (
           <Focusable ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
             {targets.map((tg) => (
@@ -131,7 +130,9 @@ export function ForwardModal({ payload, closeModal }: { payload: ForwardPayload;
             ))}
           </Focusable>
         )}
-        <Btn style={{ marginTop: 4 }} onClick={() => closeModal?.()}>{t("forward_close")}</Btn>
+        <div style={{ marginTop: 4 }}>
+          <InlineBtn big onClick={() => closeModal?.()}>{t("forward_close")}</InlineBtn>
+        </div>
       </div>
     </ModalRootAny>
   );

@@ -5,6 +5,7 @@
 import { DialogButton } from "@decky/ui";
 import { useCallback, useState } from "react";
 import { useQamUi } from "../qamUi";
+import { IcChevronDown } from "./Icons";
 
 const Btn = DialogButton as any;
 
@@ -213,7 +214,7 @@ export function IconBtn({ color, active, disabled, title, onClick, children }: a
       style={{
         ...toolbarBtnStyle(px),
         marginRight: 0,
-        display: "flex", alignItems: "center", justifyContent: "center", position: "relative",
+        display: "flex", alignItems: "center", justifyContent: "center",
         borderRadius: px(6), color: "#fff",
         background: active ? c : "rgba(255,255,255,0.06)",
         opacity: disabled ? 0.5 : 1,
@@ -222,5 +223,267 @@ export function IconBtn({ color, active, disabled, title, onClick, children }: a
     >
       {children}
     </Btn>
+  );
+}
+
+// ── Vocabulaire commun des listes et des blocs ──────────────────────────────
+// #45 (Havok027) : « applique l'interface vocale comme l'interface textuelle,
+// à TOUS les menus ». La 1.31 avait redessiné la liste des serveurs du vocal
+// (cartes arrondies + halo partagé + pastilles + rail d'accent) mais ce
+// traitement vivait dans ChannelBrowser, en un seul exemplaire, et le reste du
+// plugin (MP, liste de serveurs du textuel, participants, sélecteurs, modales)
+// gardait le focus natif de Steam et des tailles en dur. On énonce donc le
+// langage ICI, une fois, et chaque écran s'y branche — sinon la prochaine vue
+// dépareillera exactement de la même façon.
+
+// Pastille teintée : un compte, un état (« LIVE », « en appel », 3 actifs).
+// Fond = la couleur à 16 %, texte = la couleur pleine. Se lit d'un coup d'œil
+// sans entrer en concurrence avec le libellé voisin, qui est en blanc.
+export function Pill({ color, children, title }: any) {
+  const { px } = useQamUi();
+  const c = color || ONLINE;
+  return (
+    <span
+      title={title}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: px(3), flexShrink: 0,
+        fontSize: px(10), fontWeight: 700, lineHeight: 1.4, color: c,
+        background: hexA(c, 0.16), borderRadius: px(8),
+        padding: `${px(1)}px ${px(6)}px`,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+// `#rrggbb` + alpha → `rgba(...)`. Les couleurs sémantiques sont des hex
+// (ACCENT/DANGER/ONLINE) et les fonds teintés en ont besoin en rgba.
+export function hexA(hex: string, a: number): string {
+  const h = (hex || "").replace("#", "");
+  if (h.length !== 6) return hex;
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+// Surface d'un bloc (une personne dans le vocal, une conversation, un
+// événement). Même arrondi et même fond que les rangées de serveur, plus un
+// liseré : sans lui, deux blocs collés se lisent comme un seul pavé gris.
+export function Card({ tint, active, children, style }: any) {
+  const { px } = useQamUi();
+  const c = tint || ACCENT;
+  return (
+    <div
+      style={{
+        borderRadius: px(10), boxSizing: "border-box", width: "100%", maxWidth: "100%",
+        overflow: "visible",
+        background: active ? hexA(c, 0.14) : "rgba(255,255,255,0.05)",
+        border: `1px solid ${active ? hexA(c, 0.4) : "rgba(255,255,255,0.06)"}`,
+        transition: "background .12s ease, border-color .12s ease",
+        ...(style || {}),
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Rail d'accent vertical : rattache un contenu à CE qui le précède (salons
+// d'un serveur déplié, aperçu sous un pseudo). Sans lui, dès qu'on a fait
+// défiler un peu, une liste imbriquée se confond avec la liste parente.
+export function Rail({ children, color }: any) {
+  const { px } = useQamUi();
+  return (
+    <div style={{
+      marginLeft: px(13), marginTop: px(3), paddingLeft: px(9),
+      borderLeft: `${px(2)}px solid ${hexA(color || ACCENT, 0.35)}`,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// Rangée cliquable pleine largeur : LE motif de toutes les listes du plugin
+// (serveur, salon, conversation, événement, capture, clip). `active` peint
+// l'accent en fond, le focus manette reprend le halo commun. C'est la
+// généralisation de GuildRowBtn, qui était le seul à l'avoir.
+export function RowBtn({
+  active, color, disabled, sub, flex, gap, minHeight, radius, onClick, title, children,
+}: any) {
+  const [focused, setFocused] = useState(false);
+  const { px } = useQamUi();
+  const c = color || ACCENT;
+  return (
+    <Btn
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        display: "flex", alignItems: "center", gap: px(gap ?? (sub ? 7 : 9)),
+        // `flex` : la rangée partage sa ligne avec des puces (mode réorganisation).
+        width: flex ? undefined : "100%", flex: flex ? 1 : undefined,
+        minWidth: 0, margin: 0, boxSizing: "border-box",
+        padding: sub ? `${px(5)}px ${px(9)}px` : `${px(6)}px ${px(9)}px`,
+        minHeight: px(minHeight ?? (sub ? 32 : 42)),
+        borderRadius: px(radius ?? (sub ? 8 : 10)),
+        overflow: "visible", lineHeight: 1.2, color: "#fff",
+        fontSize: px(sub ? 12 : 13),
+        opacity: disabled ? 0.5 : 1,
+        background: active
+          ? c
+          : focused ? (sub ? hexA(c, 0.7) : hexA(c, 0.85)) : "rgba(255,255,255,0.05)",
+        ...focusHalo(c, focused, sub ? 1.01 : 1.02),
+      }}
+    >
+      {children}
+    </Btn>
+  );
+}
+
+// Bouton d'action compact DANS un bloc (couper le son de quelqu'un, regarder
+// son partage, plein écran d'une tuile). Plus discret qu'une ActionCard, même
+// halo. `on` = état enclenché, peint en couleur pleine.
+export function InlineBtn({ on, color, tone, big, disabled, onClick, title, children }: any) {
+  const [focused, setFocused] = useState(false);
+  const { px } = useQamUi();
+  const c = color || ACCENT;
+  const rest = tone === "accent" ? hexA(ACCENT, 0.45) : "rgba(255,255,255,0.08)";
+  return (
+    <Btn
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        width: "100%", margin: 0, padding: `${px(big ? 7 : 5)}px 0`, minHeight: px(big ? 34 : 28),
+        boxSizing: "border-box", borderRadius: px(big ? 10 : 8),
+        display: "flex", alignItems: "center", justifyContent: "center", gap: px(big ? 8 : 6),
+        fontSize: px(big ? 12 : 11), fontWeight: 600, lineHeight: 1.2, color: "#fff",
+        overflow: "visible", opacity: disabled ? 0.5 : 1,
+        background: on ? c : focused ? hexA(ACCENT, 0.85) : rest,
+        ...focusHalo(on ? c : ACCENT, focused),
+      }}
+    >
+      {children}
+    </Btn>
+  );
+}
+
+// Puce d'action minuscule alignée à droite d'un titre (rafraîchir, replier).
+// Reprend le halo au lieu du focus natif, qui posait un fond clair et du texte
+// sombre sur ces boutons-là aussi.
+export function MiniBtn({ onClick, disabled, title, children }: any) {
+  const [focused, setFocused] = useState(false);
+  const { px } = useQamUi();
+  return (
+    <Btn
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        margin: 0, padding: `${px(3)}px ${px(9)}px`, minHeight: px(26), minWidth: 0,
+        boxSizing: "border-box", borderRadius: px(8), fontSize: px(11), lineHeight: 1.2,
+        color: "#fff", overflow: "visible", opacity: disabled ? 0.5 : 1,
+        display: "flex", alignItems: "center", gap: px(5),
+        background: focused ? hexA(ACCENT, 0.85) : "rgba(255,255,255,0.06)",
+        ...focusHalo(ACCENT, focused, 1.06),
+      }}
+    >
+      {children}
+    </Btn>
+  );
+}
+
+// Titre de section : même graisse et même discrétion partout (aperçu local,
+// « salons », « à venir »). Sans ça chaque écran inventait sa propre étiquette.
+export function SectionLabel({ children, style }: any) {
+  const { px } = useQamUi();
+  return (
+    <div style={{
+      fontSize: px(10), fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase",
+      opacity: 0.55, marginBottom: px(3), display: "flex", alignItems: "center", gap: px(5),
+      ...(style || {}),
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// Message d'état d'une liste (chargement, vide, erreur) — trois écrans les
+// écrivaient avec trois tailles et trois opacités différentes.
+export function Notice({ tone, children }: any) {
+  const { px } = useQamUi();
+  const color = tone === "error" ? "#ff6b6b" : tone === "warn" ? "#ffb74d" : "#fff";
+  return (
+    <div style={{
+      padding: `${px(8)}px ${px(6)}px`, fontSize: px(12), lineHeight: 1.35,
+      color, opacity: tone ? 0.95 : 0.6,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// En-tête de section repliable (soundboard, overlays, événements). Trois
+// écrans dessinaient le leur, avec trois tailles et trois chevrons différents
+// (dont deux caractères « ▴/▾ ») — c'est exactement ce que #45 reproche.
+export function CollapseHeader({ open, icon, right, onClick, children }: any) {
+  const [focused, setFocused] = useState(false);
+  const { px } = useQamUi();
+  return (
+    <Btn
+      onClick={onClick}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        width: "100%", padding: `${px(6)}px ${px(9)}px`, fontSize: px(12),
+        minHeight: px(34), margin: 0, boxSizing: "border-box", borderRadius: px(10),
+        display: "flex", gap: px(7), alignItems: "center", overflow: "visible",
+        color: "#fff", fontWeight: open ? 700 : 500, lineHeight: 1.2,
+        background: open ? hexA(ACCENT, 0.28) : "rgba(255,255,255,0.05)",
+        border: `1px solid ${open ? hexA(ACCENT, 0.4) : "rgba(255,255,255,0.06)"}`,
+        ...focusHalo(ACCENT, focused),
+      }}
+    >
+      {icon}
+      <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {children}
+      </span>
+      {right}
+      <span style={{
+        display: "flex", flexShrink: 0, opacity: 0.6,
+        transform: open ? "rotate(180deg)" : "none", transition: "transform .12s ease",
+      }}>
+        <IcChevronDown size={px(12)} />
+      </span>
+    </Btn>
+  );
+}
+
+// Corps d'une section dépliée : légèrement en retrait du fond, arrondi comme
+// son en-tête, pour qu'on voie où la section commence et où elle finit.
+export function CollapseBody({ children }: any) {
+  const { px } = useQamUi();
+  return (
+    <div style={{
+      marginTop: px(4), padding: `${px(6)}px ${px(6)}px ${px(2)}px`,
+      borderRadius: px(10), background: "rgba(255,255,255,0.03)",
+      display: "flex", flexDirection: "column", gap: px(6),
+    }}>
+      {children}
+    </div>
   );
 }

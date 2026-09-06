@@ -29,6 +29,7 @@ export function SendBtn({ disabled, onClick, children }: { disabled?: boolean; o
       style={{
         flex: "1 1 0", minWidth: 0, padding: "6px 0", fontSize: 13, minHeight: 0,
         color: "#fff", textAlign: "center", boxSizing: "border-box",
+        borderRadius: 8, margin: 0, overflow: "visible",
         background: focused ? "rgba(88,101,242,0.85)" : "rgba(255,255,255,0.08)",
         opacity: disabled ? 0.5 : 1,
         ...focusHalo(ACCENT, focused),

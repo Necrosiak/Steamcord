@@ -13,7 +13,7 @@ export function DisconnectButton() {
   const style = {
     ...toolbarBtnStyle(px),
     display: "flex", alignItems: "center", justifyContent: "center",
-    borderRadius: 6, color: "#fff",
+    borderRadius: px(6), color: "#fff",
     background: "rgba(255,255,255,0.06)",
     ...focusHalo(DANGER, focused, 1.06),
   };

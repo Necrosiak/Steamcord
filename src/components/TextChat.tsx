@@ -2,12 +2,12 @@ import { DialogButton, Focusable, NavEntryPositionPreferences, showModal, TextFi
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
-import { useFillHeight, focusHalo, ACCENT } from "./Styled";
+import { useFillHeight, focusHalo, ACCENT, MiniBtn, Notice, Rail, RowBtn } from "./Styled";
 import { useQamUi } from "../qamUi";
 import { useBackHandler } from "../backNav";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
-import { TinyIconBtn } from "./ChannelBrowser";
+import { GuildIcon, TinyIconBtn } from "./ChannelBrowser";
 import { openMediaLightbox, saveAttachment, humanSize } from "./MediaLightbox";
 import { openForward } from "./ForwardModal";
 
@@ -1102,16 +1102,18 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   if (source === "dms") {
     return (
       <div>
-        {error && <div style={{ padding: 8, color: "#ff6b6b", fontSize: 11 }}>{error}</div>}
-        {dms === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading")}</div>}
-        {dms && dms.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_dms")}</div>}
+        {error && <Notice tone="error">{error}</Notice>}
+        {dms === null && <Notice>{t("loading")}</Notice>}
+        {dms && dms.length === 0 && <Notice>{t("no_dms")}</Notice>}
         {dms && dms.length > 0 && (
           <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", marginTop: 4, WebkitOverflowScrolling: "touch" } as any}>
             {dms.map((ch) => (
-              <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: `${px(8)}px ${px(8)}px`, marginBottom: 3, minHeight: px(40) }}>
-                <DMAvatar ch={ch} />
-                <span style={{ flex: 1, textAlign: "left", fontSize: px(14), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
-              </Btn>
+              <div key={ch.id} style={{ marginBottom: px(4) }}>
+                <RowBtn onClick={() => openChannel(ch.id, ch.name, true)}>
+                  <DMAvatar ch={ch} />
+                  <span style={{ flex: 1, textAlign: "left", fontSize: px(13), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
+                </RowBtn>
+              </div>
             ))}
           </div>
         )}
@@ -1127,21 +1129,20 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   const visibleGuilds = (guilds ?? []).filter(g => showHidden || !g.hidden);
   return (
     <div>
-      {error && <div style={{ padding: 8, color: "#ff6b6b", fontSize: 11 }}>{error}</div>}
-      {guilds === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading_servers")}</div>}
-      {guilds && guilds.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_channels")}</div>}
+      {error && <Notice tone="error">{error}</Notice>}
+      {guilds === null && <Notice>{t("loading_servers")}</Notice>}
+      {guilds && guilds.length === 0 && <Notice>{t("no_channels")}</Notice>}
       {guilds && guilds.length > 0 && (
         <>
           <Focusable flow-children="row" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, marginBottom: 4 }}>
             {(showHidden || hiddenCount > 0) && (
-              <Btn
+              <MiniBtn
                 onClick={() => setShowHidden(s => !s)}
                 title={showHidden ? t("servers_show_visible") : t("servers_hidden_count", { count: hiddenCount })}
-                style={{ padding: "2px 6px", fontSize: 10, minHeight: 0, display: "flex", alignItems: "center", gap: 3 }}
               >
                 {showHidden ? <IcEyeSlash /> : <IcEye />}
                 {!showHidden && <span>{hiddenCount}</span>}
-              </Btn>
+              </MiniBtn>
             )}
             <TinyIconBtn
               onClick={() => setEditMode(m => !m)}
@@ -1152,20 +1153,23 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
           </Focusable>
           <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", marginTop: 4, WebkitOverflowScrolling: "touch" } as any}>
             {visibleGuilds.map((guild, i) => {
+              // Exactement la rangée de l'onglet vocal (RowBtn + GuildIcon) :
+              // c'était la MÊME liste, dessinée de deux façons différentes
+              // selon l'onglet — le reproche exact de #45.
+              const open = expanded === guild.id;
               const rowBtn = (flex: boolean) => (
-                <Btn
-                  onClick={() => setExpanded(expanded === guild.id ? null : guild.id)}
-                  style={{ display: "flex", alignItems: "center", gap: 7, width: flex ? undefined : "100%", flex: flex ? 1 : undefined, minWidth: 0, padding: `${px(8)}px ${px(8)}px`, minHeight: px(40) }}
-                >
-                  {guild.icon
-                    ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=64`} width={px(22)} height={px(22)} style={{ borderRadius: "50%", flexShrink: 0, objectFit: "cover" }} />
-                    : <div style={{ width: px(22), height: px(22), borderRadius: "50%", background: "#5865f2", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: px(11), color: "#fff" }}>{guild.name[0]}</div>}
-                  <span style={{ flex: 1, textAlign: "left", fontSize: px(14), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
-                  <span style={{ opacity: 0.4, fontSize: px(12) }}>{expanded === guild.id ? "▲" : "▼"}</span>
-                </Btn>
+                <RowBtn active={open} flex={flex}
+                        onClick={() => setExpanded(open ? null : guild.id)}>
+                  <GuildIcon id={guild.id} icon={guild.icon} name={guild.name} open={open} />
+                  <span style={{ flex: 1, textAlign: "left", fontSize: px(13), fontWeight: open ? 600 : 500,
+                                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
+                  <span style={{ opacity: 0.45, flexShrink: 0, display: "flex" }}>
+                    {open ? <IcChevronUp /> : <IcChevronDown />}
+                  </span>
+                </RowBtn>
               );
               return (
-                <div key={guild.id} style={{ marginBottom: 3, opacity: guild.hidden ? 0.5 : 1 }}>
+                <div key={guild.id} style={{ marginBottom: px(5), opacity: guild.hidden ? 0.5 : 1 }}>
                   {(editMode || showHidden) ? (
                     <Focusable flow-children="row" style={{ display: "flex", alignItems: "center", gap: 3 }}>
                       {rowBtn(true)}
@@ -1180,15 +1184,17 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
                       </TinyIconBtn>
                     </Focusable>
                   ) : rowBtn(false)}
-                  {expanded === guild.id && (
-                    <div style={{ paddingLeft: 6, marginTop: 2 }}>
+                  {open && (
+                    <Rail>
                       {guild.channels.map((ch) => (
-                        <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, false)} style={{ width: "100%", padding: `${px(6)}px ${px(8)}px`, marginBottom: 2, fontSize: px(13), display: "flex", gap: 6, minHeight: px(34) }}>
-                          <span style={{ opacity: 0.6, fontSize: 10 }}>#</span>
-                          <span style={{ flex: 1, textAlign: "left" }}>{ch.name}</span>
-                        </Btn>
+                        <div key={ch.id} style={{ marginTop: px(2) }}>
+                          <RowBtn sub onClick={() => openChannel(ch.id, ch.name, false)}>
+                            <span style={{ opacity: 0.55, flexShrink: 0, fontWeight: 700 }}>#</span>
+                            <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
+                          </RowBtn>
+                        </div>
                       ))}
-                    </div>
+                    </Rail>
                   )}
                 </div>
               );

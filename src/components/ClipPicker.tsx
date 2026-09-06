@@ -110,8 +110,10 @@ function PagerBtn({ label, title, disabled, onClick }: {
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       style={{
-        minWidth: 44, padding: "2px 10px", minHeight: 0, borderRadius: 6,
+        minWidth: 44, padding: "2px 10px", minHeight: 0, borderRadius: 8, margin: 0,
         fontSize: 18, lineHeight: "24px", opacity: disabled ? 0.35 : 1,
+        color: "#fff", overflow: "visible",
+        background: focused ? "rgba(88,101,242,0.85)" : "rgba(255,255,255,0.06)",
         ...focusHalo(ACCENT, focused),
       }}
     >{label}</Btn>
@@ -136,7 +138,7 @@ function ClipPickerModal({ channelId, closeModal }: { channelId: string; closeMo
     setBusy(true);
     setStatus(c.will_convert ? t("clip_converting") : t("clip_sending"));
     let ok = false;
-    try { ok = !!(await call("send_video", channelId, c.token)); } catch (_) { ok = false; }
+    try { ok = !!(await call<[string, string], boolean>("send_video", channelId, c.token)); } catch (_) { ok = false; }
     if (ok) { closeModal?.(); return; }
     setBusy(false);
     setStatus(t("clip_failed"));

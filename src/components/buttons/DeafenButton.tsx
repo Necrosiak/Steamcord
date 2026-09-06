@@ -16,8 +16,8 @@ export function DeafenButton() {
     : <FaHeadphonesAlt size={px(20)} />;
   const style = {
     ...toolbarBtnStyle(px),
-    display: "flex", alignItems: "center", justifyContent: "center", position: "relative" as const,
-    borderRadius: 6, color: "#fff",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    borderRadius: px(6), color: "#fff",
     background: deafened ? DANGER : "rgba(255,255,255,0.06)",
     ...focusHalo(DANGER, focused, 1.06),
   };

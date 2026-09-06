@@ -1,4 +1,3 @@
-import { DialogButton } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaGamepad, FaStop } from "react-icons/fa";
@@ -6,9 +5,8 @@ import { call } from "@decky/api";
 import { errText, t } from "../../i18n";
 import { isScreenCamOn, setScreenCamOn, subscribeScreenCam } from "../../screenCam";
 import { notify } from "../../notify";
-import { focusHalo, ACCENT, DANGER } from "../Styled";
+import { DANGER, InlineBtn, Notice } from "../Styled";
 
-const Btn = DialogButton as any;
 
 // Partage d'écran en MODE JEU : gamescope n'a pas de portail → Go Live = écran noir.
 // On capture le node PipeWire gamescope → webcam virtuelle (/dev/video42), utilisée
@@ -21,7 +19,6 @@ export function ScreenCameraButton() {
   const [busy, setBusy] = useState(false);
   // Focus géré nous-mêmes (cf GoLiveButton) : texte blanc forcé + halo, sinon le
   // focus natif rend le texte illisible.
-  const [focused, setFocused] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => subscribeScreenCam(() => setOn(isScreenCamOn())), []);
@@ -75,31 +72,16 @@ export function ScreenCameraButton() {
 
   return (
     <div>
-      <Btn
-        onClick={toggle}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onGamepadFocus={() => setFocused(true)}
-        onGamepadBlur={() => setFocused(false)}
-        style={{
-          width: "100%", margin: 0, padding: "6px 0", minHeight: 0,
-          boxSizing: "border-box",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          fontSize: 12, fontWeight: 600,
-          color: "#fff", borderRadius: 6,
-          background: on ? DANGER : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
-          opacity: busy ? 0.6 : 1,
-          ...focusHalo(on ? DANGER : ACCENT, focused),
-        }}
-      >
+      {/* Bouton d'action commun (#45) : ce bloc etait la 3e copie du meme
+          dessin dans le plugin, avec ses tailles en dur. */}
+      <InlineBtn big on={on} color={DANGER} tone="accent" disabled={busy} onClick={toggle}>
         {on ? <FaStop /> : <FaGamepad />}
         {on ? t("screen_cam_stop") : t("screen_cam_start")}
-      </Btn>
+      </InlineBtn>
       {err && (
-        <div style={{
-          marginTop: 6, fontSize: 11, color: "#ffcc66",
-          whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.35,
-        }}>{err}</div>
+        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          <Notice tone="warn">{err}</Notice>
+        </div>
       )}
     </div>
   );

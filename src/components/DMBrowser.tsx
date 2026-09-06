@@ -1,8 +1,8 @@
-import { DialogButton } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
-import { useFillHeight } from "./Styled";
+import { useFillHeight, Card, InlineBtn, MiniBtn, Notice, Pill, ACCENT, ONLINE } from "./Styled";
+import { useQamUi } from "../qamUi";
 import { IcPhone, IcRefresh } from "./Icons";
 
 interface DMRecipient { id: string; username: string; avatar: string | null; }
@@ -15,36 +15,34 @@ interface DMChannel {
   active_call: boolean;
 }
 
-const Btn = DialogButton as any;
-
+// Avatar d'une conversation. Même géométrie que l'icône de serveur (taille
+// mise à l'échelle du panneau, jamais 24 px en dur) : sur un écran 1440p la
+// liste des MP était deux fois plus petite que celle des serveurs, juste à
+// côté.
 function DMAvatar({ ch }: { ch: DMChannel }) {
+  const { px } = useQamUi();
+  const av = px(26);
+  const common = { width: av, height: av, borderRadius: "50%", flexShrink: 0, objectFit: "cover" as const };
   if (ch.type === 3 && ch.icon) {
-    return (
-      <img
-        src={`https://cdn.discordapp.com/channel-icons/${ch.id}/${ch.icon}.webp?size=32`}
-        width={24} height={24}
-        style={{ borderRadius: "50%", flexShrink: 0 }}
-      />
-    );
+    return <img src={`https://cdn.discordapp.com/channel-icons/${ch.id}/${ch.icon}.webp?size=64`}
+                width={av} height={av} style={common} />;
   }
   if (ch.recipients.length >= 1) {
     const r = ch.recipients[0];
     return (
       <img
         src={r.avatar
-          ? `https://cdn.discordapp.com/avatars/${r.id}/${r.avatar}.webp?size=32`
+          ? `https://cdn.discordapp.com/avatars/${r.id}/${r.avatar}.webp?size=64`
           : `https://cdn.discordapp.com/embed/avatars/0.png`}
-        width={24} height={24}
-        style={{ borderRadius: "50%", flexShrink: 0 }}
+        width={av} height={av} style={common}
       />
     );
   }
   return (
     <div style={{
-      width: 24, height: 24, borderRadius: "50%",
-      background: "#5865f2", flexShrink: 0,
+      ...common, background: ACCENT,
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 10, color: "#fff"
+      fontSize: px(12), fontWeight: 700, color: "#fff",
     }}>
       {ch.name[0]?.toUpperCase()}
     </div>
@@ -52,6 +50,7 @@ function DMAvatar({ ch }: { ch: DMChannel }) {
 }
 
 function DMRow({ ch }: { ch: DMChannel }) {
+  const { px } = useQamUi();
   const [busy, setBusy] = useState(false);
 
   const onCall = async () => {
@@ -60,42 +59,35 @@ function DMRow({ ch }: { ch: DMChannel }) {
     setTimeout(() => setBusy(false), 2000);
   };
 
+  // Bloc sur la surface commune (Card) : arrondi, liseré, et teinte verte
+  // quand un appel est en cours — le même vocabulaire que les autres listes.
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", gap: 6,
-      padding: "6px 8px", marginBottom: 4, borderRadius: 6, boxSizing: "border-box",
-      background: ch.active_call ? "rgba(35,165,90,0.12)" : "rgba(255,255,255,0.04)",
-      border: ch.active_call ? "1px solid rgba(35,165,90,0.35)" : "1px solid transparent",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <DMAvatar ch={ch} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {ch.name}
+    <div style={{ marginBottom: px(5) }}>
+      <Card tint={ONLINE} active={ch.active_call} style={{ padding: `${px(7)}px ${px(9)}px` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: px(9), minWidth: 0 }}>
+          <DMAvatar ch={ch} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: px(13), fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {ch.name}
+            </div>
+            {ch.type === 3 && ch.recipients.length > 0 && (
+              <div style={{ fontSize: px(10), opacity: 0.5 }}>{t("members", { count: ch.recipients.length + 1 })}</div>
+            )}
           </div>
-          {ch.type === 3 && ch.recipients.length > 0 && (
-            <div style={{ fontSize: 10, opacity: 0.5 }}>{t("members", { count: ch.recipients.length + 1 })}</div>
-          )}
+          {ch.active_call && <Pill color={ONLINE}>{t("in_call")}</Pill>}
         </div>
-        {ch.active_call && (
-          <span style={{ fontSize: 9, color: "#23a55a", flexShrink: 0 }}>● {t("in_call")}</span>
-        )}
-      </div>
-      <Btn
-        onClick={onCall}
-        style={{
-          width: "100%", margin: 0, padding: "4px 0", fontSize: 11,
-          minHeight: 0, minWidth: 0, boxSizing: "border-box",
-          background: ch.active_call ? "#23a55a" : undefined,
-        }}
-      >
-        {busy ? "…" : <><IcPhone /> {ch.active_call ? t("join") : t("call")}</>}
-      </Btn>
+        <div style={{ marginTop: px(6) }}>
+          <InlineBtn on={ch.active_call} color={ONLINE} disabled={busy} onClick={onCall}>
+            {busy ? "…" : <><IcPhone /> {ch.active_call ? t("join") : t("call")}</>}
+          </InlineBtn>
+        </div>
+      </Card>
     </div>
   );
 }
 
 export function DMBrowser() {
+  const { px } = useQamUi();
   const fill = useFillHeight();
   const [channels, setChannels] = useState<DMChannel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,18 +117,17 @@ export function DMBrowser() {
     return () => clearInterval(timer);
   }, []);
 
-  if (error)
-    return <div style={{ padding: 8, color: "#ff6b6b", fontSize: 12 }}>{error}</div>;
+  if (error) return <Notice tone="error">{error}</Notice>;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-        <Btn onClick={refresh} style={{ padding: "2px 8px", fontSize: 10, minHeight: 0 }}><IcRefresh /></Btn>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: px(4) }}>
+        <MiniBtn onClick={refresh}><IcRefresh /></MiniBtn>
       </div>
       {loading && channels.length === 0 ? (
-        <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading")}</div>
+        <Notice>{t("loading")}</Notice>
       ) : channels.length === 0 ? (
-        <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("no_dms")}</div>
+        <Notice>{t("no_dms")}</Notice>
       ) : (
         <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
           {channels.map(ch => <DMRow key={ch.id} ch={ch} />)}

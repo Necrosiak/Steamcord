@@ -17,7 +17,7 @@ export function MuteButton() {
   const style = {
     ...toolbarBtnStyle(px),
     display: "flex", alignItems: "center", justifyContent: "center",
-    borderRadius: 6, color: "#fff",
+    borderRadius: px(6), color: "#fff",
     background: muted ? DANGER : "rgba(255,255,255,0.06)",
     ...focusHalo(DANGER, focused, 1.06),
   };

@@ -11,7 +11,7 @@ import { Focusable, ModalRoot, showModal } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t } from "../i18n";
-import { ACCENT, focusHalo } from "./Styled";
+import { ACCENT, DANGER, focusHalo, Notice, Pill } from "./Styled";
 import { useQamUi } from "../qamUi";
 import { IcChevronDown, IcChevronUp, IcUser } from "./Icons";
 
@@ -100,7 +100,7 @@ function EventDetail({ ev, closeModal }: { ev: SCEvent; closeModal?: () => void 
           />
         ) : null}
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          {live && <span style={{ fontSize: 11, fontWeight: 700, color: "#ed4245" }}>● {t("event_live")}</span>}
+          {live && <Pill color={DANGER}>{t("event_live")}</Pill>}
           <span style={{ fontSize: 17, fontWeight: 700, flex: 1, minWidth: 0 }}>{ev.name}</span>
         </div>
         <div style={{ fontSize: 12, opacity: 0.65 }}>
@@ -119,9 +119,9 @@ function EventDetail({ ev, closeModal }: { ev: SCEvent; closeModal?: () => void 
         </div>
         <div style={{ maxHeight: "24vh", overflowY: "auto" }}>
           {users === null ? (
-            <div style={{ fontSize: 12, opacity: 0.6 }}>{t("forward_loading")}</div>
+            <Notice>{t("forward_loading")}</Notice>
           ) : users.length === 0 ? (
-            <div style={{ fontSize: 12, opacity: 0.6 }}>{t("event_no_participant")}</div>
+            <Notice>{t("event_no_participant")}</Notice>
           ) : users.map((u) => (
             <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
               <img
