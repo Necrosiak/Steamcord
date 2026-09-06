@@ -9,6 +9,7 @@ import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSl
 import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
 import { TinyIconBtn } from "./ChannelBrowser";
 import { openMediaLightbox, saveAttachment, humanSize } from "./MediaLightbox";
+import { openForward } from "./ForwardModal";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -587,6 +588,17 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
           {onReply && !editing && (
             <ChipBtn disabled={busy} onClick={onReply}>{t("reply")}</ChipBtn>
           )}
+          {/* Transférer : le texte ET les liens des pièces jointes partent
+              ensemble — transférer une image sans l'image n'aurait aucun sens. */}
+          <ChipBtn disabled={busy} onClick={() => openForward({
+            author: m.author,
+            content: m.content || "",
+            urls: [
+              ...(m.images || []).map((i) => i.url),
+              ...videos.map((v) => v.url),
+              ...docs.map((d) => d.url),
+            ],
+          })}>{t("forward")}</ChipBtn>
           {isMine && !editing && (
             <>
               <ChipBtn disabled={busy} onClick={() => setEditing(true)}>{t("edit")}</ChipBtn>
