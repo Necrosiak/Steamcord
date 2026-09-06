@@ -371,7 +371,16 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
                 scDiag("[golive] aucune source retenue → repli venmic startSystem");
                 try { await window.VesktopNative?.virtmic?.startSystem?.(scExclude); } catch (_) {}
             }
-            const how = scReactClick(btn);
+            // RE-CHERCHER le bouton : `btn` a été trouvé AVANT de choisir la
+            // source audio. Choisir re-rend la modale, et React peut remplacer
+            // le nœud — on cliquerait alors un bouton détaché de l'arbre vivant,
+            // avec les props d'avant le choix. La modale affichait bien le jeu
+            // et le partage partait quand même sans son (constaté le 06/09,
+            // deux machines : #42 et #44). On reprend donc le bouton frais.
+            const btnFresh = Array.from(dlg.querySelectorAll("button"))
+                .find((b) => !b.disabled && /go live/i.test(b.textContent || "")) || btn;
+            if (btnFresh !== btn) scDiag("[golive] bouton Go Live remplacé après le choix audio — on prend le neuf");
+            const how = scReactClick(btnFresh);
             console.log("[Steamcord] modale Vesktop de partage auto-validée (" + how + ", audio système via venmic)");
             // Même canal de diagnostic que $golive (scdiag y est local) : sans
             // cette ligne, un échec d'auto-validation reste invisible dans le log
