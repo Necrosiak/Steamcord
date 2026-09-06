@@ -153,8 +153,21 @@ const BtnTab = DialogButton as any;
 // Onglet de navigation (Vocal/Conversations, Serveurs/MP). Texte blanc forcé :
 // sinon le focus natif du DialogButton met un fond clair + texte sombre =
 // illisible. On pilote nous-mêmes le fond actif/focus (bleu Discord + anneau).
+//
+// #43 (moi952) : « il m'a fallu du temps pour comprendre que vocal et textuel
+// étaient des onglets » — trois boutons alignés, dont un à peine plus bleu, ne
+// disent pas qu'ils sont exclusifs. On leur donne l'habillage d'onglets : coins
+// arrondis en haut seulement, actif SOULIGNÉ d'un trait d'accent qui rejoint la
+// règle sous la rangée (voir TabRow), inactifs éteints. Le soulignement est un
+// boxShadow interne, donc il faut le composer à la main avec le halo de focus
+// (focusHalo écrit boxShadow) au lieu de laisser le spread l'écraser.
 const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children }: any) => {
   const { px } = useQamUi();
+  const halo = focusHalo(ACCENT, focused);
+  const shadow = [
+    active ? `inset 0 -${px(3)}px 0 ${ACCENT}` : "",
+    focused ? `0 0 0 2px #fff, 0 0 8px 1px ${ACCENT}` : "",
+  ].filter(Boolean).join(", ") || "none";
   return (
   <BtnTab
     onClick={onClick}
@@ -165,18 +178,38 @@ const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children 
     style={{
       flex: "1 1 0", minWidth: 0, margin: 0, padding: `${px(8)}px 0`,
       fontSize: fontSize ?? px(13), minHeight: px(40), boxSizing: "border-box",
-      overflow: "visible", lineHeight: 1.2, color: "#fff",
+      overflow: "visible", lineHeight: 1.2,
+      borderRadius: `${px(6)}px ${px(6)}px 0 0`,
+      color: active || focused ? "#fff" : "rgba(255,255,255,0.62)",
       background: focused
         ? "rgba(88,101,242,0.85)"
-        : active ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
+        : active ? "rgba(88,101,242,0.28)" : "rgba(255,255,255,0.04)",
       fontWeight: active ? 700 : 400,
-      ...focusHalo(ACCENT, focused),
+      ...halo,
+      boxShadow: shadow,
     }}
   >
     {children}
   </BtnTab>
   );
 };
+
+// Rangée d'onglets : Focusable flow-children="row" (la rangée est UN arrêt de
+// nav vertical, gauche/droite circule entre les onglets — un <div> flex de
+// boutons bruts ne navigue que dans un sens à la manette), plus la règle qui
+// ferme la barre et donne au soulignement de l'onglet actif quelque chose à
+// interrompre.
+const TabRow = ({ children }: any) => (
+  <Focusable
+    flow-children="row"
+    style={{
+      display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box",
+      borderBottom: "1px solid rgba(255,255,255,0.14)",
+    }}
+  >
+    {children}
+  </Focusable>
+);
 
 // Bouton pleine largeur (Parcourir Discord / Retour à l'appel).
 const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => {
@@ -997,11 +1030,8 @@ const ContentBody = () => {
             sans raccrocher. */}
         <div style={{ marginBottom: "12px" }}>
           <SR>
-            {/* 1. Menu de haut niveau (persistant) : Vocal / Textuel / Config.
-                Focusable + flow-children="row" : la rangée devient UN arrêt
-                de nav vertical, gauche/droite circule entre les onglets (un <div>
-                flex de boutons bruts ne navigue que dans un sens à la manette). */}
-            <Focusable flow-children="row" style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
+            {/* 1. Menu de haut niveau (persistant) : Vocal / Textuel / Config. */}
+            <TabRow>
               <TabBtn
                 active={topTab === "voice"} focused={tabFocus === "top-voice"}
                 onClick={() => setTopTab("voice")}
@@ -1026,7 +1056,7 @@ const ContentBody = () => {
               >
                 <IcGear />
         </TabBtn>
-            </Focusable>
+            </TabRow>
 
             {topTab === "config" ? (
               // ── Onglet Config : réglages regroupés (mises à jour, etc.) ──
@@ -1081,7 +1111,7 @@ const ContentBody = () => {
                   </div>
                 )}
                 {/* 2. Menu source (partagé) : Serveurs / MP */}
-                <Focusable flow-children="row" style={{ display: "flex", gap: 4, marginBottom: 6, width: "100%", boxSizing: "border-box" }}>
+                <TabRow>
                   <TabBtn
                     active={srcTab === "servers"} focused={tabFocus === "servers"}
                     onClick={() => setSrcTab("servers")}
@@ -1098,7 +1128,7 @@ const ContentBody = () => {
                   >
                     <IcUser /> {t("tab_dms")}
                   </TabBtn>
-                </Focusable>
+                </TabRow>
                 {/* Contenu = mode × source. La clé force un remontage propre au
                     changement de source (réinitialise la conversation ouverte).
                     Textuel n'affiche plus qu'un aperçu passif + un bouton pour
