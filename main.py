@@ -3530,28 +3530,47 @@ class Plugin:
             pass
         p = await create_subprocess_exec(
             "gamescopectl", "screenshot", raw,
-            stdout=DEVNULL, stderr=DEVNULL, env=env)
-        await p.wait()
+            stdout=DEVNULL, stderr=PIPE, env=env)
+        _, err = await p.communicate()
+        if p.returncode:
+            raise Exception(f"gamescopectl rc={p.returncode}: {(err or b'').decode()[:200]}")
         # gamescopectl rend la main tout de suite ; gamescope écrit le fichier
         # juste après → on attend qu'il apparaisse ET que sa taille se stabilise
         # (le PNG n'est pas écrit atomiquement).
-        last = -1
-        for _ in range(20):
+        #
+        # 8 s, pas 2 : le PNG dépend de ce qui est à l'écran. Mesuré le 06/09 sur
+        # BC-250 — 794 Ko sur un menu, 3,1 Mo une fois le jeu lancé, c'est-à-dire
+        # exactement quand on veut l'aperçu. L'ancien budget expirait, ffmpeg
+        # recevait un fichier tronqué ou absent, et le seul message était
+        # « aucun fichier produit ». On exige aussi DEUX relevés stables
+        # d'affilée : une écriture qui traîne peut marquer une pause.
+        last, stable, size = -1, 0, 0
+        for _ in range(80):
             await sleep(0.1)
             try:
                 size = os.path.getsize(raw)
             except OSError:
                 continue
             if size > 0 and size == last:
-                break
+                stable += 1
+                if stable >= 2:
+                    break
+            else:
+                stable = 0
             last = size
+        if not size:
+            raise Exception(f"gamescope n'a écrit aucun PNG dans {raw}")
         p = await create_subprocess_exec(
             "ffmpeg", "-y", "-loglevel", "error", "-i", raw,
             "-vf", "scale=640:-2", "-q:v", "7", path + ".tmp",
-            stdout=DEVNULL, stderr=DEVNULL, env=env)
-        await p.wait()
+            stdout=DEVNULL, stderr=PIPE, env=env)
+        _, err = await p.communicate()
+        if p.returncode:
+            raise Exception(f"ffmpeg rc={p.returncode} (png {size} o): {(err or b'').decode()[:200]}")
         if os.path.exists(path + ".tmp"):
             os.replace(path + ".tmp", path)
+            logger.info(f"[gstprev] vignette écrite ({size} o de PNG → "
+                        f"{os.path.getsize(path)} o de JPEG)")
         try:
             os.remove(raw)
         except OSError:
