@@ -78,6 +78,13 @@ SCREENCAST_IFACE = "org.freedesktop.portal.ScreenCast"
 # visible par toute app de la session. Cf. le commentaire de handle().
 PROXY_IFACE = "org.freedesktop.portal.ProxyResolver"
 NETMON_IFACE = "org.freedesktop.portal.NetworkMonitor"
+# Même raisonnement que ci-dessus, et même cause : Settings est servie par le
+# FRONTEND du portail, donc présente partout où il y a un vrai portail. C'est
+# aussi l'interface la plus sollicitée de toutes — toute app GTK/Qt/Chromium
+# demande le thème clair/sombre au démarrage. La refuser laissait chaque app de
+# la session repartir sur ses valeurs par défaut, et remplissait le journal de
+# « refusé à … Settings.Read » (relevé dans le journal de #44).
+SETTINGS_IFACE = "org.freedesktop.portal.Settings"
 REQUEST_IFACE = "org.freedesktop.portal.Request"
 SESSION_IFACE = "org.freedesktop.portal.Session"
 PROPS_IFACE = "org.freedesktop.DBus.Properties"
@@ -98,6 +105,18 @@ SC_PROPS = {
 }
 
 PROXY_PROPS = {"version": Variant("u", 1)}
+# version 2 : les appelants récents préfèrent alors ReadOne à Read (déprécée),
+# qui rend la valeur SANS double emballage — moins d'ambiguïté.
+SETTINGS_PROPS = {"version": Variant("u", 2)}
+# Ce que le shim sait répondre. On se limite à `org.freedesktop.appearance`,
+# le seul espace de noms standardisé et le seul que les applications demandent
+# vraiment. Sombre, parce que c'est le mode jeu de Steam et qu'il l'est.
+SETTINGS_VALUES = {
+    "org.freedesktop.appearance": {
+        "color-scheme": Variant("u", 1),   # 1 = préférer le sombre
+        "contrast": Variant("u", 0),       # 0 = contraste standard
+    },
+}
 NETMON_PROPS = {"version": Variant("u", 3)}
 
 
@@ -387,6 +406,33 @@ class PortalShim:
                     return Message.new_method_return(msg, "", [])
             if msg.interface == REQUEST_IFACE and msg.member == "Close":
                 return Message.new_method_return(msg, "", [])
+            if msg.path == PORTAL_PATH and msg.interface == SETTINGS_IFACE:
+                if msg.member in ("Read", "ReadOne"):
+                    namespace, key = msg.body
+                    val = SETTINGS_VALUES.get(namespace, {}).get(key)
+                    if val is None:
+                        # Réponse prévue par la spec pour une clé inconnue :
+                        # l'appelant retombe sur son défaut sans rien casser.
+                        return Message.new_error(
+                            msg, "org.freedesktop.portal.Error.NotFound",
+                            f"unknown setting {namespace}.{key}")
+                    # `Read` est dépréciée et emballe DEUX fois (le portail réel
+                    # fait pareil : le backend lui rend déjà un variant) ;
+                    # `ReadOne` rend la valeur telle quelle.
+                    if msg.member == "Read":
+                        return Message.new_method_return(msg, "v", [Variant("v", val)])
+                    return Message.new_method_return(msg, "v", [val])
+                if msg.member == "ReadAll":
+                    (namespaces,) = msg.body
+                    out = {}
+                    for ns, values in SETTINGS_VALUES.items():
+                        # Une liste vide veut dire « tout », et un motif peut
+                        # se terminer par « * » (org.freedesktop.*).
+                        if not namespaces or any(
+                                ns == n or (n.endswith("*") and ns.startswith(n[:-1]))
+                                for n in namespaces):
+                            out[ns] = dict(values)
+                    return Message.new_method_return(msg, "a{sa{sv}}", [out])
             if msg.path == PORTAL_PATH and msg.interface == PROXY_IFACE:
                 if msg.member == "Lookup":
                     (uri,) = msg.body
@@ -442,7 +488,8 @@ class PortalShim:
             iface, prop = msg.body
             for want, props in ((SCREENCAST_IFACE, SC_PROPS),
                                 (PROXY_IFACE, PROXY_PROPS),
-                                (NETMON_IFACE, NETMON_PROPS)):
+                                (NETMON_IFACE, NETMON_PROPS),
+                                (SETTINGS_IFACE, SETTINGS_PROPS)):
                 if iface == want and prop in props:
                     return Message.new_method_return(msg, "v", [props[prop]])
             return Message.new_error(
@@ -452,7 +499,8 @@ class PortalShim:
             (iface,) = msg.body
             for want, props in ((SCREENCAST_IFACE, SC_PROPS),
                                 (PROXY_IFACE, PROXY_PROPS),
-                                (NETMON_IFACE, NETMON_PROPS)):
+                                (NETMON_IFACE, NETMON_PROPS),
+                                (SETTINGS_IFACE, SETTINGS_PROPS)):
                 if iface == want:
                     return Message.new_method_return(msg, "a{sv}", [props])
             # Interfaces non implémentées (Settings…) : dict vide = réponse

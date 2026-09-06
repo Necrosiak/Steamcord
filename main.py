@@ -206,6 +206,17 @@ async def watchdog(tab: Tab):
         try:
             # Only a soft reconnect makes sense if Vesktop is actually alive.
             if await vesktop.is_up():
+                # Refermer AVANT de rouvrir : open_websocket() écrase
+                # self.client par une ClientSession neuve, et l'ancienne
+                # partait à la poubelle sans être fermée — aiohttp le signale
+                # ensuite par un « Unclosed client session » en ERROR. Le
+                # journal de bastiHST90 (#44) en comptait sept en une soirée,
+                # dont la plupart sans rapport avec les notifications : c'est
+                # cette boucle-ci, une fuite par reconnexion de Vesktop.
+                try:
+                    await tab.close_websocket()
+                except Exception:
+                    pass
                 await tab.open_websocket()
                 logger.info("Reconnected")
             else:
