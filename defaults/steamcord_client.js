@@ -88,9 +88,14 @@ window.__sc_mapMsg = (m) => {
     // postés deviennent des embeds). proxy_url = CDN média redimensionnable.
     const images = [];
     const videos = [];
+    // Tout le reste — pdf, zip, txt, logs… — n'était qu'un COMPTEUR (« 2 »),
+    // sans rien pour les récupérer (#43). On remonte donc de quoi les nommer et
+    // les enregistrer, comme pour les images et les vidéos.
+    const docs = [];
     for (const a of atts) {
         if (isImg(a)) images.push({ url: a.url, proxy_url: a.proxy_url || a.url, w: a.width || 0, h: a.height || 0 });
         else if (isVid(a)) videos.push({ url: a.url, proxy_url: a.proxy_url || a.url, w: a.width || 0, h: a.height || 0, filename: a.filename || "" });
+        else docs.push({ url: a.url, filename: a.filename || "", size: a.size || 0 });
     }
     for (const e of (Array.isArray(m.embeds) ? m.embeds : [])) {
         const im = e?.image || e?.thumbnail;
@@ -121,7 +126,8 @@ window.__sc_mapMsg = (m) => {
         ts: m.timestamp || null,
         images,
         videos,
-        files: atts.filter(a => !isImg(a) && !isVid(a)).length,
+        files: docs.length,
+        docs,
         reactions,
         reply_to,
         _hasBody: !!(m.content) || images.length > 0 || atts.length > 0,

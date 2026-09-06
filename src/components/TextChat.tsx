@@ -8,7 +8,7 @@ import { useBackHandler } from "../backNav";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
 import { TinyIconBtn } from "./ChannelBrowser";
-import { openMediaLightbox } from "./MediaLightbox";
+import { openMediaLightbox, saveAttachment, humanSize } from "./MediaLightbox";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -101,11 +101,12 @@ interface DMChannel {
 }
 export interface MsgImage { url: string; proxy_url: string; w: number; h: number; }
 export interface MsgVideo { url: string; proxy_url: string; w: number; h: number; filename?: string; }
+export interface MsgFile { url: string; filename?: string; size?: number; }
 export interface MsgReaction { emoji: string; count: number; me: boolean; }
 export interface Message {
   id: string; author: string; author_id: string; avatar: string | null;
   bot: boolean; content: string; ts: string | null;
-  images: MsgImage[]; videos?: MsgVideo[]; files: number; reactions?: MsgReaction[];
+  images: MsgImage[]; videos?: MsgVideo[]; docs?: MsgFile[]; files: number; reactions?: MsgReaction[];
   reply_to?: { author: string; content: string } | null;
 }
 
@@ -220,6 +221,54 @@ export const failReason = (res: unknown): string | null => {
 // (retour user, régression du 1er essai). DialogButton est le SEUL composant
 // utilisé pour le tracking de focus custom partout ailleurs dans ce fichier/
 // VoiceChatViews (`focusHalo`) : on suit exactement le même pattern ici.
+// Une pièce jointe non média : nom, taille, et un geste pour l'enregistrer.
+// En aperçu QAM (`passive`) la ligne se lit mais ne se focus pas — comme les
+// vignettes — sinon elle deviendrait un arrêt de navigation dans un aperçu qui
+// n'est pas fait pour être parcouru.
+function FileRow({ file, passive }: { file: MsgFile; passive?: boolean }) {
+  const { px } = useQamUi();
+  const [state, setState] = useState<"idle" | "busy" | "done" | "fail">("idle");
+  const [focused, setFocused] = useState(false);
+  const name = file.filename || file.url.split("/").pop() || "";
+  const size = humanSize(file.size);
+  const save = async () => {
+    if (state === "busy" || state === "done") return;
+    setState("busy");
+    const r = await saveAttachment(file.url, file.filename);
+    setState(r.ok ? "done" : "fail");
+  };
+  const suffix = state === "busy" ? " · " + t("media_saving")
+    : state === "done" ? " · " + t("media_saved")
+    : state === "fail" ? " · " + t("media_save_failed")
+    : "";
+  const body = (
+    <span style={{
+      fontSize: px(11), color: state === "fail" ? "#ffcc66" : "#cfd3dc",
+      wordBreak: "break-all", lineHeight: 1.3,
+    }}>
+      <IcPaperclip /> {name}{size ? ` (${size})` : ""}{suffix}
+    </span>
+  );
+  if (passive) return <div style={{ opacity: 0.7, marginTop: 2 }}>{body}</div>;
+  return (
+    <Focusable
+      onActivate={save}
+      onClick={save}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        display: "block", marginTop: 2, padding: `${px(2)}px ${px(4)}px`, borderRadius: 4,
+        background: focused ? "rgba(88,101,242,0.22)" : "transparent",
+        ...focusHalo(ACCENT, focused, 1.0),
+      }}
+    >
+      {body}
+    </Focusable>
+  );
+}
+
 export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUpdate, onLocalDelete, onReply }: {
   m: Message; channelId?: string; isMine?: boolean;
   // `passive` : la ligne reste un arrêt de nav (on doit pouvoir remonter le fil
@@ -253,7 +302,9 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   const av = px(22);
   const links = extractLinks(m.content || "");
   const videos = m.videos || [];
-  const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || videos.length > 0 || (m.files ?? 0) > 0;
+  const docs = m.docs || [];
+  const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || videos.length > 0
+    || docs.length > 0 || (m.files ?? 0) > 0;
   const firstMedia = m.images?.[0]
     ? { kind: "image" as const, url: m.images[0].url }
     : videos[0]
@@ -370,7 +421,8 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   // RIEN d'autre de focusable : les messages plats du mode rapide QAM (sans
   // `channelId`, donc sans puces d'action) — sans quoi ils ne seraient pas des
   // arrêts de nav du tout et le stick les sauterait (bug d'origine de #17).
-  const hasInteractiveChild = !passive && (!!channelId || links.length > 0 || (m.images?.length ?? 0) > 0 || videos.length > 0);
+  const hasInteractiveChild = !passive && (!!channelId || links.length > 0
+    || (m.images?.length ?? 0) > 0 || videos.length > 0 || docs.length > 0);
 
   const rowStyle = {
     display: "block", textAlign: "left" as const, width: "100%", color: "#fff",
@@ -509,7 +561,20 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
           : <Btn key={`l${i}`} onClick={() => openUrl(u)} style={linkStyle}>{label}</Btn>;
       })}
 
-      {m.files > 0 && <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>}
+      {/* Pièces jointes ni image ni vidéo : une ligne PAR fichier, activable
+          pour l'enregistrer. Avant, c'était un compteur muet — on voyait qu'il y
+          avait deux fichiers sans pouvoir ni les nommer ni les récupérer (#43).
+          Repli sur l'ancien compteur si le client injecté est plus ancien que le
+          frontend et n'envoie pas encore `docs`. */}
+      {docs.length > 0 ? (
+        <div style={{ marginTop: 3 }}>
+          {docs.map((f, i) => (
+            <FileRow key={`f${i}`} file={f} passive={passive} />
+          ))}
+        </div>
+      ) : m.files > 0 ? (
+        <div style={{ opacity: 0.55, fontSize: 10, marginTop: 2 }}><IcPaperclip /> {m.files}</div>
+      ) : null}
 
       {/* Réactions existantes (clic = ajouter/retirer la sienne) + bouton "+"
           pour en ajouter une nouvelle parmi un petit set d'émojis courants. */}

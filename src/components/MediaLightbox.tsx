@@ -11,6 +11,28 @@ const Btn = DialogButton as any;
 
 export type MediaItem = { kind: "image" | "video"; url: string; label?: string };
 
+// Enregistrement d'une pièce jointe — partagé par la visionneuse et la liste de
+// fichiers du chat, pour qu'il n'existe qu'UN chemin vers le backend.
+export type SaveState = "idle" | "busy" | "done" | "fail";
+export async function saveAttachment(url: string, name?: string): Promise<{ ok: boolean; path?: string }> {
+  try {
+    const r: any = await call("save_attachment", url, name || "");
+    return r?.ok ? { ok: true, path: r.path } : { ok: false };
+  } catch (_) {
+    return { ok: false };
+  }
+}
+
+// « 4,2 Mo » plutôt que « 4404019 » : dans le QAM on lit une taille, on ne la
+// compte pas. Discord ne donne pas toujours la taille → 0 signifie inconnue.
+export function humanSize(n?: number): string {
+  if (!n || n <= 0) return "";
+  const u = ["o", "Ko", "Mo", "Go"];
+  let i = 0, v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : Math.round(v * 10) / 10) + " " + u[i];
+}
+
 // #43 (moi952) : « je ne peux pas télécharger une pièce jointe ». Le backend
 // écrit dans le dossier Téléchargements et rend le chemin obtenu — on l'affiche,
 // parce qu'en mode jeu il n'y a aucun gestionnaire de fichiers pour aller voir.
@@ -21,13 +43,8 @@ function SaveButton({ item }: { item: MediaItem }) {
   const save = async () => {
     if (state === "busy") return;
     setState("busy");
-    try {
-      const r: any = await call("save_attachment", item.url, item.label || "");
-      if (r?.ok) { setWhere(r.path || ""); setState("done"); }
-      else setState("fail");
-    } catch (_) {
-      setState("fail");
-    }
+    const r = await saveAttachment(item.url, item.label);
+    if (r.ok) { setWhere(r.path || ""); setState("done"); } else setState("fail");
   };
   const label = state === "busy" ? t("media_saving")
     : state === "done" ? t("media_saved")
