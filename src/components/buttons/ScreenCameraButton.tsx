@@ -33,8 +33,10 @@ export function ScreenCameraButton() {
       .catch(() => {});
   }, []);
 
-  // Disponible seulement en vocal.
-  if (!state?.vc?.channel_name) return null;
+  // Disponible seulement en vocal. On teste channel_id et NON channel_name :
+  // un appel en MP n’a pas de nom de salon, et le bouton de partage
+  // disparaîssait donc de tous les appels privés.
+  if (!state?.vc?.channel_id) return null;
 
   const fail = (body: string) => {
     setErr(body);

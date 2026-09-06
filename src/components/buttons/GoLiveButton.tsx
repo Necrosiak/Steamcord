@@ -31,8 +31,10 @@ export function GoLiveButton() {
   const STOP_COOLDOWN_MS = 6000;
   const [coolingDown, setCoolingDown] = useState(false);
 
-  // Only available while connected to a voice channel
-  if (!state?.vc?.channel_name) return null;
+  // Seulement en vocal — channel_id et NON channel_name : un appel en MP
+  // n’a pas de nom de salon, et Go Live disparaîssait de tous les appels
+  // privés.
+  if (!state?.vc?.channel_id) return null;
 
   const live = !!state?.me?.is_live;
   const { px } = useQamUi();
