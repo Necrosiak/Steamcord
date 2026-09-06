@@ -85,6 +85,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@bastiHST90](https://github.com/bastiHST90)
 
 - The battery drain, with the measurement that made it actionable: idle power identical with and without the plugin once v1.23.0 landed, against a Vesktop sitting at 20–30% CPU before it ([#36](https://github.com/Necrosiak/Steamcord/issues/36), fixed in v1.23.0)
+- Turning notifications off and still getting them ([#44](https://github.com/Necrosiak/Steamcord/issues/44)). The setting was doing what it said — it only ever applied while a game was running — and he worked that out himself in an edit to his own report rather than leaving it as a bug. The honest reading is that one setting was never enough, and there is now a second one for the rest of the time. His log carried two more things he had not come to report: the `[screendiag]` line repeating every 15 seconds, which he asked about in passing, and an `Unclosed client session` error one second after a failed notification, which turned out to be a socket leaked on every dispatch retry
 
 ### [@zomars](https://github.com/zomars)
 
@@ -109,6 +110,11 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - Then he kept attaching logs through five releases that each failed to fix his problem, and said plainly that none of them had. He was right: every one of those logs carried the same `could not link queue … missing a plug-in` line, which turned out to be Steamcord pointing `GST_PLUGIN_PATH` at `defaults/gst-plugins` — a directory Decky flattens away at install time, so the bundled ICE plugin was never loaded on any real installation. Without his refusal to let it drop, that path bug would still be in the code ([#42](https://github.com/Necrosiak/Steamcord/issues/42), fixed in v1.28.3)
 - And he sent one more log after v1.28.3, saying it still did not work. That log is what found the rest: the `missing a plug-in` line was finally gone — the ICE fix had worked — which left the real blocker visible on its own. The share picker was never being confirmed, because the element it was located by no longer exists and because those buttons ignore a synthetic click entirely. Two people had the same failure for two different reasons stacked on top of each other, and only his insistence on reporting a fix that had not fixed anything separated them ([#42](https://github.com/Necrosiak/Steamcord/issues/42), fixed in v1.29.1)
 - And the log he sent after v1.29.1 is what found the root cause of all of it. It showed a Go Live that reached `state=ACTIVE` while `gst_preview.py` died on `assertion 'gst_caps_is_fixed (pwsrc->caps)' failed` — the thumbnail attaching a second PipeWire consumer to the gamescope node, never releasing a buffer, and starving gamescope of frames. Every viewer got a frozen picture while Discord reported everything as fine. Four releases had been aimed at the symptoms around it; his habit of attaching the whole log rather than the part that looked relevant is the only reason the assertion was ever in front of anyone ([#42](https://github.com/Necrosiak/Steamcord/issues/42), fixed in v1.30.0)
+
+### [@moi952](https://github.com/moi952)
+
+- The report that the navigation did not look like navigation ([#43](https://github.com/Necrosiak/Steamcord/issues/43)): it took him a while to realise that Voice/Text and Servers/DMs were tabs. They were three buttons in a row with the selected one slightly bluer, and nothing said the choices were exclusive — they are drawn as tabs now.
+- And the question nobody had asked: whether not being able to download an attachment was a limitation. It was not — it had simply never been written, and saving one to the Downloads folder now exists because he asked.
 
 ---
 
