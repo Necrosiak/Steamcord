@@ -146,6 +146,8 @@ Feature requests and "it works!" reports on unusual setups are just as valuable.
 ### Code contributors
 
 - [@azizzidi](https://github.com/azizzidi) — **native Go Live in Gaming Mode** via the gamescope ScreenCast portal shim ([#10](https://github.com/Necrosiak/Steamcord/pull/10), landed in v1.15.0)
+- [@Memberoffoxhound](https://github.com/Memberoffoxhound) — five fixes carried over from his [GameModeCord](https://github.com/Memberoffoxhound/GameModeCord) fork (landed in v1.31.0): **the panel scaling to its own size** instead of Deck-absolute pixels, **B walking back one menu at a time**, **chat images and videos opening in the fullscreen viewer**, and two that were silently breaking screen sharing for everyone — **v4l2loopback looked up in sysfs** rather than hardcoded to `/dev/video42`, and **both share buttons no longer vanishing from DM calls**
+- [@jezonek](https://github.com/jezonek) — **push-to-talk on a keyboard key or a mouse button** ([#34](https://github.com/Necrosiak/Steamcord/pull/34)), including the backend evdev reader and its privacy constraints
 
 ### Community bug hunters
 
