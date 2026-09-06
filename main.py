@@ -1110,7 +1110,11 @@ class Plugin:
 
     # "all" : tout passe (comportement historique)
     # "priority" : seulement MP, appels entrants et avis du plugin
-    # "off" : rien tant qu'un jeu est au premier plan
+    # "off" : rien du tout
+    # Deux contextes indépendants : `in_game` (#25) s'applique tant qu'un jeu est
+    # au premier plan, `idle` le reste du temps. bastiHST90 (#44) avait coupé les
+    # notifications et en recevait quand même : le seul réglage existant ne valait
+    # QUE pendant une partie, ce que son titre disait sans que ça se devine.
     _NOTIFY_MODES = ("all", "priority", "off")
 
     @classmethod
@@ -1122,9 +1126,9 @@ class Plugin:
                     cls._notify_settings = _load(f)
             except Exception:
                 cls._notify_settings = {}
-        mode = cls._notify_settings.get("in_game")
-        if mode not in cls._NOTIFY_MODES:
-            cls._notify_settings["in_game"] = "all"
+        for key in ("in_game", "idle"):
+            if cls._notify_settings.get(key) not in cls._NOTIFY_MODES:
+                cls._notify_settings[key] = "all"
         return cls._notify_settings
 
     @classmethod
@@ -1132,12 +1136,17 @@ class Plugin:
         return cls._load_notify_settings()
 
     @classmethod
-    async def set_notify_prefs(cls, in_game):
+    async def set_notify_prefs(cls, in_game=None, idle=None):
+        """Chaque réglage se pose seul : un front à jour envoie celui qui change,
+        un front plus ancien n'envoie que `in_game` et ne doit pas écraser `idle`."""
         from json import dump as _dump
-        if in_game not in cls._NOTIFY_MODES:
-            return {"ok": False, "error": f"mode inconnu: {in_game}"}
         cfg = cls._load_notify_settings()
-        cfg["in_game"] = in_game
+        for key, val in (("in_game", in_game), ("idle", idle)):
+            if val is None:
+                continue
+            if val not in cls._NOTIFY_MODES:
+                return {"ok": False, "error": f"mode inconnu: {val}"}
+            cfg[key] = val
         try:
             os.makedirs(os.path.dirname(cls._NOTIFY_CFG), exist_ok=True)
             with open(cls._NOTIFY_CFG, "w") as f:

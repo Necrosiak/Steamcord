@@ -384,11 +384,17 @@ const readRunningGame = (): { name: string; appid: number | null } | null => {
 // relu à chaque fois : dispatchNotification est appelé depuis le backend et doit
 // trancher SANS aller-retour asynchrone, sinon le toast partirait avant la
 // réponse. Chargé une fois au démarrage du plugin, mis à jour par le réglage.
+// #44 — et le MÊME choix hors jeu : bastiHST90 avait mis « Aucune » et
+// continuait à recevoir des notifications, parce que le seul réglage existant
+// ne valait que pendant une partie. Deux contextes, même jeu d'options.
 type NotifyInGame = "all" | "priority" | "off";
+type NotifyCtx = "in_game" | "idle";
 let notifyInGameMode: NotifyInGame = "all";
+let notifyIdleMode: NotifyInGame = "all";
 const notifyModeListeners = new Set<() => void>();
-const setNotifyInGameCache = (v: NotifyInGame) => {
-  notifyInGameMode = v;
+const notifyModeOf = (ctx: NotifyCtx) => (ctx === "in_game" ? notifyInGameMode : notifyIdleMode);
+const setNotifyModeCache = (ctx: NotifyCtx, v: NotifyInGame) => {
+  if (ctx === "in_game") notifyInGameMode = v; else notifyIdleMode = v;
   notifyModeListeners.forEach((f) => { try { f(); } catch {} });
 };
 // Un jeu est au premier plan. On réutilise readRunningGame (Router.MainRunningApp)
@@ -562,13 +568,15 @@ const NotifStyleToggle = () => {
 // #25 — « leave active or disabled to receive notifications while playing »
 // (Havok027). Trois modes plutôt qu'un simple oui/non : couper TOUT prive aussi
 // des MP et des appels entrants, ce que personne ne veut vraiment.
-const NotifInGameSetting = () => {
-  const [mode, setMode] = useState<NotifyInGame>(notifyInGameMode);
+const NotifModeSetting = ({ ctx }: { ctx: NotifyCtx }) => {
+  const [mode, setMode] = useState<NotifyInGame>(notifyModeOf(ctx));
   useEffect(() => {
-    const sync = () => setMode(notifyInGameMode);
+    const sync = () => setMode(notifyModeOf(ctx));
     notifyModeListeners.add(sync);
     return () => { notifyModeListeners.delete(sync); };
-  }, []);
+  }, [ctx]);
+  // Les libellés d'options sont communs aux deux contextes : seuls le titre et
+  // la description disent DE QUEL contexte il s'agit.
   const opts = [
     { data: "all", label: t("notif_ingame_all") },
     { data: "priority", label: t("notif_ingame_priority") },
@@ -577,7 +585,9 @@ const NotifInGameSetting = () => {
   return (
     <>
       <SR>
-        <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("notif_ingame")}</div>
+        <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>
+          {t(ctx === "in_game" ? "notif_ingame" : "notif_idle")}
+        </div>
       </SR>
       <SR>
         <Dropdown
@@ -585,13 +595,17 @@ const NotifInGameSetting = () => {
           selectedOption={mode}
           onChange={(o: any) => {
             const v = o.data as NotifyInGame;
-            setNotifyInGameCache(v);
-            call("set_notify_prefs", v).catch(() => {});
+            setNotifyModeCache(ctx, v);
+            // Un seul réglage part à la fois : le backend laisse l'autre intact.
+            const args = ctx === "in_game" ? [v, null] : [null, v];
+            call("set_notify_prefs", ...args).catch(() => {});
           }}
         />
       </SR>
       <SR>
-        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>{t("notif_ingame_desc")}</div>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>
+          {t(ctx === "in_game" ? "notif_ingame_desc" : "notif_idle_desc")}
+        </div>
       </SR>
     </>
   );
@@ -1482,7 +1496,8 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcBell /> {t("config_notifs")}</div>
       </SR>
       <NotifStyleToggle />
-      <NotifInGameSetting />
+      <NotifModeSetting ctx="in_game" />
+      <NotifModeSetting ctx="idle" />
       <StreamQualitySetting />
       <hr />
       <AboutSection />
@@ -1554,10 +1569,11 @@ export default definePlugin(() => {
   // puisse tomber. En cas d'échec on reste sur "all", c'est-à-dire le
   // comportement historique : un réglage illisible ne doit jamais faire taire
   // les notifications à l'insu de l'utilisateur.
-  call<[], { in_game?: string }>("get_notify_prefs")
+  call<[], { in_game?: string; idle?: string }>("get_notify_prefs")
     .then((p) => {
-      const m = p?.in_game;
-      if (m === "all" || m === "priority" || m === "off") setNotifyInGameCache(m);
+      const ok = (m: any): m is NotifyInGame => m === "all" || m === "priority" || m === "off";
+      if (ok(p?.in_game)) setNotifyModeCache("in_game", p.in_game);
+      if (ok(p?.idle)) setNotifyModeCache("idle", p.idle);
     })
     .catch(() => {});
 
@@ -1567,14 +1583,17 @@ export default definePlugin(() => {
       // #25 — filtrage des notifications pendant qu'un jeu tourne. Il se fait
       // ICI et pas dans le backend : seul le contexte Steam sait qu'un jeu est
       // au premier plan.
-      if (notifyInGameMode !== "all" && isGameRunning()) {
+      const inGame = isGameRunning();
+      const mode = inGame ? notifyInGameMode : notifyIdleMode;
+      if (mode !== "all") {
         // "priority" laisse passer ce qui est vraiment personnel ou important :
         // MP, appel entrant, et les avis du plugin lui-même. Ce qu'on coupe,
         // c'est le bruit de fond — messages de serveur, démarrages de partage
         // d'écran et de caméra.
         const priority = payload.kind === "dm" || payload.kind === "call" || payload.kind === "plugin";
-        if (notifyInGameMode === "off" || !priority) {
-          console.log("[Steamcord] notification filtrée (jeu en cours, mode " + notifyInGameMode + ")");
+        if (mode === "off" || !priority) {
+          console.log("[Steamcord] notification filtrée ("
+            + (inGame ? "jeu en cours" : "hors jeu") + ", mode " + mode + ")");
           return;
         }
       }
