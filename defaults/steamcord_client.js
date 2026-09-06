@@ -220,7 +220,40 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // venmic AVANT le clic : le device "vencord-screen-share" doit exister
             // quand screenShareFixes attache l'audio au stream. Échec toléré
             // (venmic absent/pipewire KO) → partage vidéo seule.
-            try { await window.VesktopNative?.virtmic?.startSystem?.([]); } catch (_) {}
+            //
+            // ⚠️ startSystem([]) n'exclut RIEN : on capte tout le son système,
+            // Vesktop COMPRIS. Vérifié le 06/09 avec `pw-link` — vesktop était
+            // bel et bien branché sur vencord-screen-share, donc les voix des
+            // autres participants seraient réémises dans le stream et leur
+            // reviendraient en écho. On exclut donc Vesktop/Discord, en partant
+            // de la liste que venmic donne lui-même plutôt que d'un nom deviné.
+            let scExclude = [];
+            try {
+                const listed = await window.VesktopNative?.virtmic?.list?.();
+                const nodes = (listed && (listed.targets || listed.nodes || listed)) || [];
+                scExclude = (Array.isArray(nodes) ? nodes : []).filter((n) =>
+                    /vesktop|discord/i.test(String((n && (n.name || n.description)) || "")));
+            } catch (_) {}
+            try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                m: "[golive] venmic exclut " + (scExclude.length
+                    ? scExclude.map((n) => n.name || n.description).join(", ")
+                    : "RIEN (aucun nœud vesktop trouvé)") })); } catch (_) {}
+            try { await window.VesktopNative?.virtmic?.startSystem?.(scExclude); } catch (_) {}
+            // La piste audio du stream n'existe que si le partage est demandé AVEC
+            // son. Le 06/09 la spectatrice avait la barre de volume mais aucun son,
+            // et rien ne captait vencord-screen-share alors que le jeu y entrait
+            // bien : l'interrupteur son de la modale n'était jamais activé, parce
+            // qu'on clique « Go Live » sans y toucher. On l'active, et on journalise
+            // ce qu'on a trouvé — c'est le seul moyen de viser juste si Vesktop
+            // change encore son balisage.
+            const scSwitches = Array.from(dlg.querySelectorAll("[role=switch], input[type=checkbox]"));
+            const scDesc = (el) => String((el.closest("label") || el.parentElement || el).textContent || "");
+            const scAudio = scSwitches.find((el) => /audio|sound|son\b/i.test(scDesc(el)));
+            const scOn = (el) => el.getAttribute("aria-checked") === "true" || el.checked === true;
+            if (scAudio && !scOn(scAudio)) scReactClick(scAudio);
+            try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                m: "[golive] interrupteurs modale=" + scSwitches.length
+                   + " son=" + (scAudio ? (scOn(scAudio) ? "activé" : "activation tentée") : "INTROUVABLE") })); } catch (_) {}
             const how = scReactClick(btn);
             console.log("[Steamcord] modale Vesktop de partage auto-validée (" + how + ", audio système via venmic)");
             // Même canal de diagnostic que $golive (scdiag y est local) : sans
