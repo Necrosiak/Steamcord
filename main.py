@@ -923,10 +923,60 @@ class Plugin:
                 await cls._toast("Steamcord", "Update installed — reloading…")
                 await sleep(2)
                 updater.restart_loader()
-            else:
-                await cls._toast("Steamcord", f"Update failed: {res.get('error', '?')}")
+                return
+            # Les DEUX chemins ont échoué. Le toast disait « Update failed: <errno> »
+            # et s'arrêtait là : l'utilisateur n'avait aucun moyen de savoir que la
+            # seule issue est une install manuelle, et l'échec ne se reproduisait
+            # plus avant le prochain démarrage. Les logs de ZyreonX (#42) montrent
+            # trois sessions de suite passées en 1.30.0 pour cette raison exacte,
+            # pendant qu'on lui demandait de tester une 1.31.
+            logger.warning(
+                f"[updater] les deux chemins ont échoué ({res.get('error', '?')}) — "
+                "install manuelle requise (Developer Mode → Install plugin from URL)"
+            )
+            await cls._toast(
+                "Steamcord",
+                f"Update to {info['latest']} could not be applied automatically. "
+                "Install it from Decky → Developer → Install plugin from URL.",
+            )
         except Exception as e:
             logger.warning(f"[updater] auto-check error: {e}")
+
+    # Combien de temps on laisse au frontend Decky pour apparaître. Un démarrage
+    # à froid en mode jeu charge Steam, la GamepadUI puis Decky : 14 s après le
+    # backend, ce n'est pas toujours fini. Trois minutes couvrent largement ça
+    # sans jamais rien coûter quand le loader est déjà là (le premier essai
+    # répond immédiatement).
+    DECKY_BACKEND_WAIT_S = 180
+    DECKY_BACKEND_POLL_S = 5
+
+    @classmethod
+    async def _await_decky_backend(cls) -> bool:
+        """True dès que `window.DeckyBackend.call` existe, False après attente."""
+        from time import time
+        deadline = time() + cls.DECKY_BACKEND_WAIT_S
+        waited = False
+        while True:
+            try:
+                await cls.shared_js_tab.ensure_open()
+                res = await cls.shared_js_tab.evaluate(
+                    "(()=>!!(window.DeckyBackend&&window.DeckyBackend.call))()", wait=True
+                )
+                if (((res or {}).get("result") or {}).get("result") or {}).get("value") is True:
+                    if waited:
+                        logger.info("[updater] DeckyBackend enfin disponible — on délègue l'install")
+                    return True
+            except Exception as e:
+                logger.debug(f"[updater] sonde DeckyBackend: {e}")
+            if time() >= deadline:
+                return False
+            if not waited:
+                logger.info(
+                    "[updater] DeckyBackend pas encore chargé — on attend "
+                    f"jusqu'à {cls.DECKY_BACKEND_WAIT_S}s au lieu d'abandonner"
+                )
+                waited = True
+            await sleep(cls.DECKY_BACKEND_POLL_S)
 
     @classmethod
     async def _delegate_install(cls, url: str, version: str) -> bool:
@@ -941,6 +991,16 @@ class Plugin:
         Store Decky. `DeckyBackend` n'existe que côté JS → on passe par l'onglet
         partagé, comme pour les toasts. Renvoie False si la route est absente.
         """
+        # ⏳ ATTENDRE le loader plutôt que d'abandonner à la première seconde.
+        # `_autoupdate_check` part ~14 s après le backend, et à cet instant le
+        # frontend Decky peut ne pas avoir fini de se charger : `DeckyBackend`
+        # est alors absent, on renvoyait False, le repli mourait sur plugin.json
+        # (root), et on n'y revenait JAMAIS de la session. C'est une COURSE, pas
+        # une absence : sur la même machine `DeckyBackend` existe bien quelques
+        # secondes plus tard (mesuré au CDP le 06/09). D'où l'attente bornée.
+        if not await cls._await_decky_backend():
+            logger.warning("[updater] DeckyBackend absent après attente — repli sur l'install maison")
+            return False
         try:
             args = dumps([url, "Steamcord", version, "", 2])  # 2 = InstallType.UPDATE
             args = args.replace("\\", "\\\\").replace("'", "\\'")
