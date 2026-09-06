@@ -182,6 +182,11 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
         el.click();
         return "dom";
     };
+    // Envoi d'une ligne au log BACKEND : c'est le seul artefact qu'un
+    // utilisateur puisse nous joindre, et le seul que je puisse relire ici.
+    const scDiag = (m) => {
+        try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag", m })); } catch (_) {}
+    };
     window.STEAMCORD_PICKER_WATCHER = setInterval(async () => {
         try {
             // GATE : on n'auto-valide QUE les partages initiés par Steamcord
@@ -227,17 +232,22 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // autres participants seraient réémises dans le stream et leur
             // reviendraient en écho. On exclut donc Vesktop/Discord, en partant
             // de la liste que venmic donne lui-même plutôt que d'un nom deviné.
-            let scExclude = [];
+            // On journalise ce que venmic déclare AVANT de choisir : le 06/09
+            // `list()` n'a rien rendu d'exploitable et la liste d'exclusion est
+            // restée vide. Tant qu'on ne sait pas ce que cette API renvoie
+            // réellement sur cette version de Vesktop, on ne peut pas viser.
+            let scNodes = [];
             try {
                 const listed = await window.VesktopNative?.virtmic?.list?.();
-                const nodes = (listed && (listed.targets || listed.nodes || listed)) || [];
-                scExclude = (Array.isArray(nodes) ? nodes : []).filter((n) =>
-                    /vesktop|discord/i.test(String((n && (n.name || n.description)) || "")));
-            } catch (_) {}
-            try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
-                m: "[golive] venmic exclut " + (scExclude.length
-                    ? scExclude.map((n) => n.name || n.description).join(", ")
-                    : "RIEN (aucun nœud vesktop trouvé)") })); } catch (_) {}
+                scNodes = (listed && (listed.targets || listed.nodes || listed)) || [];
+                if (!Array.isArray(scNodes)) scNodes = [];
+            } catch (e) { scDiag("[golive] venmic.list a levé: " + e); }
+            scDiag("[golive] venmic.list → " + JSON.stringify(scNodes).slice(0, 400));
+            const scExclude = scNodes.filter((n) =>
+                /vesktop|discord/i.test(String((n && (n.name || n.description)) || "")));
+            scDiag("[golive] venmic exclut " + (scExclude.length
+                ? scExclude.map((n) => n.name || n.description).join(", ")
+                : "RIEN (aucun nœud vesktop trouvé)"));
             try { await window.VesktopNative?.virtmic?.startSystem?.(scExclude); } catch (_) {}
             // La piste audio du stream n'existe que si le partage est demandé AVEC
             // son. Le 06/09 la spectatrice avait la barre de volume mais aucun son,
@@ -246,14 +256,18 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // qu'on clique « Go Live » sans y toucher. On l'active, et on journalise
             // ce qu'on a trouvé — c'est le seul moyen de viser juste si Vesktop
             // change encore son balisage.
-            const scSwitches = Array.from(dlg.querySelectorAll("[role=switch], input[type=checkbox]"));
-            const scDesc = (el) => String((el.closest("label") || el.parentElement || el).textContent || "");
-            const scAudio = scSwitches.find((el) => /audio|sound|son\b/i.test(scDesc(el)));
-            const scOn = (el) => el.getAttribute("aria-checked") === "true" || el.checked === true;
-            if (scAudio && !scOn(scAudio)) scReactClick(scAudio);
-            try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
-                m: "[golive] interrupteurs modale=" + scSwitches.length
-                   + " son=" + (scAudio ? (scOn(scAudio) ? "activé" : "activation tentée") : "INTROUVABLE") })); } catch (_) {}
+            // Le 06/09 : 0 `[role=switch]` et 0 checkbox dans cette modale, donc
+            // l'option son est un composant maison de Vesktop. On RELÈVE ce qui
+            // est réellement là — rôle, aria, texte — plutôt que de retenter un
+            // sélecteur au jugé. C'est ce relevé qui permettra de viser juste.
+            const scCtl = Array.from(dlg.querySelectorAll(
+                "[role], input, button, [aria-checked], [class*='switch' i], [class*='checkbox' i]"))
+                .slice(0, 40)
+                .map((el) => (el.tagName.toLowerCase()
+                    + "[" + (el.getAttribute("role") || "-") + "]"
+                    + (el.getAttribute("aria-checked") !== null ? " checked=" + el.getAttribute("aria-checked") : "")
+                    + " «" + String(el.textContent || "").trim().slice(0, 28) + "»"));
+            scDiag("[golive] contrôles modale: " + scCtl.join(" | ").slice(0, 900));
             const how = scReactClick(btn);
             console.log("[Steamcord] modale Vesktop de partage auto-validée (" + how + ", audio système via venmic)");
             // Même canal de diagnostic que $golive (scdiag y est local) : sans
