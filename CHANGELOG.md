@@ -16,6 +16,37 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.31.1 — 2026-09-06
+
+Follow-ups to the log [@bastiHST90](https://github.com/bastiHST90) attached to
+[#44](https://github.com/Necrosiak/Steamcord/issues/44), which turned out to
+document two problems he had not come to report.
+
+### Fixed
+
+- **The first notification after a quiet spell was always late.** The log shows
+  the pattern plainly: the first one after half an hour fails on `Cannot write
+  to closing transport`, and notifications arriving close together never fail —
+  the websocket to the Steam UI simply goes stale when unused. The retry then
+  waited a second before reconnecting, which only delayed the notification, as
+  a closed transport is not going to reopen on its own. It now reconnects
+  immediately when the failure says the socket is gone, and keeps the pause for
+  anything else.
+- **The socket leak had a second site.** Reconnecting the Discord tab reopened
+  its websocket without closing the old one, so every Vesktop reconnect dropped
+  an unclosed session. That log carried seven of those errors in one evening
+  and most were not the notification path at all. 1.31.0 fixed the dispatcher;
+  this is the rest of it.
+- **The portal shim answers `org.freedesktop.portal.Settings`** instead of
+  refusing it. Same reasoning as ProxyResolver after
+  [#39](https://github.com/Necrosiak/Steamcord/issues/39): Settings is served
+  by the portal *frontend*, so it exists wherever a real portal does, and
+  refusing it is not "an interface we do not have" — it is a regression every
+  application in the session can see. It is also the most-called interface
+  there is, since every GTK, Qt and Chromium app asks for the light/dark
+  preference at startup, and each was falling back to defaults while the log
+  filled with refusals.
+
 ## 1.31.0 — 2026-09-06
 
 Nobody could hear you while you were sharing your screen, and the plugin was
