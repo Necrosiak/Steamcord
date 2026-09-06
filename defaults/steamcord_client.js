@@ -261,6 +261,13 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // le jeu y entre, et personne ne le capte.
             // Repli conservé : si la modale n'offre aucune source exploitable,
             // on rebranche la béquille (voir plus bas).
+            // Et surtout : ARRÊTER venmic avant. Le nœud vencord-screen-share
+            // gardait le même id (3399) sur cinq partages d'affilée — venmic
+            // restait en marche depuis notre premier startSystem, et Vesktop, le
+            // trouvant déjà démarré, ne le relançait jamais sur la source
+            // choisie. C'est ce qui laissait le nœud alimenté par le jeu mais
+            // jamais capté (constaté et mesuré le 06/09).
+            try { await window.VesktopNative?.virtmic?.stop?.(); } catch (_) {}
             const scAudioPicked = { ok: false };
             // La piste audio du stream n'existe que si le partage est demandé AVEC
             // son. Le 06/09 la spectatrice avait la barre de volume mais aucun son,
