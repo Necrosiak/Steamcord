@@ -2969,6 +2969,40 @@ class Plugin:
     # basculée sur le monitor d'un null-sink muet → seul le stream porte l'audio
     # (contrôlable par son volume). Un vrai micro branché = on ne touche à rien.
     _golive_silence_restore = None   # source à restaurer au stop (None = inactif)
+    _golive_silence_task = None      # veille « un vrai micro est-il apparu ? »
+
+    @classmethod
+    def _start_silence_watch(cls):
+        """Le silence est posé une fois, au démarrage du partage. Brancher un
+        casque APRÈS ne changeait rien : on restait muet jusqu'au stop, alors
+        qu'un vrai micro était là (constaté 06/09, casque branché en cours de
+        Go Live). On surveille donc son apparition et on lui rend la main."""
+        task = cls._golive_silence_task
+        if task is not None and not task.done():
+            return
+        cls._golive_silence_task = create_task(cls._silence_watch())
+
+    @classmethod
+    async def _silence_watch(cls):
+        from json import loads
+        while cls._golive_silence_restore is not None:
+            await sleep(5)
+            if cls._golive_silence_restore is None:
+                return
+            try:
+                real = cls._real_capture_source(
+                    loads(await cls._pactl("list", "sources", want_json=True) or "[]"))
+            except Exception as e:
+                logger.warning(f"[golive] veille micro: {e!r}")
+                continue
+            if real:
+                logger.info(f"[golive] vrai micro apparu ({real}) → fin du silence")
+                # Se retirer du registre AVANT : sinon la levée du silence
+                # annulerait la tâche en cours d'exécution, c'est-à-dire nous.
+                cls._golive_silence_task = None
+                async with cls._golive_lock():
+                    await cls._golive_mic_silence(False)
+                return
 
     @staticmethod
     def _real_capture_source(sources):
@@ -3012,17 +3046,32 @@ class Plugin:
                     "sink_properties=device.description=Steamcord-Silence")).strip()
                 if not out.isdigit():
                     raise Exception(f"load-module: {out!r}")
+                # Le silence doit être une VRAIE source, pas un `.monitor` :
+                # WebRTC écarte les monitors, donc poser un monitor en source par
+                # défaut ne rend pas la voix silencieuse — il empêche Discord
+                # d'ouvrir la MOINDRE capture, voix ET son du partage. Le
+                # spectateur n'entend alors plus rien du tout (constaté 06/09).
+                # `module-remap-source` est l'idiome déjà validé en v1.8.0 pour
+                # `steamcord_mic` : il présente le monitor comme une entrée.
+                out = (await cls._pactl(
+                    "load-module", "module-remap-source",
+                    "master=steamcord_silence.monitor",
+                    "source_name=steamcord_silence_mic",
+                    "source_properties=device.description=Steamcord-Silence-Mic")).strip()
+                if not out.isdigit():
+                    raise Exception(f"load-module remap: {out!r}")
                 cls._golive_silence_restore = src
-                await cls._pactl("set-default-source", "steamcord_silence.monitor")
+                await cls._pactl("set-default-source", "steamcord_silence_mic")
                 # Basculer aussi les captures voix DÉJÀ ouvertes de Vesktop qui
                 # pompent l'ancien monitor (le RecordStream venmic vise
                 # vencord-screen-share, pas le monitor → naturellement épargné).
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
                         await cls._pactl("move-source-output", str(so.get("index")),
-                                         "steamcord_silence.monitor")
+                                         "steamcord_silence_mic")
                 logger.info(f"[golive] pas de vrai micro ({src}) → capture voix "
                             "silencieuse pendant le stream")
+                cls._start_silence_watch()
             else:
                 if cls._golive_silence_restore is None:
                     return
@@ -3056,6 +3105,10 @@ class Plugin:
                     if len(parts) >= 3 and "steamcord_silence" in parts[2]:
                         await cls._pactl("unload-module", parts[0])
                 logger.info("[golive] capture voix restaurée")
+            task = cls._golive_silence_task
+            cls._golive_silence_task = None
+            if task is not None and not task.done():
+                task.cancel()
         except Exception as e:
             logger.warning(f"[golive] mic-silence({enable}): {e!r}")
 
