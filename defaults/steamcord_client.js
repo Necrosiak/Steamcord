@@ -263,42 +263,49 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // l'option son est un composant maison de Vesktop. On RELÈVE ce qui
             // est réellement là — rôle, aria, texte — plutôt que de retenter un
             // sélecteur au jugé. C'est ce relevé qui permettra de viser juste.
-            // La source audio du partage est sur « None » par défaut : sans elle
-            // Discord ne demande AUCUNE piste audio, le spectateur a une barre de
-            // volume et rien dedans (relevé le 06/09). On la choisit avant de
-            // valider — en évitant Vesktop lui-même, qui renverrait les voix des
+            // Le son du partage se choisit dans un menu déroulant maison qui
+            // affiche « None » par défaut : tant qu'il reste là, Discord ne
+            // demande AUCUNE piste audio et le spectateur a une barre de volume
+            // vide (constaté le 06/09). Ce n'est PAS une radio — les `input` de
+            // cette modale sont la résolution, la fréquence et le profil de
+            // qualité ; en cocher un a réglé un partage en 480p par erreur.
+            // On ouvre donc le déclencheur repéré par son libellé, puis on prend
+            // une option — en écartant Vesktop, qui renverrait les voix des
             // autres participants en écho.
-            const scLabel = (el) => {
-                let n = el, txt = "";
-                for (let i = 0; i < 4 && n; i++, n = n.parentElement) {
-                    txt = String(n.textContent || "").trim();
-                    if (txt) break;
-                }
-                return txt;
-            };
-            const scRadios = Array.from(dlg.querySelectorAll("input")).filter(
-                (el) => el.type === "radio" || el.type === "checkbox" || !el.type);
-            scDiag("[golive] entrées audio: " + scRadios.slice(0, 14).map((el) =>
-                el.type + (el.checked ? " CHECKED" : "") + " «" + scLabel(el).slice(0, 30) + "»"
-            ).join(" | ").slice(0, 700));
+            const scText = (el) => String((el && el.textContent) || "").trim();
             const scBad = /^(none|aucun|vesktop|discord)/i;
-            const scPick = scRadios.find((el) => !el.checked && !scBad.test(scLabel(el)))
-                || scRadios.find((el) => !el.checked && !/^(none|aucun)/i.test(scLabel(el)));
-            if (scPick) {
-                const k = Object.keys(scPick).find((n) => n.startsWith("__reactProps"));
-                const props = k && scPick[k];
-                try { scPick.checked = true; } catch (_) {}
-                if (props && typeof props.onChange === "function") {
-                    props.onChange({ target: scPick, currentTarget: scPick,
-                                     preventDefault() {}, stopPropagation() {}, type: "change" });
-                } else {
-                    scPick.dispatchEvent(new Event("change", { bubbles: true }));
-                    scReactClick(scPick);
-                }
-                scDiag("[golive] source audio choisie: «" + scLabel(scPick).slice(0, 40) + "»");
+            const scDrop = Array.from(dlg.querySelectorAll("[role=button], [class*='select' i], [class*='dropdown' i]"))
+                .find((el) => /^(none|aucun)$/i.test(scText(el)));
+            if (!scDrop) {
+                scDiag("[golive] déclencheur de source audio INTROUVABLE — partage sans son");
             } else {
-                scDiag("[golive] AUCUNE source audio sélectionnable ("
-                       + scRadios.length + " entrées) — partage sans son");
+                scReactClick(scDrop);
+                await new Promise((r) => setTimeout(r, 300));
+                // La liste s'ouvre souvent dans un portail HORS de la modale :
+                // on cherche donc dans tout le document, pas seulement dans dlg.
+                let scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"));
+                if (!scOpts.length) {
+                    // Liste vide : Vesktop propose « Refresh Audio Sources ».
+                    const rb = Array.from(dlg.querySelectorAll("button"))
+                        .find((b) => /refresh audio/i.test(scText(b)));
+                    if (rb) {
+                        scReactClick(rb);
+                        await new Promise((r) => setTimeout(r, 400));
+                        scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"));
+                    }
+                }
+                scDiag("[golive] options audio: " + (scOpts.length
+                    ? scOpts.slice(0, 12).map((o) => "«" + scText(o).slice(0, 30) + "»").join(" | ")
+                    : "AUCUNE"));
+                const scPick = scOpts.find((o) => !scBad.test(scText(o)))
+                            || scOpts.find((o) => !/^(none|aucun)/i.test(scText(o)));
+                if (scPick) {
+                    scReactClick(scPick);
+                    scDiag("[golive] source audio choisie: «" + scText(scPick).slice(0, 40) + "»");
+                    await new Promise((r) => setTimeout(r, 200));
+                } else {
+                    scDiag("[golive] aucune option audio exploitable — partage sans son");
+                }
             }
             const how = scReactClick(btn);
             console.log("[Steamcord] modale Vesktop de partage auto-validée (" + how + ", audio système via venmic)");
