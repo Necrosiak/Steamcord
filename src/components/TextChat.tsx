@@ -8,6 +8,7 @@ import { useBackHandler } from "../backNav";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
 import { TinyIconBtn } from "./ChannelBrowser";
+import { openMediaLightbox } from "./MediaLightbox";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -99,11 +100,12 @@ interface DMChannel {
   recipients: DMRecipient[]; active_call: boolean;
 }
 export interface MsgImage { url: string; proxy_url: string; w: number; h: number; }
+export interface MsgVideo { url: string; proxy_url: string; w: number; h: number; filename?: string; }
 export interface MsgReaction { emoji: string; count: number; me: boolean; }
 export interface Message {
   id: string; author: string; author_id: string; avatar: string | null;
   bot: boolean; content: string; ts: string | null;
-  images: MsgImage[]; files: number; reactions?: MsgReaction[];
+  images: MsgImage[]; videos?: MsgVideo[]; files: number; reactions?: MsgReaction[];
   reply_to?: { author: string; content: string } | null;
 }
 
@@ -250,7 +252,13 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   const { px } = useQamUi();
   const av = px(22);
   const links = extractLinks(m.content || "");
-  const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
+  const videos = m.videos || [];
+  const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || videos.length > 0 || (m.files ?? 0) > 0;
+  const firstMedia = m.images?.[0]
+    ? { kind: "image" as const, url: m.images[0].url }
+    : videos[0]
+      ? { kind: "video" as const, url: videos[0].url, label: videos[0].filename }
+      : null;
 
   // Tant qu'on agit sur CE message (édition / choix d'emoji / confirmation de
   // suppression), on signale une interaction en cours : le chat plein écran
@@ -362,12 +370,12 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   // RIEN d'autre de focusable : les messages plats du mode rapide QAM (sans
   // `channelId`, donc sans puces d'action) — sans quoi ils ne seraient pas des
   // arrêts de nav du tout et le stick les sauterait (bug d'origine de #17).
-  const hasInteractiveChild = !passive && (!!channelId || links.length > 0 || (m.images?.length ?? 0) > 0);
+  const hasInteractiveChild = !passive && (!!channelId || links.length > 0 || (m.images?.length ?? 0) > 0 || videos.length > 0);
 
   const rowStyle = {
     display: "block", textAlign: "left" as const, width: "100%", color: "#fff",
-    marginBottom: 7, marginTop: 0, fontSize: 12, lineHeight: 1.3, minHeight: 0,
-    borderRadius: 6, padding: "3px 6px", boxSizing: "border-box" as const,
+    marginBottom: 8, marginTop: 0, fontSize: px(14), lineHeight: 1.35, minHeight: 0,
+    borderRadius: 6, padding: `${px(4)}px ${px(6)}px`, boxSizing: "border-box" as const,
     background: focused ? "rgba(88,101,242,0.22)" : "transparent",
     boxShadow: focused ? "0 0 0 1px rgba(88,101,242,0.7)" : "none",
     transition: "background .08s ease, box-shadow .08s ease",
@@ -421,29 +429,65 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
         <div style={{ marginTop: 3, fontSize: 10, color: "#f23f43", wordBreak: "break-word" }}>{actionError}</div>
       )}
 
-      {/* Miniatures d'images : ne se chargent que lorsque ce salon est
-          ouvert (la vue messages n'est montée qu'à ce moment). Clic →
-          image en grand dans le navigateur du gamemode Steam. */}
+      {/* Miniatures : clic → même modale plein écran que les flux live. */}
       {m.images?.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
           {m.images.map((img, i) => {
             const thumb = (
               <img
                 src={thumbUrl(img)}
-                style={{ width: 120, height: "auto", maxHeight: 160, display: "block", borderRadius: 6 }}
+                style={{ width: px(160), height: "auto", maxHeight: px(200), display: "block", borderRadius: 6, objectFit: "cover" }}
               />
             );
-            // En aperçu QAM : la vignette se regarde, elle ne se focus pas.
+            const open = () => openMediaLightbox({ kind: "image", url: img.url });
             return passive ? (
               <div key={i} style={{ display: "inline-block", borderRadius: 6 }}>{thumb}</div>
             ) : (
               <Focusable
                 key={i}
-                onActivate={() => openUrl(img.url)}
-                onClick={() => openUrl(img.url)}
+                onActivate={open}
+                onClick={open}
                 style={{ display: "inline-block", borderRadius: 6, padding: 0, margin: 0 }}
               >
                 {thumb}
+              </Focusable>
+            );
+          })}
+        </div>
+      )}
+
+      {videos.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+          {videos.map((v, i) => {
+            const open = () => openMediaLightbox({ kind: "video", url: v.url, label: v.filename });
+            const tile = (
+              <div style={{
+                position: "relative", width: px(180), height: px(102),
+                background: "#000", borderRadius: 6, overflow: "hidden",
+              }}>
+                <video
+                  src={v.url}
+                  muted
+                  preload="metadata"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+                <div style={{
+                  position: "absolute", inset: 0, display: "flex",
+                  alignItems: "center", justifyContent: "center",
+                  color: "#fff", fontSize: px(22), background: "rgba(0,0,0,0.25)",
+                }}>▶</div>
+              </div>
+            );
+            return passive ? (
+              <div key={`v${i}`}>{tile}</div>
+            ) : (
+              <Focusable
+                key={`v${i}`}
+                onActivate={open}
+                onClick={open}
+                style={{ display: "inline-block", borderRadius: 6, padding: 0, margin: 0 }}
+              >
+                {tile}
               </Focusable>
             );
           })}
@@ -513,6 +557,7 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   return (
     <Btn
       preferredFocus={preferred}
+      onClick={firstMedia ? () => openMediaLightbox(firstMedia) : undefined}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onGamepadFocus={() => setFocused(true)}

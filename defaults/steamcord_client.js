@@ -78,14 +78,19 @@ window.rpcNormNameLoose = (s) => String(s)
 // message chargé.
 window.__sc_isImg = (a) => (a?.content_type || "").startsWith("image/")
     || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(a?.filename || a?.url || "");
+window.__sc_isVid = (a) => (a?.content_type || "").startsWith("video/")
+    || /\.(mp4|webm|mov|mkv|m4v)$/i.test(a?.filename || a?.url || "");
 window.__sc_mapMsg = (m) => {
     const isImg = window.__sc_isImg;
+    const isVid = window.__sc_isVid;
     const atts = Array.isArray(m.attachments) ? m.attachments : [];
     // Images = pièces jointes image + images d'embeds (liens d'images
     // postés deviennent des embeds). proxy_url = CDN média redimensionnable.
     const images = [];
+    const videos = [];
     for (const a of atts) {
         if (isImg(a)) images.push({ url: a.url, proxy_url: a.proxy_url || a.url, w: a.width || 0, h: a.height || 0 });
+        else if (isVid(a)) videos.push({ url: a.url, proxy_url: a.proxy_url || a.url, w: a.width || 0, h: a.height || 0, filename: a.filename || "" });
     }
     for (const e of (Array.isArray(m.embeds) ? m.embeds : [])) {
         const im = e?.image || e?.thumbnail;
@@ -115,7 +120,8 @@ window.__sc_mapMsg = (m) => {
         content: m.content ?? "",
         ts: m.timestamp || null,
         images,
-        files: atts.filter(a => !isImg(a)).length,
+        videos,
+        files: atts.filter(a => !isImg(a) && !isVid(a)).length,
         reactions,
         reply_to,
         _hasBody: !!(m.content) || images.length > 0 || atts.length > 0,
