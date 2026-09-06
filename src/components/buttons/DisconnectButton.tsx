@@ -2,16 +2,16 @@ import { call } from "@decky/api";
 import { DialogButton } from "@decky/ui";
 import { useState } from "react";
 import { FaPlug } from "react-icons/fa";
-import { focusHalo, DANGER } from "../Styled";
-
-const btnStyle = { height: "40px", width: "44px", minWidth: 0, padding: 0, marginRight: "6px" };
+import { focusHalo, DANGER, toolbarBtnStyle } from "../Styled";
+import { useQamUi } from "../../qamUi";
 
 export function DisconnectButton() {
+  const { px } = useQamUi();
   const [focused, setFocused] = useState(false);
   // Leave-call action: neutral background, red halo on focus (matches the other
   // voice-toolbar icon buttons).
   const style = {
-    ...btnStyle,
+    ...toolbarBtnStyle(px),
     display: "flex", alignItems: "center", justifyContent: "center",
     borderRadius: 6, color: "#fff",
     background: "rgba(255,255,255,0.06)",
@@ -24,13 +24,13 @@ export function DisconnectButton() {
     return (
       <button onClick={() => call("disconnect_vc")} {...fh}
         style={{ ...style, border: "none", cursor: "pointer" }}>
-        <FaPlug />
+        <FaPlug size={px(20)} />
       </button>
     );
   }
   return (
     <DialogButton onClick={() => call("disconnect_vc")} style={style} {...fh}>
-      <FaPlug />
+      <FaPlug size={px(20)} />
     </DialogButton>
   );
 }

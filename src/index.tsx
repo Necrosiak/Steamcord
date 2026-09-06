@@ -41,6 +41,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 import { patchMenu } from "./patches/menuPatch";
 import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts } from "./notify";
 import { ACCENT, DANGER, focusHalo } from "./components/Styled";
+import { QamUiRoot, useQamUi } from "./qamUi";
 import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
 import { openCaptchaSolver } from "./components/CaptchaSolver";
@@ -151,7 +152,9 @@ const BtnTab = DialogButton as any;
 // Onglet de navigation (Vocal/Conversations, Serveurs/MP). Texte blanc forcé :
 // sinon le focus natif du DialogButton met un fond clair + texte sombre =
 // illisible. On pilote nous-mêmes le fond actif/focus (bleu Discord + anneau).
-const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children }: any) => (
+const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children }: any) => {
+  const { px } = useQamUi();
+  return (
   <BtnTab
     onClick={onClick}
     onFocus={onFocus}
@@ -159,9 +162,9 @@ const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children 
     onGamepadFocus={onFocus}
     onGamepadBlur={onBlur}
     style={{
-      flex: "1 1 0", minWidth: 0, margin: 0, padding: "3px 0",
-      fontSize: fontSize ?? 11, minHeight: 0, boxSizing: "border-box",
-      color: "#fff",
+      flex: "1 1 0", minWidth: 0, margin: 0, padding: `${px(8)}px 0`,
+      fontSize: fontSize ?? px(13), minHeight: px(40), boxSizing: "border-box",
+      overflow: "visible", lineHeight: 1.2, color: "#fff",
       background: focused
         ? "rgba(88,101,242,0.85)"
         : active ? "rgba(88,101,242,0.35)" : "rgba(255,255,255,0.06)",
@@ -171,10 +174,13 @@ const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children 
   >
     {children}
   </BtnTab>
-);
+  );
+};
 
 // Bouton pleine largeur (Parcourir Discord / Retour à l'appel).
-const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => (
+const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => {
+  const { px } = useQamUi();
+  return (
   <BtnTab
     onClick={onClick}
     onFocus={onFocus}
@@ -182,15 +188,16 @@ const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => (
     onGamepadFocus={onFocus}
     onGamepadBlur={onBlur}
     style={{
-      width: "100%", margin: 0, padding: "4px 0", fontSize: 11, minHeight: 0,
-      boxSizing: "border-box", color: "#fff",
+      width: "100%", margin: 0, padding: `${px(8)}px 0`, fontSize: px(13), minHeight: px(40),
+      boxSizing: "border-box", overflow: "visible", lineHeight: 1.2, color: "#fff",
       background: focused ? "rgba(88,101,242,0.85)" : "rgba(255,255,255,0.06)",
       ...focusHalo(ACCENT, focused),
     }}
   >
     {children}
   </BtnTab>
-);
+  );
+};
 
 const STATUSES: { id: string; color: string }[] = [
   { id: "online", color: "#23a55a" },
@@ -281,6 +288,8 @@ const UserStatusButton = ({ me }: { me: any }) => {
   };
 
   const cur = STATUSES.find((x) => x.id === current) || STATUSES[0];
+  const { px } = useQamUi();
+  const av = px(36);
 
   return (
     <div>
@@ -289,8 +298,9 @@ const UserStatusButton = ({ me }: { me: any }) => {
         onFocus={() => setFocused("name")}
         onBlur={() => setFocused((f) => (f === "name" ? null : f))}
         style={{
-          display: "flex", alignItems: "center", gap: 8, width: "100%",
-          padding: "4px 8px", margin: 0, minHeight: 0, boxSizing: "border-box",
+          display: "flex", alignItems: "center", gap: px(8), width: "100%",
+          padding: `${px(6)}px ${px(8)}px`, margin: 0, minHeight: px(48),
+          boxSizing: "border-box", overflow: "visible", lineHeight: 1,
           // Blanc forcé : le focus natif du DialogButton passe le texte en
           // sombre alors qu'on garde un fond foncé → pseudo illisible.
           color: "#fff",
@@ -298,15 +308,22 @@ const UserStatusButton = ({ me }: { me: any }) => {
           ...focusHalo(ACCENT, focused === "name"),
         }}
       >
-        <img
-          src={"https://cdn.discordapp.com/avatars/" + me?.id + "/" + me?.avatar + ".webp"}
-          width={32} height={32}
-          style={{ display: "block", borderRadius: "50%", flexShrink: 0 }}
-        />
-        <span style={{ flex: 1, textAlign: "left", fontSize: 13, fontWeight: 600 }}>{me?.username}</span>
+        <div style={{
+          width: av, height: av, borderRadius: "50%", overflow: "hidden",
+          flexShrink: 0, background: "#5865f2",
+        }}>
+          <img
+            src={me?.id && me?.avatar
+              ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.webp?size=256`
+              : "https://cdn.discordapp.com/embed/avatars/0.png"}
+            alt=""
+            style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }}
+          />
+        </div>
+        <span style={{ flex: 1, textAlign: "left", fontSize: px(14), fontWeight: 600 }}>{me?.username}</span>
         {/* Statut courant (icône) à droite du pseudo. */}
-        <span style={{ fontSize: 14 }}><IcStatus id={cur.id} color={cur.color} /></span>
-        <span style={{ opacity: 0.4, fontSize: 10 }}>{open ? "▲" : "▼"}</span>
+        <span style={{ fontSize: px(16) }}><IcStatus id={cur.id} color={cur.color} size={px(16)} /></span>
+        <span style={{ opacity: 0.4, fontSize: px(12) }}>{open ? "▲" : "▼"}</span>
       </BtnTab>
       {open && (
         <Focusable
@@ -323,8 +340,8 @@ const UserStatusButton = ({ me }: { me: any }) => {
                 onFocus={() => setFocused(s.id)}
                 onBlur={() => setFocused((f) => (f === s.id ? null : f))}
                 style={{
-                  flex: "1 1 0", minWidth: 0, margin: 0, padding: "4px 0", fontSize: 16, minHeight: 0,
-                  boxSizing: "border-box",
+                  flex: "1 1 0", minWidth: 0, margin: 0, padding: `${px(8)}px 0`, fontSize: px(18), minHeight: px(40),
+                  boxSizing: "border-box", overflow: "visible",
                   background: selected ? s.color : "rgba(255,255,255,0.06)",
                   opacity: selected ? 1 : 0.5,
                   border: selected ? "2px solid #fff" : "2px solid transparent",
@@ -886,7 +903,11 @@ function useVesktopBackend(active: boolean): string | null | "unknown" {
   return backend;
 }
 
-const Content = () => {
+const Content = () => (
+  <QamUiRoot><ContentBody /></QamUiRoot>
+);
+
+const ContentBody = () => {
   const state = useSteamcordState();
   const [topTab, setTopTab] = useState<"voice" | "text" | "config">("voice");
   const [srcTab, setSrcTab] = useState<"servers" | "dms">("servers");

@@ -3,7 +3,8 @@
 // scale on gamepad focus, one accent color per section. Keeping every
 // Steamcord control on this kit makes the three plugins read as one family.
 import { DialogButton } from "@decky/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useQamUi } from "../qamUi";
 
 const Btn = DialogButton as any;
 
@@ -136,6 +137,7 @@ export function focusHalo(color: string, focused: boolean, scale = 1.02) {
 // Clickable card: colored background when active, white halo + colored glow on
 // gamepad focus. Mirrors SkullKey's CardBtn.
 export function CardBtn({ active, focused, color, disabled, center, big, onClick, onFocus, onBlur, onGamepadFocus, onGamepadBlur, children }: any) {
+  const { px } = useQamUi();
   const c = color || ACCENT;
   return (
     <Btn
@@ -147,9 +149,11 @@ export function CardBtn({ active, focused, color, disabled, center, big, onClick
       onGamepadBlur={onGamepadBlur}
       style={{
         display: "flex", alignItems: "center", justifyContent: center ? "center" : "flex-start",
-        gap: 8, width: "100%", minWidth: 0,
-        padding: big ? "12px 14px" : "7px 10px", margin: 0, minHeight: 0, boxSizing: "border-box",
-        borderRadius: 6, color: "#fff", fontSize: big ? 14 : 12, fontWeight: active ? 700 : 400,
+        gap: px(8), width: "100%", minWidth: 0,
+        padding: big ? `${px(12)}px ${px(14)}px` : `${px(8)}px ${px(10)}px`,
+        margin: 0, minHeight: px(big ? 44 : 36), boxSizing: "border-box",
+        overflow: "visible", lineHeight: 1.2,
+        borderRadius: px(6), color: "#fff", fontSize: px(big ? 14 : 13), fontWeight: active ? 700 : 400,
         background: active ? c : "rgba(255,255,255,0.05)",
         border: active ? "1px solid " + c : "1px solid transparent",
         opacity: disabled ? 0.5 : 1,
@@ -185,8 +189,17 @@ export function ActionCard({ color, active, disabled, center, big, onClick, chil
 
 // Square icon button (voice toolbar) with the same halo treatment. `active`
 // paints the accent as a solid background (e.g. muted/live state).
+export function toolbarBtnStyle(px: (n: number) => number) {
+  return {
+    height: px(48), width: px(52), minWidth: px(52), minHeight: px(48),
+    padding: 0, marginRight: px(6), boxSizing: "border-box" as const,
+    overflow: "visible" as const, lineHeight: 1, fontSize: px(20),
+  };
+}
+
 export function IconBtn({ color, active, disabled, title, onClick, children }: any) {
   const [focused, setFocused] = useState(false);
+  const { px } = useQamUi();
   const c = color || ACCENT;
   return (
     <Btn
@@ -198,9 +211,10 @@ export function IconBtn({ color, active, disabled, title, onClick, children }: a
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       style={{
-        height: 40, width: 44, minWidth: 44, padding: 0, margin: 0, boxSizing: "border-box",
+        ...toolbarBtnStyle(px),
+        marginRight: 0,
         display: "flex", alignItems: "center", justifyContent: "center", position: "relative",
-        borderRadius: 6, color: "#fff",
+        borderRadius: px(6), color: "#fff",
         background: active ? c : "rgba(255,255,255,0.06)",
         opacity: disabled ? 0.5 : 1,
         ...focusHalo(c, focused, 1.06),

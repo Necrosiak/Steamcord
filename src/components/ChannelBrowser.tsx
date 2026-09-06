@@ -3,6 +3,7 @@ import { call } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight } from "./Styled";
+import { useQamUi } from "../qamUi";
 import { IcRefresh, IcSpeaker, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 
 interface ChannelMember { id: string; avatar: string | null; }
@@ -12,23 +13,25 @@ interface Guild { id: string; name: string; icon: string | null; channels: Voice
 const Btn = DialogButton as any;
 
 function MemberAvatars({ members }: { members: ChannelMember[] }) {
+  const { px } = useQamUi();
   if (!members || members.length === 0) return null;
   const shown = members.slice(0, 4);
   const extra = members.length - shown.length;
+  const av = px(20);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: px(3), flexShrink: 0 }}>
       {shown.map(m => (
         <img
           key={m.id}
           src={m.avatar
-            ? `https://cdn.discordapp.com/avatars/${m.id}/${m.avatar}.webp?size=16`
+            ? `https://cdn.discordapp.com/avatars/${m.id}/${m.avatar}.webp?size=32`
             : `https://cdn.discordapp.com/embed/avatars/0.png`}
-          width={16} height={16}
-          style={{ borderRadius: "50%", border: "1px solid rgba(255,255,255,0.15)" }}
+          width={av} height={av}
+          style={{ borderRadius: "50%", border: "1px solid rgba(255,255,255,0.15)", objectFit: "cover", flexShrink: 0 }}
         />
       ))}
-      {extra > 0 && <span style={{ fontSize: 9, opacity: 0.5 }}>+{extra}</span>}
-      <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 2 }}>{members.length}</span>
+      {extra > 0 && <span style={{ fontSize: px(11), opacity: 0.5 }}>+{extra}</span>}
+      <span style={{ fontSize: px(12), opacity: 0.5, marginLeft: px(2) }}>{members.length}</span>
     </div>
   );
 }
@@ -38,15 +41,18 @@ function MemberAvatars({ members }: { members: ChannelMember[] }) {
 // l'onglet textuel réutilise le même mécanisme réordonner/masquer (mêmes prefs
 // backend, cf. main.py _apply_guild_prefs).
 export function TinyIconBtn({ onClick, disabled, title, children }: { onClick: () => void; disabled?: boolean; title?: string; children: any }) {
+  const { px } = useQamUi();
+  const s = px(28);
   return (
     <Btn
       onClick={(e: any) => { e?.stopPropagation?.(); if (!disabled) onClick(); }}
       disabled={disabled}
       title={title}
       style={{
-        width: 22, minWidth: 22, height: 22, padding: 0, margin: 0, minHeight: 0,
+        width: s, minWidth: s, height: s, padding: 0, margin: 0, minHeight: s,
         display: "flex", alignItems: "center", justifyContent: "center",
-        opacity: disabled ? 0.25 : 0.7, fontSize: 11, flexShrink: 0,
+        overflow: "visible", lineHeight: 1,
+        opacity: disabled ? 0.25 : 0.7, fontSize: px(13), flexShrink: 0,
       }}
     >
       {children}
@@ -60,22 +66,24 @@ export function TinyIconBtn({ onClick, disabled, title, children }: { onClick: (
 function GuildRowBtn({ guild, totalActive, expanded, onClick, flex }: {
   guild: Guild; totalActive: number; expanded: boolean; onClick: () => void; flex?: boolean;
 }) {
+  const { px } = useQamUi();
+  const ic = px(22);
   return (
     <Btn
       onClick={onClick}
-      style={{ display: "flex", alignItems: "center", gap: 7, width: flex ? undefined : "100%", flex: flex ? 1 : undefined, minWidth: 0, padding: "5px 8px" }}
+      style={{ display: "flex", alignItems: "center", gap: px(8), width: flex ? undefined : "100%", flex: flex ? 1 : undefined, minWidth: 0, minHeight: px(40), padding: `${px(6)}px ${px(8)}px`, overflow: "visible", lineHeight: 1.2 }}
     >
       {guild.icon
-        ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=32`}
-            width={18} height={18} style={{ borderRadius: "50%", flexShrink: 0 }} />
-        : <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#5865f2", flexShrink: 0,
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff" }}>
+        ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=64`}
+            width={ic} height={ic} style={{ borderRadius: "50%", flexShrink: 0, objectFit: "cover" }} />
+        : <div style={{ width: ic, height: ic, borderRadius: "50%", background: "#5865f2", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: px(11), color: "#fff" }}>
             {guild.name[0]}
           </div>
       }
-      <span style={{ flex: 1, textAlign: "left", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
-      {totalActive > 0 && <span style={{ fontSize: 9, color: "#23a55a" }}>● {totalActive}</span>}
-      <span style={{ opacity: 0.4, fontSize: 10 }}>{expanded ? "▲" : "▼"}</span>
+      <span style={{ flex: 1, textAlign: "left", fontSize: px(13), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
+      {totalActive > 0 && <span style={{ fontSize: px(11), color: "#23a55a" }}>● {totalActive}</span>}
+      <span style={{ opacity: 0.4, fontSize: px(12) }}>{expanded ? "▲" : "▼"}</span>
     </Btn>
   );
 }

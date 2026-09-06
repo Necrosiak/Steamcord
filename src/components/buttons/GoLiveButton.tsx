@@ -5,6 +5,7 @@ import { FaDesktop, FaStop } from "react-icons/fa";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
 import { focusHalo, ACCENT, DANGER } from "../Styled";
+import { useQamUi } from "../../qamUi";
 
 const Btn = DialogButton as any;
 
@@ -34,6 +35,7 @@ export function GoLiveButton() {
   if (!state?.vc?.channel_name) return null;
 
   const live = !!state?.me?.is_live;
+  const { px } = useQamUi();
 
   return (
     <Btn
@@ -50,10 +52,10 @@ export function GoLiveButton() {
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       style={{
-        width: "100%", margin: 0, padding: "6px 0", minHeight: 0,
-        boxSizing: "border-box",
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-        fontSize: 12, fontWeight: 600,
+        width: "100%", margin: 0, padding: `${px(8)}px 0`, minHeight: px(40),
+        boxSizing: "border-box", overflow: "visible",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: px(8),
+        fontSize: px(13), fontWeight: 600,
         color: "#fff", borderRadius: 6,
         background: live ? DANGER : (focused ? "rgba(88,101,242,0.85)" : "rgba(88,101,242,0.35)"),
         opacity: coolingDown ? 0.5 : 1,

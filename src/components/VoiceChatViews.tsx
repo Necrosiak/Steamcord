@@ -10,6 +10,7 @@ import { SliderField, DialogButton, Dropdown, Focusable, ModalRoot, showModal, T
 import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
 import { focusHalo, ACCENT, DANGER, ActionCard, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
+import { useQamUi } from "../qamUi";
 import { VideoGridModal } from "./VideoGridFullscreen";
 
 // Réagit à l'arrivée du flux vidéo relayé (Vesktop→QAM) pour cet utilisateur.
@@ -579,18 +580,21 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
     try { await call<[string, boolean], boolean>("set_local_mute", user.id, target); } catch {}
   };
 
+  const { px } = useQamUi();
+  const av = px(32);
   return (
-    <li style={{ listStyle: "none", marginBottom: 8, padding: "6px 0", background: "rgba(255,255,255,0.04)", borderRadius: 6, overflow: "hidden", boxSizing: "border-box", width: "100%", maxWidth: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 8px" }}>
-        <div style={{ position: "relative", flexShrink: 0 }}>
+    <li style={{ listStyle: "none", marginBottom: px(8), padding: `${px(8)}px 0`, background: "rgba(255,255,255,0.04)", borderRadius: px(6), overflow: "visible", boxSizing: "border-box", width: "100%", maxWidth: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: px(8), padding: `0 ${px(8)}px` }}>
+        <div style={{ position: "relative", flexShrink: 0, width: av, height: av }}>
           <img
             src={user?.avatar
-              ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.webp`
+              ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.webp?size=64`
               : `https://cdn.discordapp.com/embed/avatars/0.png`}
-            width={28} height={28}
+            width={av} height={av}
             style={{
               borderRadius: "50%",
               display: "block",
+              objectFit: "cover",
               // Native-Discord-style glowing halo while speaking
               boxShadow: speaking
                 ? "0 0 0 2px #23a55a, 0 0 10px 3px rgba(35,165,90,0.75)"
@@ -602,15 +606,15 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
             <div style={{
               position: "absolute", bottom: -1, right: -1,
               background: "#ed4245", borderRadius: "50%",
-              width: 12, height: 12,
+              width: px(14), height: px(14),
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 8, lineHeight: 1
+              fontSize: px(9), lineHeight: 1
             }}>
-              {deafened ? <IcSpeakerMuteFill color="#fff" size={8} /> : <IcMicMuteFill color="#fff" size={8} />}
+              {deafened ? <IcSpeakerMuteFill color="#fff" size={px(9)} /> : <IcMicMuteFill color="#fff" size={px(9)} />}
             </div>
           )}
         </div>
-        <span style={{ flex: 1, fontSize: 12, opacity: muted ? 0.45 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ flex: 1, fontSize: px(13), opacity: muted ? 0.45 : 0.9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {user?.username}
           {user?.is_live && <span style={{ marginLeft: 4, color: "#ed4245", fontSize: 9 }}>● LIVE</span>}
         </span>

@@ -3,6 +3,7 @@ import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight, focusHalo, ACCENT } from "./Styled";
+import { useQamUi } from "../qamUi";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
 import { TinyIconBtn } from "./ChannelBrowser";
@@ -245,6 +246,8 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   // réaction). Ces appels avalaient leur erreur en silence : l'utilisateur
   // voyait "rien ne se passe" et aucun log ne disait pourquoi (David #21).
   const [actionError, setActionError] = useState<string | null>(null);
+  const { px } = useQamUi();
+  const av = px(22);
   const links = extractLinks(m.content || "");
   const hasBody = !!m.content || (m.images?.length ?? 0) > 0 || (m.files ?? 0) > 0;
 
@@ -384,10 +387,13 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
           rester net sur écran haute densité. */}
       <img
         src={m.avatar
-          ? `https://cdn.discordapp.com/avatars/${m.author_id}/${m.avatar}.webp?size=32`
+          ? `https://cdn.discordapp.com/avatars/${m.author_id}/${m.avatar}.webp?size=64`
           : `https://cdn.discordapp.com/embed/avatars/0.png`}
-        width={16} height={16}
-        style={{ borderRadius: "50%", verticalAlign: "-3px", marginRight: 5 }}
+        width={av} height={av}
+        style={{
+          width: av, height: av, borderRadius: "50%", verticalAlign: "-4px",
+          marginRight: 6, objectFit: "cover", objectPosition: "center",
+        }}
       />
       <span style={{ color: colorFor(m.author_id), fontWeight: 600 }}>{m.author}</span>
       {m.bot && <span style={{ fontSize: 8, background: "#5865f2", color: "#fff", borderRadius: 3, padding: "0 3px", marginLeft: 4 }}>BOT</span>}
@@ -592,15 +598,18 @@ export function ChipBtn({ disabled, onClick, color, children }: { disabled?: boo
 
 // Avatar d'une conversation privée (DM/GroupDM), même logique que DMBrowser.
 function DMAvatar({ ch }: { ch: DMChannel }) {
+  const { px } = useQamUi();
+  const s = px(24);
+  const imgStyle = { width: s, height: s, borderRadius: "50%", flexShrink: 0, objectFit: "cover" as const };
   if (ch.type === 3 && ch.icon) {
-    return <img src={`https://cdn.discordapp.com/channel-icons/${ch.id}/${ch.icon}.webp?size=32`} width={20} height={20} style={{ borderRadius: "50%", flexShrink: 0 }} />;
+    return <img src={`https://cdn.discordapp.com/channel-icons/${ch.id}/${ch.icon}.webp?size=64`} width={s} height={s} style={imgStyle} />;
   }
   if (ch.recipients.length >= 1) {
     const r = ch.recipients[0];
-    return <img src={r.avatar ? `https://cdn.discordapp.com/avatars/${r.id}/${r.avatar}.webp?size=32` : `https://cdn.discordapp.com/embed/avatars/0.png`} width={20} height={20} style={{ borderRadius: "50%", flexShrink: 0 }} />;
+    return <img src={r.avatar ? `https://cdn.discordapp.com/avatars/${r.id}/${r.avatar}.webp?size=64` : `https://cdn.discordapp.com/embed/avatars/0.png`} width={s} height={s} style={imgStyle} />;
   }
   return (
-    <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#5865f2", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff" }}>
+    <div style={{ width: s, height: s, borderRadius: "50%", background: "#5865f2", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: px(11), color: "#fff" }}>
       {ch.name[0]?.toUpperCase()}
     </div>
   );
@@ -631,9 +640,10 @@ const scrollPreviewBottom = (el: HTMLElement | null) => setTimeout(() => {
 
 export function TextChat({ source }: { source: "servers" | "dms" }) {
   const fillList = useFillHeight();
+  const { px } = useQamUi();
   // Réserve sous la liste : composer rapide (TextField + rangée Envoyer/plein
   // écran) en plus de la marge d'origine.
-  const fillPreview = useFillHeight(80, 116);
+  const fillPreview = useFillHeight(180, 108);
   // On garde le nœud du scroller d'aperçu : voir isPreviewNearBottom.
   const previewElRef = useRef<HTMLDivElement | null>(null);
   // Descendre depuis la liste des salons doit arriver DIRECTEMENT sur la zone de
@@ -864,7 +874,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     const preview = (messages ?? []).slice(-15);
     return (
       <div>
-        <Btn onClick={closeChannel} style={{ width: "100%", padding: "3px 8px", fontSize: 11, marginBottom: 6, display: "flex", gap: 6 }}>
+        <Btn onClick={closeChannel} style={{ width: "100%", padding: `${px(6)}px ${px(8)}px`, fontSize: px(13), marginBottom: 6, display: "flex", gap: 6, minHeight: px(36) }}>
           <span>←</span><span style={{ flex: 1, textAlign: "left" }}>{channel.dm ? channel.name : `#${channel.name}`}</span>
         </Btn>
 
@@ -886,8 +896,9 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
           id={PREVIEW_LIST_ID}
           ref={previewRef}
           style={{
-            maxHeight: fillPreview.height, overflowY: "auto", marginBottom: 6,
+            maxHeight: fillPreview.height, overflowY: "scroll", marginBottom: 6,
             display: "flex", flexDirection: "column-reverse", overflowAnchor: "none",
+            WebkitOverflowScrolling: "touch" as any,
           }}
         >
           {/* Entrée de nav sur le message le PLUS RÉCENT, dans les deux sens.
@@ -935,7 +946,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
               sendQuick(chId);
             }
           }}
-          style={{ fontSize: 12, width: "100%" }}
+          style={{ fontSize: px(14), width: "100%" }}
         />
         <Focusable flow-children="row" style={{ display: "flex", gap: 6, marginTop: 4 }}>
           <SendBtn disabled={sending || !draft.trim()} onClick={() => sendQuick(chId)}>
@@ -967,11 +978,11 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         {dms === null && <div style={{ padding: 8, opacity: 0.6, fontSize: 13 }}>{t("loading")}</div>}
         {dms && dms.length === 0 && <div style={{ padding: 8, opacity: 0.5, fontSize: 12 }}>{t("no_dms")}</div>}
         {dms && dms.length > 0 && (
-          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "auto", marginTop: 4 }}>
+          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", marginTop: 4, WebkitOverflowScrolling: "touch" } as any}>
             {dms.map((ch) => (
-              <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "5px 8px", marginBottom: 3 }}>
+              <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: `${px(8)}px ${px(8)}px`, marginBottom: 3, minHeight: px(40) }}>
                 <DMAvatar ch={ch} />
-                <span style={{ flex: 1, textAlign: "left", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
+                <span style={{ flex: 1, textAlign: "left", fontSize: px(14), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
               </Btn>
             ))}
           </div>
@@ -1011,18 +1022,18 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
               <span style={{ color: editMode ? "#5865f2" : undefined }}><IcReorder /></span>
             </TinyIconBtn>
           </Focusable>
-          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "auto", marginTop: 4 }}>
+          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", marginTop: 4, WebkitOverflowScrolling: "touch" } as any}>
             {visibleGuilds.map((guild, i) => {
               const rowBtn = (flex: boolean) => (
                 <Btn
                   onClick={() => setExpanded(expanded === guild.id ? null : guild.id)}
-                  style={{ display: "flex", alignItems: "center", gap: 7, width: flex ? undefined : "100%", flex: flex ? 1 : undefined, minWidth: 0, padding: "5px 8px" }}
+                  style={{ display: "flex", alignItems: "center", gap: 7, width: flex ? undefined : "100%", flex: flex ? 1 : undefined, minWidth: 0, padding: `${px(8)}px ${px(8)}px`, minHeight: px(40) }}
                 >
                   {guild.icon
-                    ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=32`} width={18} height={18} style={{ borderRadius: "50%", flexShrink: 0 }} />
-                    : <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#5865f2", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#fff" }}>{guild.name[0]}</div>}
-                  <span style={{ flex: 1, textAlign: "left", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
-                  <span style={{ opacity: 0.4, fontSize: 10 }}>{expanded === guild.id ? "▲" : "▼"}</span>
+                    ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=64`} width={px(22)} height={px(22)} style={{ borderRadius: "50%", flexShrink: 0, objectFit: "cover" }} />
+                    : <div style={{ width: px(22), height: px(22), borderRadius: "50%", background: "#5865f2", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: px(11), color: "#fff" }}>{guild.name[0]}</div>}
+                  <span style={{ flex: 1, textAlign: "left", fontSize: px(14), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
+                  <span style={{ opacity: 0.4, fontSize: px(12) }}>{expanded === guild.id ? "▲" : "▼"}</span>
                 </Btn>
               );
               return (
@@ -1044,7 +1055,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
                   {expanded === guild.id && (
                     <div style={{ paddingLeft: 6, marginTop: 2 }}>
                       {guild.channels.map((ch) => (
-                        <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, false)} style={{ width: "100%", padding: "4px 8px", marginBottom: 2, fontSize: 11, display: "flex", gap: 6 }}>
+                        <Btn key={ch.id} onClick={() => openChannel(ch.id, ch.name, false)} style={{ width: "100%", padding: `${px(6)}px ${px(8)}px`, marginBottom: 2, fontSize: px(13), display: "flex", gap: 6, minHeight: px(34) }}>
                           <span style={{ opacity: 0.6, fontSize: 10 }}>#</span>
                           <span style={{ flex: 1, textAlign: "left" }}>{ch.name}</span>
                         </Btn>

@@ -3,19 +3,19 @@ import { useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaHeadphonesAlt, FaSlash } from "react-icons/fa";
 import { call } from "@decky/api";
-import { focusHalo, DANGER } from "../Styled";
-
-const btnStyle = { height: "40px", width: "44px", minWidth: 0, padding: 0, marginRight: "6px" };
+import { focusHalo, DANGER, toolbarBtnStyle } from "../Styled";
+import { useQamUi } from "../../qamUi";
 
 export function DeafenButton() {
   const state = useSteamcordState();
+  const { px } = useQamUi();
   const [focused, setFocused] = useState(false);
   const deafened = !!state?.me?.is_deafened;
   const icon = deafened
-    ? <><FaHeadphonesAlt /><FaSlash style={{ position: "absolute", left: "15px" }} /></>
-    : <FaHeadphonesAlt />;
+    ? <><FaHeadphonesAlt size={px(20)} /><FaSlash size={px(20)} style={{ position: "absolute", left: px(16) }} /></>
+    : <FaHeadphonesAlt size={px(20)} />;
   const style = {
-    ...btnStyle,
+    ...toolbarBtnStyle(px),
     display: "flex", alignItems: "center", justifyContent: "center", position: "relative" as const,
     borderRadius: 6, color: "#fff",
     background: deafened ? DANGER : "rgba(255,255,255,0.06)",
