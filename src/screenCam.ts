@@ -30,7 +30,9 @@ export function setScreenCamOn(on: boolean) {
 // getUserMedia({video:true}) jetable si besoin, puis on relit la liste.
 async function findScreenDeviceId(): Promise<string | null> {
   const match = (ds: MediaDeviceInfo[]) =>
-    ds.find((d) => d.kind === "videoinput" && /steamcord screen/i.test(d.label));
+    ds.find((d) => d.kind === "videoinput" && /steamcord screen/i.test(d.label))
+    || ds.find((d) => d.kind === "videoinput" && /obs virtual camera/i.test(d.label))
+    || ds.find((d) => d.kind === "videoinput" && /dummy video|loopback/i.test(d.label));
   try {
     let devs = await navigator.mediaDevices.enumerateDevices();
     let d = match(devs);

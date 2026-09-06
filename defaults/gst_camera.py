@@ -26,7 +26,10 @@ log = logging.getLogger("screencam")
 require_version("Gst", "1.0")
 from gi.repository import Gst, GLib  # type: ignore
 
-DEVICE = "/dev/video42"
+# Bazzite/OBS chargent souvent v4l2loopback en /dev/video0 (« OBS Virtual
+# Camera ») au lieu du /dev/video42 attendu par Steamcord. Le backend passe le
+# device qui existe VRAIMENT ; repli sur 42 pour un lancement à la main.
+DEVICE = sys.argv[1] if len(sys.argv) > 1 else "/dev/video42"
 # Discord/Chromium aime un format simple et borné. YUY2 720p30 = sûr.
 WIDTH, HEIGHT, FPS = 1280, 720, 30
 
@@ -258,24 +261,24 @@ def run_backend(backend, node, display):
         if not got:
             return Gst.FlowReturn.OK
         try:
-            data = bytes(mi.data)
-        finally:
-            buf.unmap(mi)
-        try:
-            os.write(dev_fd, data)
+            # write() accepte un objet buffer-protocol : plus de copie bytes()
+            # de 1,8 Mio par image (soit ~54 Mio/s de memcpy en 720p30).
+            os.write(dev_fd, mi.data)
+            stats["n"] += 1
+            # 90e frame → snapshot diag one-shot ; ensuite copie rafraîchie toutes
+            # les ~60 frames (2s) pour l'aperçu QAM encodé par write_preview.
+            if stats["n"] == 90 or stats["n"] % 60 == 0:
+                snapbuf["data"] = bytes(mi.data)
+                snapbuf["caps"] = sample.get_caps()
+                if stats["n"] == 90:
+                    add_timeout(0, write_snapshot)
         except OSError as e:
             log.error(f"write {DEVICE} KO: {e!r}")
             ok["value"] = False
             loop.quit()
             return Gst.FlowReturn.ERROR
-        stats["n"] += 1
-        # 90e frame → snapshot diag one-shot ; ensuite copie rafraîchie toutes
-        # les ~60 frames (2s) pour l'aperçu QAM encodé par write_preview.
-        if stats["n"] == 90 or stats["n"] % 60 == 0:
-            snapbuf["data"] = data
-            snapbuf["caps"] = sample.get_caps()
-            if stats["n"] == 90:
-                add_timeout(0, write_snapshot)
+        finally:
+            buf.unmap(mi)
         now = time.monotonic()
         if not stats["logged_caps"]:
             caps = sample.get_caps()

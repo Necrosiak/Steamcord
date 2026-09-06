@@ -2978,9 +2978,10 @@ class Plugin:
     async def start_screen_camera(cls):
         import os
         from pathlib import Path as _P
-        if not os.path.exists("/dev/video42"):
+        device = cls._find_loopback_device()
+        if not device:
             info = await cls._v4l2_hint()
-            logger.warning(f"[gstcam] /dev/video42 absent — {info['hint']}")
+            logger.warning(f"[gstcam] no v4l2loopback device — {info['hint']}")
             return {"ok": False, **info}
         info = await cls._gst_python_hint()
         if info:
@@ -2996,9 +2997,11 @@ class Plugin:
         script = _P(DECKY_PLUGIN_DIR) / "gst_camera.py"
         if not script.exists():
             script = _P(DECKY_PLUGIN_DIR) / "defaults" / "gst_camera.py"
+        logger.info(f"[gstcam] feeding {device}")
         cls.camera_feeder = await create_subprocess_exec(
             sys_python(),
             str(script),
+            device,
             env=cls._gst_env_or_default(),
             stdout=PIPE, stderr=PIPE,
         )
@@ -3006,6 +3009,10 @@ class Plugin:
         create_task(stream_watcher(cls.camera_feeder.stderr, True, prefix="[gstcam]"))
         # Laisser le pipeline s'établir avant de sélectionner la caméra côté Discord.
         await sleep(2)
+        if cls.camera_feeder.returncode is not None:
+            logger.warning(f"[gstcam] feeder exited early rc={cls.camera_feeder.returncode}")
+            return {"ok": False, "code": "gst_missing",
+                    "hint": f"virtual camera feeder exited (device {device}) — see the Steamcord log"}
         await cls.evt_handler.send_client({"type": "$screen_camera", "stop": False})
         return {"ok": True}
 
@@ -3167,17 +3174,48 @@ class Plugin:
             return None
 
     @staticmethod
+    def _find_loopback_device():
+        """Premier node v4l2loopback utilisable. /dev/video42 d'abord (la carte
+        historique de Steamcord), mais Bazzite charge le module en « OBS Virtual
+        Camera » sur /dev/video0 : exiger 42 rendait le bouton totalement inerte
+        là-bas, sans le moindre message."""
+        import os
+        preferred = "/dev/video42"
+        if os.path.exists(preferred):
+            return preferred
+        v4l = "/sys/class/video4linux"
+        if not os.path.isdir(v4l):
+            return None
+        found = []
+        for name in sorted(os.listdir(v4l)):
+            if not name.startswith("video"):
+                continue
+            path = os.path.join(v4l, name)
+            label = ""
+            try:
+                with open(os.path.join(path, "name")) as f:
+                    label = f.read().strip()
+            except Exception:
+                pass
+            driver = ""
+            try:
+                driver = os.path.realpath(os.path.join(path, "device", "driver"))
+            except Exception:
+                pass
+            blob = f"{label} {driver} {name}".lower()
+            if ("v4l2loopback" in blob or "loopback" in blob
+                    or "virtual camera" in blob or "dummy video" in blob
+                    or "steamcord" in blob or "obs" in blob):
+                found.append(f"/dev/{name}")
+        return found[0] if found else None
+
+    @staticmethod
     def _v4l2_loaded():
-        """(chargé?, expose /dev/video42?) d'après sysfs — pas de lsmod à parser."""
+        """(chargé?, a un device loopback?) d'après sysfs — pas de lsmod à parser."""
         import os
         if not os.path.exists("/sys/module/v4l2loopback"):
             return False, False
-        try:
-            with open("/sys/module/v4l2loopback/parameters/video_nr") as f:
-                nrs = [n.strip() for n in f.read().split(",")]
-            return True, "42" in nrs
-        except Exception:
-            return True, False
+        return True, bool(Plugin._find_loopback_device())
 
     @classmethod
     async def _v4l2_hint(cls):

@@ -353,7 +353,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 for (let attempt = 0; attempt < 12; attempt++) {
                     const devs = await navigator.mediaDevices.enumerateDevices();
                     const vins = devs.filter(d => d.kind === "videoinput");
-                    cam = vins.find(d => /steamcord screen/i.test(d.label));
+                    cam = vins.find(d => /steamcord screen/i.test(d.label))
+                        || vins.find(d => /obs virtual camera/i.test(d.label))
+                        || vins.find(d => /dummy video|loopback/i.test(d.label));
                     if (cam) {
                         log("videoinputs=" + JSON.stringify(vins.map(d => d.label || "(label vide)")) + " (essai " + attempt + ")");
                         break;
