@@ -1198,10 +1198,37 @@ class Plugin:
             pass
         return os.path.expanduser("~/Downloads")
 
+    @staticmethod
+    def _ca_ssl_context():
+        """Le Python embarqué de plugin_loader (PyInstaller) n'embarque AUCUN
+        bundle CA : toute requête TLS échoue en CERTIFICATE_VERIFY_FAILED, y
+        compris vers le CDN de Discord (constaté le 06/09 au premier
+        enregistrement de pièce jointe). Même recette que l'updater : on désigne
+        explicitement le magasin du système. On ne désactive JAMAIS la
+        vérification — le but est de récupérer un fichier, pas de l'accepter de
+        n'importe qui."""
+        import ssl
+        # Ordre : le chemin Fedora/Bazzite historique n'existe PAS sur cette
+        # image (vérifié le 06/09) — c'est le second qui répond. On garde les
+        # quatre : ce backend tourne aussi sur SteamOS, Arch et Debian.
+        for ca in ("/etc/pki/tls/certs/ca-bundle.crt",
+                   "/etc/ssl/certs/ca-certificates.crt",
+                   "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+                   "/etc/ssl/cert.pem"):
+            if os.path.exists(ca):
+                try:
+                    return ssl.create_default_context(cafile=ca)
+                except Exception:
+                    pass
+        try:
+            return ssl.create_default_context()
+        except Exception:
+            return None
+
     @classmethod
     async def save_attachment(cls, url, filename=""):
         from urllib.parse import urlparse, unquote
-        from aiohttp import ClientSession  # type: ignore
+        from aiohttp import ClientSession, TCPConnector  # type: ignore
 
         parsed = urlparse(str(url))
         if parsed.scheme != "https" or parsed.hostname not in cls._ATTACHMENT_HOSTS:
@@ -1230,7 +1257,8 @@ class Plugin:
 
         tmp = path + ".part"
         try:
-            async with ClientSession() as sess:
+            connector = TCPConnector(ssl=cls._ca_ssl_context())
+            async with ClientSession(connector=connector) as sess:
                 async with sess.get(url, timeout=120) as resp:
                     if resp.status != 200:
                         logger.warning(f"[attach] HTTP {resp.status} sur {name}")
@@ -1249,7 +1277,8 @@ class Plugin:
                 os.remove(tmp)
             except OSError:
                 pass
-            return {"ok": False, "code": "attach_write_failed"}
+            code = "attach_tls" if "SSL" in repr(e) or "Certificate" in repr(e) else "attach_write_failed"
+            return {"ok": False, "code": code}
 
         logger.info(f"[attach] enregistré → {path}")
         return {"ok": True, "path": path, "name": os.path.basename(path)}

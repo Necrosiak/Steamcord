@@ -229,6 +229,7 @@ export const failReason = (res: unknown): string | null => {
 function FileRow({ file, passive }: { file: MsgFile; passive?: boolean }) {
   const { px } = useQamUi();
   const [state, setState] = useState<"idle" | "busy" | "done" | "fail">("idle");
+  const [why, setWhy] = useState("");
   const [focused, setFocused] = useState(false);
   const name = file.filename || file.url.split("/").pop() || "";
   const size = humanSize(file.size);
@@ -236,11 +237,12 @@ function FileRow({ file, passive }: { file: MsgFile; passive?: boolean }) {
     if (state === "busy" || state === "done") return;
     setState("busy");
     const r = await saveAttachment(file.url, file.filename);
+    setWhy(r.ok ? "" : (r.why || ""));
     setState(r.ok ? "done" : "fail");
   };
   const suffix = state === "busy" ? " · " + t("media_saving")
     : state === "done" ? " · " + t("media_saved")
-    : state === "fail" ? " · " + t("media_save_failed")
+    : state === "fail" ? " · " + (why || t("media_save_failed"))
     : "";
   const body = (
     <span style={{

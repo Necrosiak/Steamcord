@@ -14,10 +14,14 @@ export type MediaItem = { kind: "image" | "video"; url: string; label?: string }
 // Enregistrement d'une pièce jointe — partagé par la visionneuse et la liste de
 // fichiers du chat, pour qu'il n'existe qu'UN chemin vers le backend.
 export type SaveState = "idle" | "busy" | "done" | "fail";
-export async function saveAttachment(url: string, name?: string): Promise<{ ok: boolean; path?: string }> {
+export async function saveAttachment(url: string, name?: string): Promise<{ ok: boolean; path?: string; why?: string }> {
   try {
     const r: any = await call("save_attachment", url, name || "");
-    return r?.ok ? { ok: true, path: r.path } : { ok: false };
+    if (r?.ok) return { ok: true, path: r.path };
+    // Le code du backend est traduit ici : « non enregistrée » tout court ne dit
+    // pas si c'est le disque, le réseau ou le certificat.
+    const msg = r?.code ? t("hint_" + r.code) : "";
+    return { ok: false, why: msg && msg !== "hint_" + r.code ? msg : undefined };
   } catch (_) {
     return { ok: false };
   }
@@ -44,7 +48,8 @@ function SaveButton({ item }: { item: MediaItem }) {
     if (state === "busy") return;
     setState("busy");
     const r = await saveAttachment(item.url, item.label);
-    if (r.ok) { setWhere(r.path || ""); setState("done"); } else setState("fail");
+    if (r.ok) { setWhere(r.path || ""); setState("done"); }
+    else { setWhere(r.why || ""); setState("fail"); }
   };
   const label = state === "busy" ? t("media_saving")
     : state === "done" ? t("media_saved")
@@ -69,7 +74,7 @@ function SaveButton({ item }: { item: MediaItem }) {
       >
         {label}
       </Btn>
-      {state === "done" && where ? (
+      {where ? (
         <div style={{ fontSize: 11, opacity: 0.7, wordBreak: "break-all", maxWidth: "80vw" }}>{where}</div>
       ) : null}
     </Focusable>
