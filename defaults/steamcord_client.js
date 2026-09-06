@@ -283,7 +283,17 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
                 await new Promise((r) => setTimeout(r, 300));
                 // La liste s'ouvre souvent dans un portail HORS de la modale :
                 // on cherche donc dans tout le document, pas seulement dans dlg.
-                let scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"));
+                // Ne garder que les options VISIBLES : à un stop→start rapproché
+                // le menu de la modale précédente est encore dans le DOM, et le
+                // 06/09 on a cliqué dedans — dans un menu mort, donc sans effet
+                // (les options sortaient en double dans le relevé).
+                const scVisible = (el) => {
+                    if (!el.offsetParent && getComputedStyle(el).position !== "fixed") return false;
+                    const r = el.getBoundingClientRect();
+                    return r.width > 0 && r.height > 0;
+                };
+                let scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"))
+                    .filter(scVisible);
                 if (!scOpts.length) {
                     // Liste vide : Vesktop propose « Refresh Audio Sources ».
                     const rb = Array.from(dlg.querySelectorAll("button"))
@@ -291,14 +301,21 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
                     if (rb) {
                         scReactClick(rb);
                         await new Promise((r) => setTimeout(r, 400));
-                        scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"));
+                        scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"))
+                            .filter(scVisible);
                     }
                 }
                 scDiag("[golive] options audio: " + (scOpts.length
                     ? scOpts.slice(0, 12).map((o) => "«" + scText(o).slice(0, 30) + "»").join(" | ")
                     : "AUCUNE"));
-                const scPick = scOpts.find((o) => !scBad.test(scText(o)))
-                            || scOpts.find((o) => !/^(none|aucun)/i.test(scText(o)));
+                // On veut LE JEU, pas « Entire System » : capter tout le système
+                // réinjecte Vesktop, donc les voix des autres participants leur
+                // reviennent en écho (demande explicite du user). « Entire
+                // System » ne sert que de repli si aucune application n'est
+                // proposée. Chromium = le rendu de Vesktop, à écarter aussi.
+                const scGeneric = /^(none|aucun|entire system|tout le syst|vesktop|discord|chromium|speech-dispatcher)/i;
+                const scPick = scOpts.find((o) => !scGeneric.test(scText(o)))
+                            || scOpts.find((o) => /^(entire system|tout le syst)/i.test(scText(o)));
                 if (scPick) {
                     scReactClick(scPick);
                     scDiag("[golive] source audio choisie: «" + scText(scPick).slice(0, 40) + "»");
