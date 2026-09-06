@@ -243,8 +243,11 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
                 if (!Array.isArray(scNodes)) scNodes = [];
             } catch (e) { scDiag("[golive] venmic.list a levé: " + e); }
             scDiag("[golive] venmic.list → " + JSON.stringify(scNodes).slice(0, 400));
-            const scExclude = scNodes.filter((n) =>
-                /vesktop|discord/i.test(String((n && (n.name || n.description)) || "")));
+            // venmic.list() rend des propriétés PipeWire brutes : la clé est
+            // `application.name` / `node.name`, PAS `name` (relevé le 06/09).
+            const scNodeName = (n) => String((n && (n["application.name"] || n["node.name"]
+                || n["media.name"] || n.name || n.description)) || "");
+            const scExclude = scNodes.filter((n) => /vesktop|discord/i.test(scNodeName(n)));
             scDiag("[golive] venmic exclut " + (scExclude.length
                 ? scExclude.map((n) => n.name || n.description).join(", ")
                 : "RIEN (aucun nœud vesktop trouvé)"));
@@ -260,14 +263,43 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // l'option son est un composant maison de Vesktop. On RELÈVE ce qui
             // est réellement là — rôle, aria, texte — plutôt que de retenter un
             // sélecteur au jugé. C'est ce relevé qui permettra de viser juste.
-            const scCtl = Array.from(dlg.querySelectorAll(
-                "[role], input, button, [aria-checked], [class*='switch' i], [class*='checkbox' i]"))
-                .slice(0, 40)
-                .map((el) => (el.tagName.toLowerCase()
-                    + "[" + (el.getAttribute("role") || "-") + "]"
-                    + (el.getAttribute("aria-checked") !== null ? " checked=" + el.getAttribute("aria-checked") : "")
-                    + " «" + String(el.textContent || "").trim().slice(0, 28) + "»"));
-            scDiag("[golive] contrôles modale: " + scCtl.join(" | ").slice(0, 900));
+            // La source audio du partage est sur « None » par défaut : sans elle
+            // Discord ne demande AUCUNE piste audio, le spectateur a une barre de
+            // volume et rien dedans (relevé le 06/09). On la choisit avant de
+            // valider — en évitant Vesktop lui-même, qui renverrait les voix des
+            // autres participants en écho.
+            const scLabel = (el) => {
+                let n = el, txt = "";
+                for (let i = 0; i < 4 && n; i++, n = n.parentElement) {
+                    txt = String(n.textContent || "").trim();
+                    if (txt) break;
+                }
+                return txt;
+            };
+            const scRadios = Array.from(dlg.querySelectorAll("input")).filter(
+                (el) => el.type === "radio" || el.type === "checkbox" || !el.type);
+            scDiag("[golive] entrées audio: " + scRadios.slice(0, 14).map((el) =>
+                el.type + (el.checked ? " CHECKED" : "") + " «" + scLabel(el).slice(0, 30) + "»"
+            ).join(" | ").slice(0, 700));
+            const scBad = /^(none|aucun|vesktop|discord)/i;
+            const scPick = scRadios.find((el) => !el.checked && !scBad.test(scLabel(el)))
+                || scRadios.find((el) => !el.checked && !/^(none|aucun)/i.test(scLabel(el)));
+            if (scPick) {
+                const k = Object.keys(scPick).find((n) => n.startsWith("__reactProps"));
+                const props = k && scPick[k];
+                try { scPick.checked = true; } catch (_) {}
+                if (props && typeof props.onChange === "function") {
+                    props.onChange({ target: scPick, currentTarget: scPick,
+                                     preventDefault() {}, stopPropagation() {}, type: "change" });
+                } else {
+                    scPick.dispatchEvent(new Event("change", { bubbles: true }));
+                    scReactClick(scPick);
+                }
+                scDiag("[golive] source audio choisie: «" + scLabel(scPick).slice(0, 40) + "»");
+            } else {
+                scDiag("[golive] AUCUNE source audio sélectionnable ("
+                       + scRadios.length + " entrées) — partage sans son");
+            }
             const how = scReactClick(btn);
             console.log("[Steamcord] modale Vesktop de partage auto-validée (" + how + ", audio système via venmic)");
             // Même canal de diagnostic que $golive (scdiag y est local) : sans
