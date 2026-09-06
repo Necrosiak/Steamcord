@@ -1110,8 +1110,19 @@ class Plugin:
                     await cls.shared_js_tab.evaluate(js)
                     break
                 except Exception as e:
-                    logger.warning(f"notification dispatch attempt {attempt + 1}/3 failed: {e!r}")
-                    await sleep(1)
+                    # Une socket MORTE ne guérit pas en attendant : le journal de
+                    # bastiHST90 (#44) montre que la 1re notification après une
+                    # longue inactivité échoue TOUJOURS sur « Cannot write to
+                    # closing transport », puis passe à la tentative suivante,
+                    # et que les notifications rapprochées ne échouent jamais.
+                    # C'est notre websocket CDP qui s'éteint faute d'usage.
+                    # Attendre une seconde ne servait qu'à retarder la notif.
+                    dead = isinstance(e, (ConnectionResetError, ConnectionError)) \
+                        or "closing transport" in str(e) or "closed" in str(e).lower()
+                    logger.warning(f"notification dispatch attempt {attempt + 1}/3 failed: {e!r}"
+                                   + (" — socket morte, reconnexion immédiate" if dead else ""))
+                    if not dead:
+                        await sleep(1)
 
     # ── Notifications en jeu (#25) ────────────────────────────────────────────
     # Havok027 : « Would it be possible to leave active or disabled to receive
