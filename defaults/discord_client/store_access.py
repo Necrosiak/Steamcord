@@ -150,6 +150,9 @@ class StoreAccess:
     async def get_events(self):
         return await self._store_access_request("$events")
 
+    async def get_event_users(self, guild_id, event_id):
+        return await self._store_access_request("$event_users", guild_id=guild_id, id=event_id)
+
     async def set_event_interest(self, guild_id, event_id, interested):
         return await self._store_access_request(
             "$event_rsvp", guild_id=guild_id, id=event_id, interested=bool(interested))

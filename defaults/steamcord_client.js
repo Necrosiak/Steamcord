@@ -2068,6 +2068,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     channel_id: e.channel_id ? String(e.channel_id) : null,
                                                     location: (e.entity_metadata && e.entity_metadata.location) || "",
                                                     count: e.user_count || 0,
+                                                    // Bannière de l'événement (fiche détaillée).
+                                                    image: e.image ? String(e.image) : null,
+                                                    end: e.scheduled_end_time || null,
                                                 });
                                             }
                                         } catch (_) { /* un serveur sans droits ne doit pas tuer la liste */ }
@@ -2076,6 +2079,24 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     out.sort((a, b) => (b.status === 2) - (a.status === 2)
                                         || String(a.start || "").localeCompare(String(b.start || "")));
                                     result = out;
+                                    break;
+                                }
+                                case "$event_users": {
+                                    // Qui participe. `with_member` donne le pseudo
+                                    // du serveur quand il diffère du pseudo global.
+                                    const r = await Vencord.Webpack.Common.RestAPI.get({
+                                        url: `/guilds/${data.guild_id}/scheduled-events/${data.id}/users`,
+                                        query: { limit: 50, with_member: true },
+                                    });
+                                    result = ((r && r.body) || []).map((u) => {
+                                        const m = u.member || {};
+                                        const usr = u.user || {};
+                                        return {
+                                            id: String(usr.id || ""),
+                                            name: m.nick || usr.global_name || usr.username || "",
+                                            avatar: usr.avatar || null,
+                                        };
+                                    });
                                     break;
                                 }
                                 case "$event_rsvp": {

@@ -2123,6 +2123,10 @@ class Plugin:
         return await cls.evt_handler.api.get_events()
 
     @classmethod
+    async def get_event_users(cls, guild_id, event_id):
+        return await cls.evt_handler.api.get_event_users(guild_id, event_id)
+
+    @classmethod
     async def set_event_interest(cls, guild_id, event_id, interested):
         return await cls.evt_handler.api.set_event_interest(guild_id, event_id, interested)
 
