@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight } from "./Styled";
 import { useQamUi } from "../qamUi";
+import { useBackHandler } from "../backNav";
 import { IcRefresh, IcSpeaker, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 
 interface ChannelMember { id: string; avatar: string | null; }
@@ -98,6 +99,7 @@ export function ChannelBrowser() {
   // Les puces ↑/↓/œil restent CACHÉES par défaut (demande user) : un bouton
   // dédié les révèle, plutôt que d'encombrer chaque rangée en permanence.
   const [editMode, setEditMode] = useState(false);
+  useBackHandler(() => { setExpanded(null); return true; }, expanded !== null);
 
   // `guilds` contient TOUJOURS l'ensemble complet (masqués inclus, avec leur
   // flag `hidden`) — c'est `visibleGuilds` ci-dessous qui filtre pour

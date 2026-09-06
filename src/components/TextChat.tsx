@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight, focusHalo, ACCENT } from "./Styled";
 import { useQamUi } from "../qamUi";
+import { useBackHandler } from "../backNav";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
 import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
 import { TinyIconBtn } from "./ChannelBrowser";
@@ -784,6 +785,9 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     setSendError(null);
     setTypingUser(null);
   };
+
+  useBackHandler(() => { setExpanded(null); return true; }, !channel && expanded !== null);
+  useBackHandler(() => { closeChannel(); return true; }, !!channel);
 
   // Envoi rapide depuis le QAM — même contrat que le plein écran (brouillon
   // partagé purgé après envoi réussi), sans reply/captures (plein écran only).

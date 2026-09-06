@@ -42,6 +42,7 @@ import { patchMenu } from "./patches/menuPatch";
 import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts } from "./notify";
 import { ACCENT, DANGER, focusHalo } from "./components/Styled";
 import { QamUiRoot, useQamUi } from "./qamUi";
+import { BackNavRoot, useBackHandler } from "./backNav";
 import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
 import { openCaptchaSolver } from "./components/CaptchaSolver";
@@ -904,7 +905,7 @@ function useVesktopBackend(active: boolean): string | null | "unknown" {
 }
 
 const Content = () => (
-  <QamUiRoot><ContentBody /></QamUiRoot>
+  <QamUiRoot><BackNavRoot><ContentBody /></BackNavRoot></QamUiRoot>
 );
 
 const ContentBody = () => {
@@ -921,6 +922,7 @@ const ContentBody = () => {
   const inCall = !!state?.vc?.channel_id;
   // Chaque début/fin d'appel ramène à la vue naturelle (appel si en appel).
   useEffect(() => { setBrowsing(false); }, [inCall]);
+  useBackHandler(() => { setBrowsing(false); return true; }, !!(inCall && browsing && topTab === "voice"));
 
   if (!state?.loaded) {
     // stand-alone : sans flatpak NI vesktop natif (backend === null), le spinner
