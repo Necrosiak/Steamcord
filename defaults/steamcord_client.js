@@ -314,12 +314,29 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
                 // System » ne sert que de repli si aucune application n'est
                 // proposée. Chromium = le rendu de Vesktop, à écarter aussi.
                 const scGeneric = /^(none|aucun|entire system|tout le syst|vesktop|discord|chromium|speech-dispatcher)/i;
-                const scPick = scOpts.find((o) => !scGeneric.test(scText(o)))
-                            || scOpts.find((o) => /^(entire system|tout le syst)/i.test(scText(o)));
+                // Les options sortent en double même filtrées sur la visibilité :
+                // on prend la DERNIÈRE correspondance, la plus récemment montée.
+                const scLast = (pred) => { for (let i = scOpts.length - 1; i >= 0; i--) if (pred(scOpts[i])) return scOpts[i]; };
+                const scPick = scLast((o) => !scGeneric.test(scText(o)))
+                            || scLast((o) => /^(entire system|tout le syst)/i.test(scText(o)));
                 if (scPick) {
+                    const scWanted = scText(scPick).slice(0, 40);
                     scReactClick(scPick);
-                    scDiag("[golive] source audio choisie: «" + scText(scPick).slice(0, 40) + "»");
-                    await new Promise((r) => setTimeout(r, 200));
+                    await new Promise((r) => setTimeout(r, 250));
+                    // VÉRIFIER, pas espérer : si le déclencheur affiche encore
+                    // « None », le clic React n'a rien validé (le 06/09 la bonne
+                    // option était choisie et le partage partait quand même sans
+                    // son). On rejoue alors une vraie séquence de souris.
+                    if (/^(none|aucun)$/i.test(scText(scDrop))) {
+                        for (const t of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+                            try {
+                                scPick.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
+                            } catch (_) {}
+                        }
+                        await new Promise((r) => setTimeout(r, 300));
+                    }
+                    scDiag("[golive] source audio «" + scWanted + "» → déclencheur affiche «"
+                           + scText(scDrop).slice(0, 40) + "»");
                 } else {
                     scDiag("[golive] aucune option audio exploitable — partage sans son");
                 }
