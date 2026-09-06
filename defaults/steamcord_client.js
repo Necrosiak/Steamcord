@@ -251,7 +251,17 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             scDiag("[golive] venmic exclut " + (scExclude.length
                 ? scExclude.map((n) => n.name || n.description).join(", ")
                 : "RIEN (aucun nœud vesktop trouvé)"));
-            try { await window.VesktopNative?.virtmic?.startSystem?.(scExclude); } catch (_) {}
+            // ⛔ On ne démarre PLUS venmic nous-mêmes. Cet appel datait de l'époque
+            // où la source audio de la modale restait sur « None » : il fabriquait
+            // le nœud à la main pour que quelque chose existe. Depuis qu'on
+            // sélectionne vraiment la source (vérifié le 06/09 : le déclencheur
+            // affiche bien le jeu), c'est à Vesktop de démarrer venmic sur CE
+            // choix — et le trouver déjà démarré est le suspect le plus net pour
+            // expliquer que la piste ne soit jamais attachée : le nœud existe,
+            // le jeu y entre, et personne ne le capte.
+            // Repli conservé : si la modale n'offre aucune source exploitable,
+            // on rebranche la béquille (voir plus bas).
+            const scAudioPicked = { ok: false };
             // La piste audio du stream n'existe que si le partage est demandé AVEC
             // son. Le 06/09 la spectatrice avait la barre de volume mais aucun son,
             // et rien ne captait vencord-screen-share alors que le jeu y entrait
@@ -335,11 +345,18 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
                         }
                         await new Promise((r) => setTimeout(r, 300));
                     }
+                    scAudioPicked.ok = !/^(none|aucun)$/i.test(scText(scDrop));
                     scDiag("[golive] source audio «" + scWanted + "» → déclencheur affiche «"
                            + scText(scDrop).slice(0, 40) + "»");
                 } else {
                     scDiag("[golive] aucune option audio exploitable — partage sans son");
                 }
+            }
+            // Repli : aucune source retenue dans la modale → on refait ce qu'on
+            // faisait avant, tout le système moins Vesktop, plutôt que rien.
+            if (!scAudioPicked.ok) {
+                scDiag("[golive] aucune source retenue → repli venmic startSystem");
+                try { await window.VesktopNative?.virtmic?.startSystem?.(scExclude); } catch (_) {}
             }
             const how = scReactClick(btn);
             console.log("[Steamcord] modale Vesktop de partage auto-validée (" + how + ", audio système via venmic)");
