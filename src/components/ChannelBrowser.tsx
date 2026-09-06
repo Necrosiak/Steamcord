@@ -2,7 +2,7 @@ import { DialogButton, Focusable } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
-import { useFillHeight } from "./Styled";
+import { useFillHeight, focusHalo, ACCENT } from "./Styled";
 import { useQamUi } from "../qamUi";
 import { useBackHandler } from "../backNav";
 import { IcRefresh, IcSpeaker, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
@@ -64,27 +64,101 @@ export function TinyIconBtn({ onClick, disabled, title, children }: { onClick: (
 // Rangée principale d'un serveur (icône + nom + indicateur actif + chevron
 // d'expansion). Extraite pour être réutilisée identique en mode normal (seule,
 // un focus stop) et en mode réorganisation (flex:1 à côté des puces ↑/↓/œil).
+// Rangée de serveur. Elle n'utilisait PAS focusHalo, seule de tout le plugin :
+// le focus natif du DialogButton posait un fond clair, du texte sombre et un
+// bord dur, là où le reste (SkullKey, Toolkit, les boutons vocaux) a l'anneau
+// blanc + lueur d'accent. C'est ce qui la faisait dépareiller.
+//
+// L'icône du serveur reprend le geste de Discord : carré arrondi au repos,
+// CERCLE quand le serveur est ouvert. Ça donne un repère visuel gratuit — on
+// voit lequel est déplié sans lire le chevron.
 function GuildRowBtn({ guild, totalActive, expanded, onClick, flex }: {
   guild: Guild; totalActive: number; expanded: boolean; onClick: () => void; flex?: boolean;
 }) {
   const { px } = useQamUi();
-  const ic = px(22);
+  const [focused, setFocused] = useState(false);
+  const ic = px(26);
+  const radius = expanded ? "50%" : `${px(9)}px`;
   return (
     <Btn
       onClick={onClick}
-      style={{ display: "flex", alignItems: "center", gap: px(8), width: flex ? undefined : "100%", flex: flex ? 1 : undefined, minWidth: 0, minHeight: px(40), padding: `${px(6)}px ${px(8)}px`, overflow: "visible", lineHeight: 1.2 }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        display: "flex", alignItems: "center", gap: px(9),
+        width: flex ? undefined : "100%", flex: flex ? 1 : undefined,
+        minWidth: 0, minHeight: px(42), padding: `${px(6)}px ${px(9)}px`,
+        overflow: "visible", lineHeight: 1.2, color: "#fff",
+        borderRadius: px(10), margin: 0, boxSizing: "border-box",
+        background: focused
+          ? "rgba(88,101,242,0.85)"
+          : expanded ? "rgba(88,101,242,0.26)" : "rgba(255,255,255,0.05)",
+        ...focusHalo(ACCENT, focused),
+      }}
     >
       {guild.icon
         ? <img src={`https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=64`}
-            width={ic} height={ic} style={{ borderRadius: "50%", flexShrink: 0, objectFit: "cover" }} />
-        : <div style={{ width: ic, height: ic, borderRadius: "50%", background: "#5865f2", flexShrink: 0,
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: px(11), color: "#fff" }}>
+            width={ic} height={ic}
+            style={{ width: ic, height: ic, borderRadius: radius, flexShrink: 0, objectFit: "cover",
+                     transition: "border-radius .12s ease" }} />
+        : <div style={{ width: ic, height: ic, borderRadius: radius, background: "#5865f2", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: px(12), fontWeight: 700, color: "#fff",
+            transition: "border-radius .12s ease" }}>
             {guild.name[0]}
           </div>
       }
-      <span style={{ flex: 1, textAlign: "left", fontSize: px(13), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
-      {totalActive > 0 && <span style={{ fontSize: px(11), color: "#23a55a" }}>● {totalActive}</span>}
-      <span style={{ opacity: 0.4, fontSize: px(12) }}>{expanded ? "▲" : "▼"}</span>
+      <span style={{ flex: 1, textAlign: "left", fontSize: px(13), fontWeight: expanded ? 600 : 500,
+                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guild.name}</span>
+      {/* Pastille plutôt qu'un « ● 3 » vert nu : le compte se lit d'un coup
+          d'œil sans se confondre avec le nom du serveur. */}
+      {totalActive > 0 && (
+        <span style={{
+          fontSize: px(10), fontWeight: 700, color: "#3ba55c", flexShrink: 0,
+          background: "rgba(59,165,92,0.16)", borderRadius: px(8),
+          padding: `${px(1)}px ${px(6)}px`,
+        }}>{totalActive}</span>
+      )}
+      <span style={{ opacity: 0.45, flexShrink: 0, display: "flex" }}>
+        {expanded ? <IcChevronUp /> : <IcChevronDown />}
+      </span>
+    </Btn>
+  );
+}
+
+// Salon vocal sous un serveur déplié. Le rail vertical à gauche rattache
+// visuellement les salons à LEUR serveur : sans lui, une liste dépliée se
+// confond avec la liste des serveurs dès qu'on a fait défiler un peu.
+function ChannelRowBtn({ channel, joining, onClick }: {
+  channel: VoiceChannel; joining: boolean; onClick: () => void;
+}) {
+  const { px } = useQamUi();
+  const [focused, setFocused] = useState(false);
+  return (
+    <Btn
+      onClick={onClick}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onGamepadFocus={() => setFocused(true)}
+      onGamepadBlur={() => setFocused(false)}
+      style={{
+        width: "100%", padding: `${px(5)}px ${px(9)}px`, marginBottom: px(2), margin: 0,
+        marginTop: px(2), fontSize: px(12), minHeight: px(32), boxSizing: "border-box",
+        borderRadius: px(8), color: "#fff", lineHeight: 1.2, overflow: "visible",
+        display: "flex", alignItems: "center", gap: px(7),
+        background: joining
+          ? ACCENT
+          : focused ? "rgba(88,101,242,0.7)" : "rgba(255,255,255,0.04)",
+        ...focusHalo(ACCENT, focused, 1.01),
+      }}
+    >
+      <span style={{ opacity: 0.55, fontSize: px(11), flexShrink: 0, display: "flex" }}><IcSpeaker /></span>
+      <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {joining ? t("connecting") : channel.name}
+      </span>
+      <MemberAvatars members={channel.members} />
     </Btn>
   );
 }
@@ -212,7 +286,7 @@ export function ChannelBrowser() {
         {visibleGuilds.map((guild, i) => {
           const totalActive = guild.channels.reduce((n, c) => n + (c.members?.length ?? 0), 0);
           return (
-            <div key={guild.id} style={{ marginBottom: 3, opacity: guild.hidden ? 0.5 : 1 }}>
+            <div key={guild.id} style={{ marginBottom: 5, opacity: guild.hidden ? 0.5 : 1 }}>
               {/* Œil visible dès qu'on parcourt les masqués (récupérer un
                   serveur doit être direct, pas coincé derrière le mode
                   réorganisation) ; ↑/↓ restent réservés au mode réorganisation. */}
@@ -236,21 +310,13 @@ export function ChannelBrowser() {
               )}
 
               {expanded === guild.id && (
-                <div style={{ paddingLeft: 6, marginTop: 2 }}>
+                <div style={{
+                  marginLeft: 13, marginTop: 3, paddingLeft: 9,
+                  borderLeft: "2px solid rgba(88,101,242,0.35)",
+                }}>
                   {guild.channels.map(ch => (
-                    <Btn
-                      key={ch.id}
-                      onClick={() => join(ch.id, guild.id)}
-                      style={{
-                        width: "100%", padding: "4px 8px", marginBottom: 2, fontSize: 11,
-                        background: joining === ch.id ? "#5865f2" : undefined,
-                        display: "flex", alignItems: "center", gap: 6,
-                      }}
-                    >
-                      <span style={{ opacity: 0.6, fontSize: 10 }}><IcSpeaker /></span>
-                      <span style={{ flex: 1, textAlign: "left" }}>{joining === ch.id ? t("connecting") : ch.name}</span>
-                      <MemberAvatars members={ch.members} />
-                    </Btn>
+                    <ChannelRowBtn key={ch.id} channel={ch} joining={joining === ch.id}
+                      onClick={() => join(ch.id, guild.id)} />
                   ))}
                 </div>
               )}
