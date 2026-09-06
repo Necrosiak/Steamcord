@@ -1091,6 +1091,17 @@ class Plugin:
                     if attempt == 0:
                         await cls.shared_js_tab.ensure_open()
                     else:
+                        # Refermer l'ancien AVANT de le remplacer : open_websocket()
+                        # crée une aiohttp ClientSession, et l'abandonner telle
+                        # quelle laissait aiohttp journaliser « Unclosed client
+                        # session » en ERROR une seconde après chaque échec —
+                        # une fuite de connexion à chaque reconnexion (#44).
+                        old_tab = cls.shared_js_tab
+                        if old_tab is not None:
+                            try:
+                                await old_tab.close_websocket()
+                            except Exception:
+                                pass
                         cls.shared_js_tab = await get_tab("SharedJSContext")
                         await cls.shared_js_tab.open_websocket()
                     await cls.shared_js_tab.evaluate(js)
