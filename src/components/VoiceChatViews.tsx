@@ -196,18 +196,19 @@ function SelfPreviewTile() {
   return <div style={{ fontSize: 10, opacity: 0.6, textAlign: "center", padding: "6px 0" }}>{t("self_preview_wait")}</div>;
 }
 
-// L'aperçu du Go Live est RETIRÉ pour l'instant (décision user, 01/09/2026).
-// Les deux façons de le produire coûtent trop cher :
-//   • un 2e `pipewiresrc` sur le node gamescope empêche le recyclage des
-//     tampons et FIGE le partage chez les spectateurs (mesuré : 880
-//     « out of buffers » / 15 s avec, 0 sans) — c'était la cause de #42 ;
-//   • une capture `gamescopectl` par seconde coûte +67 points de cœur à
-//     gamescope (6 % → 74 %) plus ~0,6 cœur·s d'ffmpeg par image.
-// Le repli retenu (UNE capture au démarrage, rafraîchie à la demande) est écrit
-// et déployé côté backend — il reste seulement à le valider en conditions
-// réelles. En attendant on affiche une confirmation honnête plutôt qu'une
-// vignette qui ment. Rétablissement = repasser ce drapeau à true.
-const GOLIVE_PREVIEW_ENABLED = false;
+// L'aperçu du Go Live avait été RETIRÉ le 01/09/2026, le temps de comprendre
+// ce qui figeait le partage. Les deux façons de le produire n'ont PAS le même
+// coût, et c'est tout l'objet de ce drapeau :
+//   ⛔ un 2e `pipewiresrc` sur le node gamescope empêche le recyclage des
+//      tampons et FIGE le partage chez les spectateurs (mesuré : 880
+//      « out of buffers » / 15 s avec, 0 sans) — c'était la cause de #42.
+//      Ce chemin est mort, ne pas y revenir ;
+//   ✅ une capture `gamescopectl` ne touche PAS au pool de tampons. Coût
+//      mesuré le 06/09 sur BC-250 : 434 ms et 0,23 cœur·s pour gamescope,
+//      puis 728 ms et ~0,34 cœur·s d'ffmpeg — soit ~0,57 cœur·s pour UNE
+//      vignette. C'est abordable en ponctuel, et ruineux en boucle : d'où la
+//      capture UNIQUE au montage de la tuile, rafraîchie à la demande.
+const GOLIVE_PREVIEW_ENABLED = true;
 
 // Aperçu LOCAL de mon Go Live NATIF (portail). La capture vit dans le Chromium
 // de Vesktop → aucun flux accessible d'ici.
