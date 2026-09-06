@@ -2040,6 +2040,52 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     result = true;
                                     break;
                                 }
+                                // ── Événements programmés ────────────────────
+                                // Lecture seule + participation. PAS de création
+                                // ni de modification : ça n'a pas sa place dans
+                                // un panneau d'accès rapide, et ça doublerait une
+                                // interface Discord bien plus complète.
+                                case "$events": {
+                                    const WP = Vencord.Webpack;
+                                    const guilds = WP.findStore?.("GuildStore")?.getGuilds?.() || {};
+                                    const ids = Object.keys(guilds).slice(0, 40);  // borne : 1 requête par serveur
+                                    const out = [];
+                                    for (const gid of ids) {
+                                        try {
+                                            const r = await WP.Common.RestAPI.get({
+                                                url: `/guilds/${gid}/scheduled-events`,
+                                                query: { with_user_count: true },
+                                            });
+                                            for (const e of (r && r.body) || []) {
+                                                out.push({
+                                                    id: String(e.id),
+                                                    guild_id: String(gid),
+                                                    guild: guilds[gid]?.name || "",
+                                                    name: e.name || "",
+                                                    description: e.description || "",
+                                                    start: e.scheduled_start_time || null,
+                                                    status: e.status,              // 1 prévu, 2 en cours, 3 terminé
+                                                    channel_id: e.channel_id ? String(e.channel_id) : null,
+                                                    location: (e.entity_metadata && e.entity_metadata.location) || "",
+                                                    count: e.user_count || 0,
+                                                });
+                                            }
+                                        } catch (_) { /* un serveur sans droits ne doit pas tuer la liste */ }
+                                    }
+                                    // Les événements en cours d'abord, puis par date de début.
+                                    out.sort((a, b) => (b.status === 2) - (a.status === 2)
+                                        || String(a.start || "").localeCompare(String(b.start || "")));
+                                    result = out;
+                                    break;
+                                }
+                                case "$event_rsvp": {
+                                    const method = data.interested ? "put" : "del";
+                                    await Vencord.Webpack.Common.RestAPI[method]({
+                                        url: `/guilds/${data.guild_id}/scheduled-events/${data.id}/users/@me`,
+                                    });
+                                    result = true;
+                                    break;
+                                }
                                 case "$send_typing": {
                                     // Signale NOTRE frappe aux autres (symétrique du "X is
                                     // typing…" reçu) — best-effort, une frappe manquée n'est

@@ -2084,6 +2084,19 @@ class Plugin:
         # concernés — liste séparée, get_dm_channels).
         return cls._apply_guild_prefs(guilds, include_hidden)
 
+    # ── Événements programmés (demande user 06/09) ───────────────────────────
+    # Lecture + participation, rien d'autre : pas de création ni de modification.
+    # En mode jeu ce qui a de la valeur, c'est de voir ce qui arrive et de s'y
+    # joindre sans lâcher la manette ; recréer l'éditeur d'événements de Discord
+    # dans un panneau de 340 px n'en aurait aucune.
+    @classmethod
+    async def get_events(cls):
+        return await cls.evt_handler.api.get_events()
+
+    @classmethod
+    async def set_event_interest(cls, guild_id, event_id, interested):
+        return await cls.evt_handler.api.set_event_interest(guild_id, event_id, interested)
+
     @classmethod
     async def get_messages(cls, channel_id, before=None):
         return await cls.evt_handler.api.get_messages(channel_id, before)

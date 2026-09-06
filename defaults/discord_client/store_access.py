@@ -147,6 +147,13 @@ class StoreAccess:
     async def get_text_channels(self):
         return await self._store_access_request("$get_text_channels")
 
+    async def get_events(self):
+        return await self._store_access_request("$events")
+
+    async def set_event_interest(self, guild_id, event_id, interested):
+        return await self._store_access_request(
+            "$event_rsvp", guild_id=guild_id, id=event_id, interested=bool(interested))
+
     async def get_messages(self, channel_id, before=None):
         return await self._store_access_request("$get_messages", id=channel_id, before=before)
 

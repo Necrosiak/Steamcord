@@ -45,6 +45,7 @@ import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
 import { initVideoRelay } from "./videoRelay";
 import { DiscordTab } from "./components/DiscordTab";
+import { EventsPanel } from "./components/EventsPanel";
 import { openCaptchaSolver } from "./components/CaptchaSolver";
 import {
   useSteamcordState,
@@ -1110,6 +1111,10 @@ const ContentBody = () => {
                     </WideBtn>
                   </div>
                 )}
+                {/* Événements programmés : au-dessus de la source, parce que
+                    « ça commence maintenant » prime sur « où je discute ». Le
+                    panneau s'efface complètement s'il n'y a rien. */}
+                <EventsPanel />
                 {/* 2. Menu source (partagé) : Serveurs / MP */}
                 <TabRow>
                   <TabBtn
