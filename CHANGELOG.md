@@ -16,6 +16,95 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.32.0 — 2026-09-13
+
+### Go Live finally carries the game's sound — and only the game's
+
+Three faults were stacked here, two of them ours.
+
+Steamcord patches `enumerateDevices` and was **filtering out the very device
+Vesktop looks up** to attach the share's audio track (`vencord-screen-share`).
+The lookup returned nothing, no audio track was attached, and the viewer got a
+volume slider with silence behind it. The filter had been added against an echo
+problem, with a comment claiming Vesktop opened the device by exact id; its own
+code does the opposite.
+
+The share's audio also came from the default output's monitor — the whole system
+mix, Discord included — so other people's voices came back inside the stream.
+
+And the source picker chose whatever the dialog happened to list, which on a
+handheld running a non-Steam session shell meant sharing the shell: a process
+that makes no sound. The dialog only lists applications playing audio at the
+instant it opens, so a quiet game is never in it at all.
+
+Rather than patch the picker, Steamcord no longer chooses anything in that
+dialog. It provides the share's audio itself: the game's playback is routed to a
+dedicated output whose monitor is offered to Vesktop as the share device, while
+Discord keeps playing to the real one. You still hear your game normally. Voices
+cannot re-enter the stream, because Discord never plays into the captured output
+— structural, not a filter. Measured: a tone at ~70% into the output device does
+not move the captured sink by a decibel.
+
+### Go Live starts in seconds instead of half a minute
+
+The native capture portal was given 25 seconds before falling back to the local
+relay. When that path does not work on a machine, that is 25 seconds of waiting
+on every Go Live, every time — and when it does work it answers in one or two.
+It is 8 seconds now, and the fallback says so in the log instead of being silent.
+
+### The Go Live preview stops capturing the screen a second time
+
+The thumbnail used to cost a `gamescopectl` screenshot plus an ffmpeg pass —
+about 0.57 core-seconds per image — and, worse, opened a second PipeWire
+consumer on the gamescope node, which is what once froze the share for viewers.
+Vesktop already holds the stream it is encoding, so the preview is now a frame
+taken from it: no extra capture, no extra consumer. It refreshes every five
+seconds while it is on screen and not at all when it is not.
+
+Volume sliders no longer have their edges clipped.
+
+### Copy the text of a message
+
+Steam's on-screen keyboard pastes but cannot copy or cut, so a link or a code
+posted in a channel could be read and nothing else. Messages now carry a **Copy**
+action next to Reply and Forward
+([#47](https://github.com/Necrosiak/Steamcord/issues/47)).
+
+### Choose which view the panel opens on
+
+Settings → **Opens on**: Voice or Text, Servers or DMs. The panel always started
+on Voice + Servers, which meant redoing the same two moves on every open for
+anyone who mostly reads text DMs
+([#43](https://github.com/Necrosiak/Steamcord/issues/43)).
+
+### Clips keep their audio/video offset
+
+A Steam clip is two DASH tracks that do not necessarily start at the same
+instant. Muxing them normalised each one to zero independently, throwing that
+gap away — invisible at 35 ms, a whole-clip desync whenever Steam attaches the
+audio late ([#46](https://github.com/Necrosiak/Steamcord/issues/46)).
+
+### Updates no longer stop at the first thing they cannot write, or at DNS
+
+Two separate faults, both silent:
+
+- The update was applied file by file and gave up on the first one it could not
+  write — leaving the plugin **half updated**, part old code and part new. It now
+  surveys everything first: a code file it cannot write cancels the update
+  without touching anything, while documentation, licences and `plugin.json`
+  are skipped and the update proceeds.
+- The release check ran once, a few seconds after boot, which is often **before
+  the network is up** — and nothing retried, so the plugin stayed on its version
+  until a boot that happened to be luckier. It now retries while the failure is
+  the network.
+
+Installing through Decky's own installer has been dropped from the automatic
+path: that route reports the install to the Decky Store, which does not know a
+self-distributed plugin, and the request fails — leaving the files written, the
+plugin never reloaded, and a confirmation dialog frozen over the Steam UI. The
+manual update button still falls back to it, last, for the one case the plugin
+cannot handle alone: a release that adds a new top-level file.
+
 ## 1.31.2 — 2026-09-06
 
 Two people looked at the same panel this week and said the same thing in
