@@ -16,6 +16,43 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.33.0 — 2026-09-13
+
+### A button to reload audio devices
+
+For a microphone that Discord does not pick up in Game Mode while it works on
+the desktop (#48). **Settings → Audio devices → Reload audio devices** does two
+things:
+
+- **System side** — if the default input was left on a monitor or on one of
+  Steamcord's own virtual sources while a real microphone exists, it is given
+  back to that microphone, and Vesktop's streams are routed again. Skipped
+  during a Go Live or while game audio is shared, since those modes place the
+  sources themselves.
+- **Discord side** — Discord only refreshes its device list on a device-change
+  event, so a microphone that appeared after Vesktop started, or an input chosen
+  elsewhere that does not exist here, left it holding a dead capture. The button
+  makes it re-read the list and reopen the capture, falling back to *Default*
+  when the remembered input is gone.
+
+### Discord now sees every input device
+
+Steamcord inherited a filter that hid *Filter Chain Source*, *Virtual Source*
+and an unlabelled *default* device from Discord. It was meant for the old hidden
+Steam browser tab, yet it also applied under Vesktop — and on SteamOS the
+microphone can go through a filter chain, so Discord could not see it in Game
+Mode while Vesktop on the desktop could (a likely cause of #48). The filter is
+gone; an already-running Vesktop gets the unfiltered list back as soon as the
+plugin reloads, without a restart.
+
+### Readable device names
+
+On a system in a language with accented characters (French, for one), the audio
+device lists showed technical names such as `alsa_output.usb-…`: `pactl` cannot
+encode an accented description in its JSON output and returns `(null)`. The
+lists now fall back to the device's own readable name (*HDMI TO USB*,
+*Arctis Nova Elite*…).
+
 ## 1.32.0 — 2026-09-13
 
 ### Go Live finally carries the game's sound — and only the game's
