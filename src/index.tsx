@@ -1200,6 +1200,22 @@ const AudioDevicesConfig = () => {
     }).catch(() => {});
   };
   useEffect(() => { load(); }, []);
+  const [reloading, setReloading] = useState(false);
+  // Issue #48 : relit les périphériques côté système ET côté Discord.
+  const reload = async () => {
+    if (reloading) return;
+    setReloading(true);
+    try {
+      const r = await call<[], any>("reload_audio_devices");
+      load();
+      const c = r && r.client;
+      notify({ title: "Steamcord", body: c && !c.error ? `${t("audio_reload_done")} : ${c.input}` : t("audio_reload_partial") });
+    } catch (_) {
+      notify({ title: "Steamcord", body: t("audio_reload_partial") });
+    } finally {
+      setReloading(false);
+    }
+  };
 
   if (!dev) return null;
   const opt = (arr: any[]) => [{ data: "auto", label: t("audio_auto") }, ...(arr || []).map((o: any) => ({ data: o.name, label: o.label }))];
@@ -1215,6 +1231,11 @@ const AudioDevicesConfig = () => {
       <SR>
         <Dropdown rgOptions={opt(dev.inputs) as any} selectedOption={inSel}
           onChange={(e: any) => { setInSel(e.data); call("set_audio_input", e.data).catch(() => {}); }} />
+      </SR>
+      <SR>
+        <DialogButton onClick={reload} disabled={reloading} style={{ fontSize: 13, marginTop: 6 }}>
+          <IcRefresh /> {t("audio_reload")}
+        </DialogButton>
       </SR>
     </>
   );

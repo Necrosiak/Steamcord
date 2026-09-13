@@ -2587,8 +2587,17 @@ class Plugin:
 
     @staticmethod
     def _dev_label(d):
-        desc = d.get("description")
-        return desc if desc and desc != "(null)" else d.get("name", "")
+        # En locale française, `pactl -f json` ne sait pas encoder une
+        # description accentuée (« Stéréo analogique ») : il écrit « Invalid
+        # non-ASCII character » sur stderr et rend "(null)". Le QAM affichait
+        # alors le nom technique `alsa_output…`. Les propriétés du nœud portent
+        # un nom lisible sans accent ajouté par la traduction : on s'y replie.
+        props = d.get("properties") or {}
+        for v in (d.get("description"), props.get("node.nick"),
+                  props.get("device.description"), props.get("device.product.name")):
+            if v and v != "(null)":
+                return v
+        return d.get("name", "")
 
     @classmethod
     async def get_audio_devices(cls):
@@ -2631,6 +2640,46 @@ class Plugin:
             await cls._reset_vesktop_routing(inputs=True)
         await cls._apply_audio_routing()
         return True
+
+    @classmethod
+    async def reload_audio_devices(cls):
+        """Bouton « Recharger les périphériques audio » (issue #48).
+
+        Côté système : si la source par défaut est restée sur un monitor ou sur
+        un de nos montages alors qu'un vrai micro existe, on la lui rend, puis
+        on remet le routage des flux Vesktop. Rien de tout ça pendant un Go
+        Live ou un partage du son du jeu : ces modes posent eux-mêmes la source
+        et la piste du partage, et les déplacer coupe le son du spectateur.
+        Côté Discord : relecture de la liste des périphériques et réouverture
+        de la capture (voir `$reload_audio_devices` dans steamcord_client.js)."""
+        from json import loads
+        report = {"fixed_default": None, "busy": False, "client": None}
+        live = False
+        try:
+            live = bool(cls.evt_handler.me.is_live)
+        except Exception:
+            pass
+        report["busy"] = bool(cls._ga_active or live or cls._golive_silence_restore is not None)
+        if not report["busy"]:
+            try:
+                src = (await cls._pactl("get-default-source")).strip()
+                if src.endswith(".monitor") or "steamcord_" in src:
+                    real = cls._real_capture_source(
+                        loads(await cls._pactl("list", "sources", want_json=True) or "[]"))
+                    if real:
+                        await cls._pactl("set-default-source", real)
+                        report["fixed_default"] = real
+                await cls._reset_vesktop_routing(outputs=cls._audio_out is None,
+                                                 inputs=cls._audio_in is None)
+                await cls._apply_audio_routing()
+            except Exception as e:
+                logger.warning(f"[audio] rechargement côté système KO: {e!r}")
+        try:
+            report["client"] = await cls.evt_handler.api.reload_audio_devices()
+        except Exception as e:
+            report["client"] = {"error": repr(e)}
+        logger.info(f"[audio] rechargement des périphériques : {report}")
+        return report
 
     @classmethod
     async def _reset_vesktop_routing(cls, outputs=False, inputs=False):

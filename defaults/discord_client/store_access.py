@@ -205,6 +205,9 @@ class StoreAccess:
     async def get_audio_processing(self):
         return await self._store_access_request("$get_audio_processing")
 
+    async def reload_audio_devices(self):
+        return await self._store_access_request("$reload_audio_devices")
+
     async def set_noise_reduction(self, mode):
         return await self._store_access_request("$set_noise_reduction", mode=mode)
 

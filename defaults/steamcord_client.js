@@ -358,36 +358,22 @@ window.Vencord.Plugins.plugins.Steamcord = {
         // s'appeler lui-même → récursion infinie (Maximum call stack size exceeded,
         // crashait enableScreenCamera dès enumerateDevices). On ne wrappe qu'UNE fois
         // et on .bind() pour garder le bon `this` (sinon "Illegal invocation").
-        if (!window.old_enumerate_devices) {
-            window.old_enumerate_devices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
-            navigator.mediaDevices.enumerateDevices = async () => {
-                const devices = await window.old_enumerate_devices();
-                // ⚠️ "vencord-screen-share" A ÉTÉ RETIRÉ DE CE FILTRE le 13/09.
-                //
-                // On l'y avait mis le 31/08 contre un larsen : Discord pouvait le
-                // prendre pour un micro et renvoyer le salon dans le salon. Le
-                // commentaire d'alors affirmait que « le retirer ici n'empêche pas
-                // Vesktop de s'en servir : screenShareFixes l'ouvre par deviceId
-                // exact, sans passer par enumerateDevices ». C'est FAUX, et son
-                // asar le dit :
-                //
-                //     const devices = await navigator.mediaDevices.enumerateDevices();
-                //     const audioDevice = devices.find(({label}) => label === "vencord-screen-share");
-                //     return audioDevice?.deviceId;
-                //
-                // Il passe précisément par là, et compare le LABEL. En le filtrant
-                // ici, on retirait à Vesktop le seul périphérique qu'il cherche
-                // pour attacher le son du partage : `find` rendait undefined,
-                // aucune piste audio n'était attachée, et le spectateur avait une
-                // barre de volume sans un son. C'est la moitié du #42.
-                //
-                // Le larsen, lui, reste couvert — par Vesktop lui-même, et au bon
-                // endroit : il patche la liste de périphériques de DISCORD
-                // (`getFilteredDevices`, même label), donc le device n'est
-                // toujours pas proposable comme micro. Notre filtre global était
-                // redondant côté larsen, et destructeur côté partage.
-                return devices.filter(f => f.label != "Filter Chain Source" && f.label != "Virtual Source" && !(f.label == "" && f.deviceId == "default"))
-            }
+        // Plus AUCUN filtre sur enumerateDevices (retiré le 13/09, issue #48).
+        //
+        // Hérité de Deckcord, il retirait "Filter Chain Source", "Virtual Source"
+        // et le "default" sans label, pour l'onglet CEF caché du Steam Deck — mais
+        // il s'appliquait aussi sous Vesktop. Sur SteamOS le micro peut justement
+        // passer par un filter-chain : Discord ne le voyait pas en mode jeu, alors
+        // que Vesktop, lancé au bureau sans notre injection, le voyait. Il avait
+        // déjà coûté la moitié du #42 en filtrant "vencord-screen-share", que
+        // Vesktop cherche par label pour attacher le son du partage. Le larsen
+        // reste couvert par Vesktop (`getFilteredDevices`, côté liste Discord).
+        //
+        // Vesktop survit aux mises à jour du plugin : une session déjà enveloppée
+        // par une version précédente récupère ici la fonction d'origine.
+        if (window.old_enumerate_devices) {
+            navigator.mediaDevices.enumerateDevices = window.old_enumerate_devices;
+            delete window.old_enumerate_devices;
         }
 
         // Camera support (later): when a real webcam is plugged in, set
@@ -2184,6 +2170,39 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         ncSupported: MES.isNoiseCancellationSupported ? !!MES.isNoiseCancellationSupported() : true,
                                         nsSupported: MES.isNoiseSuppressionSupported ? !!MES.isNoiseSuppressionSupported() : true,
                                         agcSupported: MES.isAutomaticGainControlSupported ? !!MES.isAutomaticGainControlSupported() : true,
+                                    };
+                                    break;
+                                }
+                                case "$reload_audio_devices": {
+                                    // Issue #48 — micro muet en mode jeu. Discord ne
+                                    // relit sa liste que sur un événement devicechange :
+                                    // un micro apparu après le lancement de Vesktop, ou
+                                    // une entrée choisie ailleurs et absente ici, lui
+                                    // laisse une capture morte. handleDeviceChange est
+                                    // son propre gestionnaire (sondé au CDP le 13/09).
+                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const eng = MES.getMediaEngine();
+                                    await eng.handleDeviceChange();
+                                    await new Promise((r) => setTimeout(r, 300));
+                                    const devices = MES.getInputDevices() || {};
+                                    let id = MES.getInputDeviceId();
+                                    let fellBack = false;
+                                    if (!devices[id]) {
+                                        // L'entrée mémorisée n'existe pas sur cette
+                                        // machine : repli sur le périphérique par défaut.
+                                        Vencord.Webpack.findByProps("setInputDevice")?.setInputDevice?.("default");
+                                        id = "default";
+                                        fellBack = true;
+                                    } else {
+                                        // Même id : rouvre la capture sur les connexions
+                                        // vocales ouvertes (setAudioSource par connexion).
+                                        eng.setAudioInputDevice(id);
+                                    }
+                                    result = {
+                                        input: devices[id]?.name || id,
+                                        inputs: Object.values(devices).map((d) => d.name),
+                                        fellBack,
+                                        inCall: [...(eng.connections || [])].length > 0,
                                     };
                                     break;
                                 }

@@ -124,6 +124,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@cymbatpd23](https://github.com/cymbatpd23)
 
 - Copying text out of a message ([#47](https://github.com/Necrosiak/Steamcord/issues/47)). A gap the plugin's own author had not noticed: Steam's on-screen keyboard offers paste but has neither copy nor cut, so a link, an invite code or an address posted in a channel was simply unreachable — you could read it and nothing more. It was also framed exactly right — as a thing that was missing rather than a thing that was broken — which is why it was obvious what to build.
+- A microphone that Discord would not pick up in Gaming Mode while it worked on the desktop, after reinstalling the plugin and trying every input ([#48](https://github.com/Necrosiak/Steamcord/issues/48)). "Works on the desktop" was the detail that mattered: Vesktop runs there without Steamcord's injection, and the injection carried a device filter inherited from the old hidden-browser mode that hid filter-chain inputs from Discord. The filter is gone, and there is now a button to make both the system and Discord re-read the devices (v1.33.0)
 
 ---
 
