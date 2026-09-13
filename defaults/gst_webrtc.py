@@ -224,12 +224,38 @@ class WebRTCServer:
     def start_pipeline(self, create_offer=True, audio_pt=96, video_pt=97):
         # run+timeout : pactl pend pour toujours si PipeWire est wedgé (19/07).
         from subprocess import run, PIPE, DEVNULL
+        # Le monitor de la sortie par défaut, c'est le MIX COMPLET du système :
+        # le jeu, mais aussi la lecture de Discord. Le spectateur s'entendait donc
+        # lui-même revenir dans le stream (constaté à l'oreille le 13/09) — une
+        # boucle vocale, exactement ce qu'il ne faut pas.
+        #
+        # Quand un Go Live est en cours, le backend monte `steamcord_share_sink`
+        # et y déplace les flux du jeu (jamais ceux de Vesktop), avec un loopback
+        # vers la vraie sortie pour que le joueur continue d'entendre. Son monitor
+        # ne contient donc QUE le jeu. On le préfère dès qu'il existe ; son
+        # existence est précisément le signal « un partage est en cours ».
+        share_sink = "steamcord_share_sink"
         try:
-            default_sink = run(["pactl", "get-default-sink"], stdout=PIPE,
-                               stderr=DEVNULL, timeout=5, text=True).stdout.splitlines()
+            sinks = run(["pactl", "list", "sinks", "short"], stdout=PIPE,
+                        stderr=DEVNULL, timeout=5, text=True).stdout
         except Exception:
-            default_sink = []
-        audio_monitor = (default_sink[0] + ".monitor") if default_sink and default_sink[0] else "@DEFAULT_MONITOR@"
+            sinks = ""
+        # `pactl list … short` is tabular. Match the sink name as a field rather
+        # than as a substring: an unrelated device name must never switch the
+        # stream away from the requested monitor.
+        has_share_sink = any(
+            line.split("\t", 2)[1:2] == [share_sink]
+            for line in sinks.splitlines()
+        )
+        if has_share_sink:
+            audio_monitor = share_sink + ".monitor"
+        else:
+            try:
+                default_sink = run(["pactl", "get-default-sink"], stdout=PIPE,
+                                   stderr=DEVNULL, timeout=5, text=True).stdout.splitlines()
+            except Exception:
+                default_sink = []
+            audio_monitor = (default_sink[0] + ".monitor") if default_sink and default_sink[0] else "@DEFAULT_MONITOR@"
         log.info(f"Creating pipeline, create_offer={create_offer}, audio_monitor={audio_monitor}")
         node = _find_screen_node()
         video_src = f"pipewiresrc path={node}" if node else "pipewiresrc"

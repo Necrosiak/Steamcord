@@ -404,8 +404,22 @@ async def _assemble_steam_clip(clip_dir, out):
         tmp.append(part)
     if not tmp:
         return None
+    # Les deux pistes ne commencent PAS forcément à la même seconde : Steam
+    # attache l'audio quand il est prêt, et l'écart est inscrit dans le
+    # `baseMediaDecodeTime` du premier fragment. Or ffmpeg ramène CHAQUE entrée
+    # à zéro, indépendamment des autres : muxées telles quelles, les deux pistes
+    # sont réalignées de force et l'écart est perdu — mesuré sur un clip d'ici,
+    # 35 ms rendus à l'audio. Quelques images, personne ne le voit ; le jour où
+    # Steam attache l'audio des secondes plus tard, le clip envoyé est désynchronisé
+    # de bout en bout. On remet donc chaque piste à sa place, relativement à la
+    # plus précoce.
+    starts = [await _media_start(t) for t in tmp]
+    base = min(starts)
     args = []
-    for t in tmp:
+    for t, start in zip(tmp, starts):
+        offset = start - base
+        if offset >= 0.001:
+            args += ["-itsoffset", f"{offset:.6f}"]
         args += ["-i", t]
     rc, err = await _run_ffmpeg(args + ["-c", "copy", "-movflags", "+faststart", out])
     for t in tmp:
@@ -417,6 +431,18 @@ async def _assemble_steam_clip(clip_dir, out):
         return out
     logger.warning(f"mux du clip Steam impossible : {err[:200]}")
     return None
+
+
+async def _media_start(path):
+    """Début de la piste en secondes, 0.0 si ffprobe ne dit rien d'exploitable."""
+    proc = await create_subprocess_exec(
+        "ffprobe", "-v", "error", "-show_entries", "stream=start_time",
+        "-of", "csv=p=0", path, stdout=PIPE, stderr=DEVNULL, env=_media_env())
+    out, _ = await wait_for(proc.communicate(), timeout=30)
+    try:
+        return float((out or b"").decode().strip().splitlines()[0].strip().rstrip(","))
+    except (ValueError, IndexError):
+        return 0.0
 
 
 async def _media_duration(path):
@@ -561,6 +587,28 @@ def _list_videos(cap=40):
                 found.append((full, fn, st.st_size, st.st_mtime))
     found.sort(key=lambda t: t[3], reverse=True)
     return found[:cap]
+
+
+# Nombre de vérifications de release et délai entre deux. La vérif part quelques
+# secondes après le backend, c'est-à-dire souvent AVANT que le réseau soit
+# joignable : les journaux de la machine de test montrent trois démarrages sur
+# quatre qui meurent sur « Temporary failure in name resolution ». Rien ne
+# réessayait, donc le plugin restait sur sa version jusqu'au démarrage
+# suivant — qui échouait de la même façon.
+UPDATE_CHECK_TRIES = 10
+UPDATE_CHECK_DELAY_S = 30
+
+
+async def _recheck(updater):
+    """`updater.check()`, réessayé tant que c'est le réseau qui manque."""
+    from asyncio import sleep as _sleep
+    info = await updater.check()
+    for _ in range(UPDATE_CHECK_TRIES - 1):
+        if not info.get("error"):
+            break
+        await _sleep(UPDATE_CHECK_DELAY_S)
+        info = await updater.check()
+    return info
 
 
 class Plugin:
@@ -892,7 +940,7 @@ class Plugin:
         # il était on par défaut → l'utilisateur n'était jamais prévenu, il voyait
         # juste une install se déclencher ou échouer).
         try:
-            info = await updater.check()
+            info = await _recheck(updater)
             if not info.get("update_available"):
                 return
             # Toasts en ANGLAIS : même règle que le script v4l2 — ils partent
@@ -910,11 +958,19 @@ class Plugin:
             logger.info(
                 f"[updater] {info['latest']} available (have {info['current']}); auto-applying"
             )
-            if await cls._delegate_install(info["url"], info["latest"]):
-                # Decky prend le relais : il affiche sa modale de confirmation,
-                # décompresse en root et recharge le plugin lui-même.
-                return
-            # Repli si le loader n'expose pas l'installeur (version trop ancienne).
+            # ⛔ On NE délègue PLUS à `utilities/install_plugin`. C'est la route
+            # du Store Decky : elle décompresse, puis déclare l'install à
+            # plugins.deckbrew.xyz — qui ne connaît pas nos plugins, puisqu'on a
+            # choisi de ne pas y être. 404, et la suite ne s'exécute pas :
+            # fichiers écrits, plugin JAMAIS rechargé, et une modale « Mise à
+            # jour en cours » figée en travers de l'interface Steam. Mesuré le
+            # 13/09 sur BC250-Toolkit, journal du loader à l'appui.
+            #
+            # On applique donc nous-mêmes. Le dossier du plugin est à root, mais
+            # les fichiers dedans nous appartiennent (sauf plugin.json) :
+            # l'updater trie ce qu'il peut écrire AVANT de commencer, au lieu de
+            # s'arrêter au milieu en laissant un plugin à moitié à jour.
+            #
             # apply() renvoie un dict {"ok": bool, "error"?} — un simple `if` était
             # toujours vrai (dict non vide), donc un échec toastait « installée » et
             # redémarrait le loader pour rien.
@@ -941,90 +997,6 @@ class Plugin:
             )
         except Exception as e:
             logger.warning(f"[updater] auto-check error: {e}")
-
-    # Combien de temps on laisse au frontend Decky pour apparaître. Un démarrage
-    # à froid en mode jeu charge Steam, la GamepadUI puis Decky : 14 s après le
-    # backend, ce n'est pas toujours fini. Trois minutes couvrent largement ça
-    # sans jamais rien coûter quand le loader est déjà là (le premier essai
-    # répond immédiatement).
-    DECKY_BACKEND_WAIT_S = 180
-    DECKY_BACKEND_POLL_S = 5
-
-    @classmethod
-    async def _await_decky_backend(cls) -> bool:
-        """True dès que `window.DeckyBackend.call` existe, False après attente."""
-        from time import time
-        deadline = time() + cls.DECKY_BACKEND_WAIT_S
-        waited = False
-        while True:
-            try:
-                await cls.shared_js_tab.ensure_open()
-                res = await cls.shared_js_tab.evaluate(
-                    "(()=>!!(window.DeckyBackend&&window.DeckyBackend.call))()", wait=True
-                )
-                if (((res or {}).get("result") or {}).get("result") or {}).get("value") is True:
-                    if waited:
-                        logger.info("[updater] DeckyBackend enfin disponible — on délègue l'install")
-                    return True
-            except Exception as e:
-                logger.debug(f"[updater] sonde DeckyBackend: {e}")
-            if time() >= deadline:
-                return False
-            if not waited:
-                logger.info(
-                    "[updater] DeckyBackend pas encore chargé — on attend "
-                    f"jusqu'à {cls.DECKY_BACKEND_WAIT_S}s au lieu d'abandonner"
-                )
-                waited = True
-            await sleep(cls.DECKY_BACKEND_POLL_S)
-
-    @classmethod
-    async def _delegate_install(cls, url: str, version: str) -> bool:
-        """Confie l'install à l'installeur natif de Decky, exposé par le loader.
-
-        Le loader tourne en root, nous non : le dossier top-level du plugin (et
-        plugin.json) lui appartient et il le re-chown à chaque chargement, donc
-        notre backend ne peut jamais y créer une nouvelle entrée — toute release
-        ajoutant un fichier ou un dossier à la racine échouait en Permission
-        denied (cf #16). Le loader, lui, décompresse en root puis rétablit les
-        droits (set_plugin_dir_permissions) : c'est le chemin qu'emprunte le
-        Store Decky. `DeckyBackend` n'existe que côté JS → on passe par l'onglet
-        partagé, comme pour les toasts. Renvoie False si la route est absente.
-        """
-        # ⏳ ATTENDRE le loader plutôt que d'abandonner à la première seconde.
-        # `_autoupdate_check` part ~14 s après le backend, et à cet instant le
-        # frontend Decky peut ne pas avoir fini de se charger : `DeckyBackend`
-        # est alors absent, on renvoyait False, le repli mourait sur plugin.json
-        # (root), et on n'y revenait JAMAIS de la session. C'est une COURSE, pas
-        # une absence : sur la même machine `DeckyBackend` existe bien quelques
-        # secondes plus tard (mesuré au CDP le 06/09). D'où l'attente bornée.
-        if not await cls._await_decky_backend():
-            logger.warning("[updater] DeckyBackend absent après attente — repli sur l'install maison")
-            return False
-        try:
-            args = dumps([url, "Steamcord", version, "", 2])  # 2 = InstallType.UPDATE
-            args = args.replace("\\", "\\\\").replace("'", "\\'")
-            await cls.shared_js_tab.ensure_open()
-            # evaluate() n'attend pas les promesses : on ne peut pas `await` le
-            # call côté JS (on récupérerait un objet Promise). On le lance sans
-            # l'attendre — c'est le loader qui affiche la modale et fait le
-            # travail — et on ne renvoie ici que « la route existe-t-elle ».
-            res = await cls.shared_js_tab.evaluate(
-                "(()=>{const b=window.DeckyBackend;"
-                "if(!b||!b.call)return 'no-backend';"
-                "try{b.call('utilities/install_plugin',...JSON.parse('" + args + "'))"
-                ".catch(e=>console.warn('[Steamcord] install_plugin:',e));"
-                "return 'ok';}catch(e){return 'err:'+e;}})()",
-                wait=True,
-            )
-            out = (((res or {}).get("result") or {}).get("result") or {}).get("value")
-            if out != "ok":
-                logger.warning(f"[updater] delegated install unavailable: {out}")
-                return False
-            return True
-        except Exception as e:
-            logger.warning(f"[updater] delegated install failed: {e}")
-            return False
 
     @classmethod
     async def check_update(cls):
@@ -2673,6 +2645,8 @@ class Plugin:
             if inputs:
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
+                        if cls._is_golive_capture_output(so):
+                            continue   # piste du Go Live : elle lit le jeu isolé
                         await cls._pactl("move-source-output", str(so.get("index")), "@DEFAULT_SOURCE@")
         except Exception as e:
             logger.warning(f"audio routing reset failed: {e!r}")
@@ -2708,6 +2682,10 @@ class Plugin:
             if in_target:
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
+                        # RecordStream du Go Live est une seconde capture : elle
+                        # doit lire le jeu isolé, jamais le micro de l'appel.
+                        if cls._is_golive_capture_output(so):
+                            continue
                         await cls._pactl("move-source-output", str(so.get("index")), in_target)
         except Exception as e:
             logger.warning(f"audio routing failed: {e!r}")
@@ -3118,6 +3096,11 @@ class Plugin:
     _golive_silence_restore = None   # source à restaurer au stop (None = inactif)
     _golive_silence_task = None      # veille « un vrai micro est-il apparu ? »
 
+    # Pont audio du Go Live (cf. _golive_share_bridge). Modules pactl à décharger
+    # au stop. Le pont est autonome : il ne dépend pas de venmic.
+    _golive_bridge_mods = []
+    _golive_capture_task = None
+
     @classmethod
     def _start_silence_watch(cls):
         """Le silence est posé une fois, au démarrage du partage. Brancher un
@@ -3210,10 +3193,17 @@ class Plugin:
                 cls._golive_silence_restore = src
                 await cls._pactl("set-default-source", "steamcord_silence_mic")
                 # Basculer aussi les captures voix DÉJÀ ouvertes de Vesktop qui
-                # pompent l'ancien monitor (le RecordStream venmic vise
-                # vencord-screen-share, pas le monitor → naturellement épargné).
+                # pompent l'ancien monitor.
+                # ⚠️ Le commentaire d'origine disait que le RecordStream du partage
+                # « vise vencord-screen-share, donc naturellement épargné ». Ce
+                # n'est PLUS vrai : il vise `steamcord_share` et peut être posé
+                # sur le micro à cet instant précis. Sans l'exclusion explicite,
+                # on l'emmène sur le micro silencieux et le spectateur perd le
+                # son du jeu.
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
+                        if cls._is_golive_capture_output(so):
+                            continue   # piste du Go Live : elle lit le jeu isolé
                         await cls._pactl("move-source-output", str(so.get("index")),
                                          "steamcord_silence_mic")
                 logger.info(f"[golive] pas de vrai micro ({src}) → capture voix "
@@ -3244,6 +3234,8 @@ class Plugin:
                 await cls._pactl("set-default-source", src)
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
+                        if cls._is_golive_capture_output(so):
+                            continue   # piste du Go Live : elle lit le jeu isolé
                         await cls._pactl("move-source-output", str(so.get("index")), src)
                 # unload via la purge par nom (steamcord_silence) — idempotent,
                 # couvre aussi le cas restart plugin_loader (module survivant).
@@ -3258,6 +3250,239 @@ class Plugin:
                 task.cancel()
         except Exception as e:
             logger.warning(f"[golive] mic-silence({enable}): {e!r}")
+
+    # Nom EXACT attendu par Vesktop. Son override de `getDisplayMedia` fait, dans
+    # son asar :
+    #
+    #     const devices = await navigator.mediaDevices.enumerateDevices();
+    #     const audioDevice = devices.find(({ label }) => label === "vencord-screen-share");
+    #     return audioDevice?.deviceId;
+    #
+    # C'est une égalité stricte sur le LABEL, et le label d'une source Pulse vu
+    # par Chromium est sa `device.description`. D'où la description ci-dessous :
+    # elle n'est pas cosmétique, c'est la clé de correspondance.
+    _SHARE_LABEL = "vencord-screen-share"
+
+    @classmethod
+    async def _golive_share_bridge(cls, enable):
+        """Rend le son du partage VISIBLE par Chromium. C'est LE défaut de #42.
+
+        venmic (Vesktop) crée son nœud audio en `media.class =
+        Audio/Source/Virtual`, et **Chromium n'expose pas les sources
+        virtuelles** : `enumerateDevices()` ne le renvoie jamais, le `find()`
+        ci-dessus rend `undefined`, aucune piste audio n'est attachée. Le
+        spectateur a une barre de volume et pas un son. Mesuré au CDP le 06/09 —
+        et la sonde de ce jour-là prouvait déjà qu'un `module-remap-source`
+        apparaît IMMÉDIATEMENT dans `enumerateDevices`. Elle s'appelait
+        « Steamcord-Share-Probe » : visible, mais le label ne correspondait pas,
+        donc elle ne pouvait rien réparer.
+
+        On monte donc un périphérique bien réel qui porte ce label exact :
+
+            null-sink  steamcord_share_sink
+              ├─ remap-source  steamcord_share   description=vencord-screen-share
+              └─ loopback  steamcord_share_sink.monitor → vraie sortie
+
+        Le périphérique existe AVANT que Vesktop n'énumère — c'est indispensable,
+        l'énumération suit le clic de confirmation de quelques millisecondes —
+        et le son y arrive directement depuis le monitor isolé. Vesktop masque
+        de sa liste tout périphérique portant ce label, donc il ne pollue pas le
+        sélecteur de micro.
+
+        ⚠️ NON VÉRIFIÉ sur un vrai Go Live : la chaîne est complète et chaque
+        maillon est mesuré séparément, mais personne n'a encore entendu le son.
+        """
+        if enable:
+            if cls._golive_bridge_mods:
+                return
+            try:
+                mods = []
+                out = (await cls._pactl(
+                    "load-module", "module-null-sink",
+                    "sink_name=steamcord_share_sink",
+                    "sink_properties=device.description=SteamcordShare")).strip()
+                if not out.isdigit():
+                    raise Exception(f"null-sink: {out!r}")
+                mods.append(out)
+                out = (await cls._pactl(
+                    "load-module", "module-remap-source",
+                    "master=steamcord_share_sink.monitor",
+                    "source_name=steamcord_share",
+                    f"source_properties=device.description={cls._SHARE_LABEL}")).strip()
+                if not out.isdigit():
+                    raise Exception(f"remap-source: {out!r}")
+                mods.append(out)
+                # Le spectateur ne doit entendre QUE LE JEU. Le pipeline WebRTC
+                # capturait le monitor de la sortie par défaut, c'est-à-dire le
+                # mix complet du système — Discord compris : la voix des autres
+                # repartait dans le stream (constaté à l'oreille le 13/09).
+                #
+                # On donne donc au partage sa propre sortie : les flux de lecture
+                # qui ne sont PAS Vesktop y sont déplacés, et un loopback la
+                # renvoie vers la vraie sortie pour que le joueur continue de tout
+                # entendre normalement. Discord, lui, reste sur la vraie sortie et
+                # n'entre jamais dans ce sink — la boucle est impossible par
+                # construction, pas par filtrage.
+                real = cls._audio_out or (await cls._pactl("get-default-sink")).strip()
+                if real and "steamcord_" not in real:
+                    cls._golive_bridge_real_sink = real
+                    # ⚠️ ROUTER LE JEU D'ABORD, les loopbacks ensuite. Dans l'autre
+                    # sens, le routage déplaçait nos PROPRES loopbacks dans le sink
+                    # du partage : le retour vers le casque se rebouclait sur
+                    # lui-même et le joueur n'entendait plus rien (mesuré à
+                    # l'oreille le 13/09, les deux loopbacks se retrouvaient
+                    # exactement inversés). Un sink-input tout juste créé n'a pas
+                    # encore ses propriétés définitives, donc on ne peut pas
+                    # compter sur son seul nom pour l'épargner.
+                    await cls._golive_route_game(True)
+                    out = (await cls._pactl(
+                        "load-module", "module-loopback",
+                        "source=steamcord_share_sink.monitor",
+                        f"sink={real}", "latency_msec=30",
+                        f"sink_input_properties=media.name={cls._BRIDGE_TAG}")).strip()
+                    if out.isdigit():
+                        mods.append(out)
+                else:
+                    logger.warning(f"[golive] sortie réelle introuvable ({real!r}) — "
+                                   "le jeu n'est pas isolé, risque d'écho")
+                cls._golive_bridge_mods = mods
+                logger.info("[golive] pont audio monté — un périphérique réel "
+                            f"porte le label «{cls._SHARE_LABEL}» attendu par Vesktop")
+                # ⛔ On NE raccorde PLUS le nœud venmic à ce sink. C'était une
+                # boucle : venmic capture l'application choisie, or le jeu joue
+                # désormais DANS ce sink, donc venmic finissait par capturer le
+                # sink lui-même — et le loopback le réinjectait dedans. Son
+                # doublé, et de pire en pire (mesuré à l'oreille le 13/09).
+                #
+                # Le pont n'a pas besoin de venmic : la remap-source lit
+                # `steamcord_share_sink.monitor`, qui contient déjà le jeu et
+                # rien d'autre, et c'est ELLE que Vesktop attache au stream
+                # puisqu'elle porte le label qu'il cherche. Un seul chemin, une
+                # seule source de vérité.
+            except Exception as e:
+                logger.warning(f"[golive] pont audio KO: {e!r}")
+                await cls._golive_share_bridge(False)
+            return
+
+        # Rendre les flux à la vraie sortie AVANT de démonter le sink, sinon ils
+        # se retrouvent orphelins et PipeWire les recase où il veut.
+        await cls._golive_route_game(False)
+        mods, cls._golive_bridge_mods = cls._golive_bridge_mods, []
+        # Dans l'ordre inverse du montage : le loopback et le remap tiennent le
+        # sink, qui refuserait de partir en premier.
+        for mod in reversed(mods):
+            try:
+                await cls._pactl("unload-module", mod)
+            except Exception as e:
+                logger.debug(f"[golive] unload {mod}: {e!r}")
+        if mods:
+            logger.info("[golive] pont audio démonté")
+
+    @staticmethod
+    def _is_golive_capture_output(source_output):
+        """La capture RecordStream créée pour le Go Live, jamais le vocal."""
+        props = source_output.get("properties", {}) or {}
+        # Vesktop donne ce marqueur à la seconde capture, le vocal normal ne
+        # l'a pas. C'est donc un critère plus sûr que son nom RecordStream.
+        return props.get("target.object") == "steamcord_share"
+
+    @classmethod
+    async def _golive_route_stream_audio(cls):
+        """Bascule la piste du stream sur le monitor isolé du jeu.
+
+        PipeWire peut ouvrir RecordStream sur le micro par défaut tout en lui
+        donnant `target.object=steamcord_share`. Cela produit une voix doublée
+        chez le spectateur et aucun son du jeu. Le vocal normal reste intact.
+        """
+        from json import loads
+        try:
+            outputs = loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]")
+            for so in outputs:
+                if (not cls._is_vesktop_stream(so)
+                        or not cls._is_golive_capture_output(so)):
+                    continue
+                if str(so.get("source")) == "steamcord_share":
+                    return True
+                index = str(so.get("index"))
+                out = await cls._pactl("move-source-output", index, "steamcord_share")
+                logger.info("[golive] piste stream %s → steamcord_share (%s)",
+                            index, out.strip() or "ok")
+                return True
+        except Exception as e:
+            logger.warning(f"[golive] routage piste stream: {e!r}")
+        return False
+
+    @classmethod
+    async def _golive_wait_for_stream_audio(cls):
+        """Attend RecordStream avec `pactl subscribe`, sans sondage actif."""
+        from asyncio import create_subprocess_exec, wait_for, TimeoutError as _TO
+        from asyncio.subprocess import PIPE as _PIPE
+        from time import monotonic
+        import vesktop
+        proc = None
+        try:
+            if await cls._golive_route_stream_audio():
+                return
+            proc = await create_subprocess_exec(
+                "pactl", "subscribe", stdout=_PIPE, stderr=DEVNULL,
+                env=dict(vesktop._user_env(), LC_ALL="C", LANG="C"))
+            # Évite la course entre le premier état et l'abonnement : RecordStream
+            # peut apparaître exactement pendant ces quelques millisecondes.
+            if await cls._golive_route_stream_audio():
+                return
+            deadline = monotonic() + 20
+            while True:
+                left = deadline - monotonic()
+                if left <= 0:
+                    logger.warning("[golive] piste audio du stream non créée après 20 s")
+                    return
+                try:
+                    event = await wait_for(proc.stdout.readline(), timeout=left)
+                except _TO:
+                    return
+                if not event:
+                    return
+                if b"source-output" in event and await cls._golive_route_stream_audio():
+                    return
+        except Exception as e:
+            logger.warning(f"[golive] attente piste stream: {e!r}")
+        finally:
+            if proc and proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+
+    _golive_bridge_real_sink = None
+    # Marque posée sur nos propres flux pour que le routage ne les déplace jamais.
+    _BRIDGE_TAG = "steamcord-bridge"
+
+    @classmethod
+    async def _golive_route_game(cls, into_share):
+        """Déplace les flux de lecture du JEU vers (ou hors de) la sortie du partage.
+
+        « Le jeu » = tout ce qui n'est pas Vesktop. C'est volontairement large :
+        un lecteur de musique en fond partira aussi dans le stream, ce qui est le
+        comportement attendu ; ce qu'on veut exclure, et la seule chose qui crée
+        une boucle, c'est Discord.
+        """
+        from json import loads
+        target = "steamcord_share_sink" if into_share else cls._golive_bridge_real_sink
+        if not target:
+            return
+        try:
+            for si in loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]"):
+                if cls._is_vesktop_stream(si):
+                    continue
+                props = si.get("properties", {}) or {}
+                # Nos propres flux ne doivent JAMAIS être déplacés : le retour
+                # vers le casque se reboucherait sur le sink du partage.
+                name = str(props.get("media.name", "")).lower()
+                if cls._BRIDGE_TAG in name or "loopback" in name:
+                    continue
+                await cls._pactl("move-sink-input", str(si.get("index")), target)
+        except Exception as e:
+            logger.warning(f"[golive] routage du jeu ({into_share}): {e!r}")
 
     # Sérialise start/stop (issue #12) : un stop→start rapproché faisait courir
     # la restauration pactl de _golive_mic_silence(False) EN MÊME TEMPS que le
@@ -3277,14 +3502,26 @@ class Plugin:
     @classmethod
     async def go_live(cls):
         async with cls._golive_lock():
+            # Le pont AVANT d'ouvrir la modale : Vesktop énumère les
+            # périphériques dans la foulée du clic de confirmation, le
+            # périphérique doit donc déjà être là.
+            await cls._golive_share_bridge(True)
             await cls._golive_mic_silence(True)
+            task = cls._golive_capture_task
+            if task is not None and not task.done():
+                task.cancel()
+            cls._golive_capture_task = create_task(cls._golive_wait_for_stream_audio())
             await cls.evt_handler.send_client({"type": "$golive", "stop": False})
 
     @classmethod
     async def stop_go_live(cls):
         async with cls._golive_lock():
             await cls.evt_handler.send_client({"type": "$golive", "stop": True})
+            task, cls._golive_capture_task = cls._golive_capture_task, None
+            if task is not None and not task.done():
+                task.cancel()
             await cls._golive_mic_silence(False)
+            await cls._golive_share_bridge(False)
 
     # ── Partage d'écran via CAMÉRA virtuelle (contournement gamescope) ──────────
     # gamescope n'a pas de portail → Go Live (getDisplayMedia) = écran noir. À la
@@ -3789,12 +4026,51 @@ class Plugin:
                 return {"ok": False, **hint}
             if cls._preview_fallback_task is not None and not cls._preview_fallback_task.done():
                 return {"ok": True}  # une capture est déjà en vol
+            # D'ABORD la stream que Vesktop encode déjà : une image en sort pour
+            # un `drawImage`, là où `gamescopectl` + ffmpeg coûtent ~0,57 cœur·s
+            # par vignette — et surtout, lire une piste déjà ouverte n'ajoute
+            # AUCUN consommateur PipeWire sur le node gamescope (c'est un second
+            # consommateur qui figeait le partage chez les spectateurs, 01/09).
+            # `gamescopectl` reste le secours : hors partage, ou si la stream
+            # n'est pas (encore) là, il n'y a rien à échantillonner.
+            if await cls._preview_from_share_stream():
+                return {"ok": True}
             try:
                 os.remove("/tmp/steamcord-golive-preview.jpg")
             except OSError:
                 pass
             cls._preview_fallback_task = create_task(cls._snapshot_task())
             return {"ok": True}
+
+    @classmethod
+    async def _preview_from_share_stream(cls):
+        """Écrit la vignette depuis la stream du partage. False si indisponible."""
+        import base64
+        import os
+        try:
+            api = getattr(cls.evt_handler, "api", None)
+            if api is None:
+                return False
+            b64 = await wait_for(api.grab_preview_frame(640), 5)
+            if not b64:
+                return False
+            raw = base64.b64decode(b64)
+            if not raw:
+                return False
+            # Écriture atomique : le QAM lit ce fichier en boucle, il ne doit
+            # jamais tomber sur un JPEG à moitié écrit.
+            tmp = "/tmp/steamcord-golive-preview.jpg.tmp"
+            with open(tmp, "wb") as f:
+                f.write(raw)
+            os.replace(tmp, "/tmp/steamcord-golive-preview.jpg")
+            logger.info("[gstprev] vignette tirée de la stream du partage "
+                        f"({len(raw)} octets) — ni gamescopectl ni ffmpeg")
+            return True
+        except Exception as e:
+            # En info, pas en debug : c'est exactement le genre d'échec muet qui
+            # a coûté une demi-journée aujourd'hui.
+            logger.info(f"[gstprev] stream du partage indisponible ({e!r}) → gamescopectl")
+            return False
 
     @classmethod
     async def stop_golive_preview(cls):
@@ -3946,8 +4222,16 @@ class Plugin:
         try:
             for line in (await cls._pactl("list", "modules", "short")).splitlines():
                 parts = line.split("\t")
-                if len(parts) >= 3 and "steamcord_" in parts[2]:
-                    await cls._pactl("unload-module", parts[0])
+                if len(parts) < 3 or "steamcord_" not in parts[2]:
+                    continue
+                # …sauf le pont audio d'un Go Live EN COURS. Cette purge tourne
+                # aussi au démarrage de « partager le son du jeu » : sans cette
+                # exception, activer ce mode pendant un partage déchargeait le
+                # pont et coupait le son du live. Au boot la liste est vide, le
+                # nettoyage après crash reste donc entier.
+                if parts[0] in cls._golive_bridge_mods:
+                    continue
+                await cls._pactl("unload-module", parts[0])
         except Exception as e:
             logger.warning(f"[gameaudio] purge modules: {e!r}")
 
@@ -4093,6 +4377,8 @@ class Plugin:
             if mic and "steamcord_" not in mic:
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
+                        if cls._is_golive_capture_output(so):
+                            continue   # piste du Go Live : elle lit le jeu isolé
                         await cls._pactl("move-source-output", str(so.get("index")), mic)
         except Exception as e:
             logger.warning(f"[gameaudio] restauration: {e!r}")
@@ -4536,6 +4822,7 @@ class Plugin:
         # (sinon la source par défaut resterait le null-sink silencieux).
         try:
             await cls._golive_mic_silence(False)
+            await cls._golive_share_bridge(False)
         except Exception:
             pass
         try:

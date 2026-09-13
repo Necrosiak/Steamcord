@@ -269,6 +269,48 @@ export function hexA(hex: string, a: number): string {
 // Surface d'un bloc (une personne dans le vocal, une conversation, un
 // événement). Même arrondi et même fond que les rangées de serveur, plus un
 // liseré : sans lui, deux blocs collés se lisent comme un seul pavé gris.
+// Curseurs : deux mesures, prises au CDP le 13/09 dans le document du QAM.
+//
+//   .steamcord-slider          258 px → 234 px utiles
+//     div anonyme              234 px  ✓
+//       div anonyme            234 px  ✓
+//         div anonyme, flex    270 px   min-width: 270px   ← LE coupable
+//           …SliderControl…    270 px
+//             .SliderTrack     270 px, overflow: hidden, pastille en pseudo-élément
+//
+// Ce n'est ni une largeur du contrôle ni une marge : un div ANONYME du composant
+// Steam impose un plancher de 270 px à tout le sous-arbre. Il déborde donc de
+// 36 px de la place qu'on lui donne, et son propre `overflow: hidden` coupe la
+// pastille arrivée au bout. Trois tentatives ont échoué avant d'aller mesurer :
+// marge 12 px, marge 20 px, `overflow: visible` sur la liste — toutes AU-DESSUS
+// du problème, qui est entièrement sous notre conteneur.
+//
+// On relâche donc le plancher (`min-width: 0` suffit : les parents sont déjà en
+// `flex: 1 1 auto`, ils se remettent à la bonne taille tout seuls) et on laisse
+// la pastille dépasser son rail. Scopé à une classe à nous : les curseurs natifs
+// de Steam partagent ce composant, on n'y touche pas.
+//
+// ⚠️ Le style va dans le document de l'ÉLÉMENT, pas dans `document`. Le plugin
+// s'exécute dans SharedJSContext mais s'affiche dans la fenêtre du QAM : une
+// première version injectait dans le mauvais document — la classe était bien
+// posée, la règle n'existait nulle part, et rien ne changeait.
+const SLIDER_FIX_CSS =
+  ".steamcord-slider *{min-width:0!important}" +
+  ".steamcord-slider .SliderTrack{overflow:visible!important}";
+
+export function useSliderClipFix() {
+  return useCallback((el: HTMLElement | null) => {
+    const doc = el && el.ownerDocument;
+    if (!doc || doc.getElementById("steamcord-slider-fix")) return;
+    try {
+      const style = doc.createElement("style");
+      style.id = "steamcord-slider-fix";
+      style.textContent = SLIDER_FIX_CSS;
+      doc.head.appendChild(style);
+    } catch (_) { /* purement cosmétique : on laisse Steam rogner */ }
+  }, []);
+}
+
 export function Card({ tint, active, children, style }: any) {
   const { px } = useQamUi();
   const c = tint || ACCENT;

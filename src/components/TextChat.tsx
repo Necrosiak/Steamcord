@@ -272,6 +272,37 @@ function FileRow({ file, passive }: { file: MsgFile; passive?: boolean }) {
   );
 }
 
+// Copie dans le presse-papier depuis le gamemode. Mesuré sur cette machine :
+// `navigator.clipboard.writeText` EXISTE et le contexte est bien sécurisé
+// (https://steamloopback.host), mais il refuse dès que le document n'a pas le
+// focus — ce qui arrive en permanence dans le QAM, où le focus appartient à la
+// fenêtre de jeu. `document.execCommand('copy')` sur un textarea temporaire,
+// lui, répond ok dans cette même situation. On essaie donc le moderne d'abord
+// et on retombe systématiquement sur l'ancien, qui est ici le chemin fiable.
+// Le clavier Steam sait déjà coller ; il ne sait ni copier ni couper (#47).
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await (navigator as any).clipboard.writeText(text);
+    return true;
+  } catch {
+    // Rien à signaler : c'est le cas nominal quand le document n'a pas le focus.
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    // Hors écran plutôt que display:none — un textarea non rendu n'est pas
+    // sélectionnable, donc la copie ne partirait pas.
+    ta.style.cssText = "position:fixed;top:-1000px;left:-1000px;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUpdate, onLocalDelete, onReply }: {
   m: Message; channelId?: string; isMine?: boolean;
   // `passive` : la ligne reste un arrêt de nav (on doit pouvoir remonter le fil
@@ -297,6 +328,8 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pickingEmoji, setPickingEmoji] = useState(false);
   const [busy, setBusy] = useState(false);
+  // "" | "ok" | "ko" — l'étiquette du bouton Copier pendant deux secondes.
+  const [copied, setCopied] = useState("");
   // Motif du dernier échec d'action sur CE message (édition, suppression,
   // réaction). Ces appels avalaient leur erreur en silence : l'utilisateur
   // voyait "rien ne se passe" et aucun log ne disait pourquoi (David #21).
@@ -589,6 +622,18 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
           <ChipBtn disabled={busy} onClick={() => setPickingEmoji((v) => !v)}>+</ChipBtn>
           {onReply && !editing && (
             <ChipBtn disabled={busy} onClick={onReply}>{t("reply")}</ChipBtn>
+          )}
+          {/* Copier : le clavier Steam colle mais ne copie pas, donc récupérer
+              un lien ou un code posté dans un salon était impossible (#47).
+              Rien à copier sur un message sans texte : pas de bouton. */}
+          {!!m.content && !editing && (
+            <ChipBtn disabled={busy} onClick={async () => {
+              const ok = await copyText(m.content);
+              setCopied(ok ? "ok" : "ko");
+              setTimeout(() => setCopied(""), 2000);
+            }}>
+              {copied === "ok" ? t("copied") : copied === "ko" ? t("copy_failed") : t("copy")}
+            </ChipBtn>
           )}
           {/* Transférer : le texte ET les liens des pièces jointes partent
               ensemble — transférer une image sans l'image n'aurait aucun sens. */}

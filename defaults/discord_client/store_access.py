@@ -102,6 +102,15 @@ class StoreAccess:
             raise Exception(str(response.result["__sc_error"]))
         return response.result
 
+    async def grab_preview_frame(self, width=640):
+        """Une image JPEG (base64) tirée de la stream que Vesktop encode déjà.
+
+        Rien n'est capturé en plus : pas de `gamescopectl`, pas de ffmpeg, et
+        surtout aucun second consommateur PipeWire sur le node gamescope — c'est
+        ce dernier qui figeait le partage chez les spectateurs (01/09).
+        """
+        return await self._store_access_request("$preview_grab", None, width=width)
+
     async def get_user(self, id):
         return await self._store_access_request("$getuser", id)
 

@@ -170,6 +170,48 @@ def _restorecon_best_effort(path: Path) -> None:
         pass
 
 
+# Files whose absence breaks nothing if we cannot write them: documentation, a
+# licence, images, and plugin.json (which Decky keeps root-owned and which only
+# ever changes the name, author or flags). Everything else is code, and skipping
+# a code file means shipping a half-updated plugin, i.e. a broken one.
+_SKIPPABLE_NAMES = {"LICENSE", "LICENSE.md", "NOTICE", "plugin.json"}
+_SKIPPABLE_SUFFIXES = {".md", ".txt", ".png", ".jpg", ".jpeg", ".svg", ".webp"}
+
+
+def _writable_as_us(dst: Path) -> bool:
+    """Can we write `dst` without being root?
+
+    Decky leaves the TOP-LEVEL directory and `plugin.json` owned by root and
+    chowns everything else to the host user. So there are two cases and only one
+    of them works: overwriting a file that already exists and is ours needs
+    write permission on the FILE, and succeeds; creating a new entry needs write
+    permission on the DIRECTORY, which we do not have. Measured on a real
+    install on 2026-09-13.
+    """
+    if dst.exists():
+        return os.access(dst, os.W_OK)
+    parent = dst.parent
+    while not parent.exists():
+        parent = parent.parent
+    return os.access(parent, os.W_OK)
+
+
+def _survey(root: Path, plugin_dir: Path):
+    """(blocking, skippable) — what this update will not be able to write."""
+    hard, soft = [], []
+    for src in root.rglob("*"):
+        if src.is_dir():
+            continue
+        rel = src.relative_to(root)
+        dst = plugin_dir / rel
+        if _writable_as_us(dst):
+            continue
+        skippable = (dst.name in _SKIPPABLE_NAMES
+                     or dst.suffix.lower() in _SKIPPABLE_SUFFIXES)
+        (soft if skippable else hard).append(rel)
+    return hard, soft
+
+
 def _apply_blocking(url: str) -> None:
     plugin_dir = Path(DECKY_PLUGIN_DIR)
     with tempfile.TemporaryDirectory() as tmp:
@@ -184,13 +226,28 @@ def _apply_blocking(url: str) -> None:
             z.extractall(extract_dir)
 
         root = _content_root(extract_dir)
+        # Survey BEFORE writing anything. The old loop wrote as it went and
+        # raised on the first impossible file, leaving the plugin half updated —
+        # part old code, part new — which is far worse than no update at all.
+        hard, soft = _survey(root, plugin_dir)
+        if hard:
+            names = ", ".join(sorted(str(h) for h in hard)[:6])
+            raise PermissionError(
+                f"this version touches files the plugin cannot write itself "
+                f"({names}) — a Decky install is required")
+        if soft:
+            logger.info("[updater] skipped (non-essential, not writable): "
+                        + ", ".join(sorted(str(x) for x in soft)))
+
         # Overlay-copy onto the plugin dir (don't wipe — keeps settings/runtime files).
+        skip = set(soft)
         for src in root.rglob("*"):
             rel = src.relative_to(root)
             dst = plugin_dir / rel
             if src.is_dir():
-                dst.mkdir(parents=True, exist_ok=True)
-            else:
+                if _writable_as_us(dst) or dst.exists():
+                    dst.mkdir(parents=True, exist_ok=True)
+            elif rel not in skip:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 _replace_file(src, dst)
 

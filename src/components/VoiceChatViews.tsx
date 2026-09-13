@@ -12,6 +12,7 @@ import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCa
 import {
   focusHalo, ACCENT, DANGER, ONLINE, ActionCard, FULL_BLEED, chromeHideMarkerRef,
   Card, CollapseBody, CollapseHeader, InlineBtn, Notice, Pill, SectionLabel, hexA,
+  useSliderClipFix,
 } from "./Styled";
 import { useQamUi } from "../qamUi";
 import { VideoGridModal } from "./VideoGridFullscreen";
@@ -193,8 +194,24 @@ function SelfPreviewTile() {
 //      mesuré le 06/09 sur BC-250 : 434 ms et 0,23 cœur·s pour gamescope,
 //      puis 728 ms et ~0,34 cœur·s d'ffmpeg — soit ~0,57 cœur·s pour UNE
 //      vignette. C'est abordable en ponctuel, et ruineux en boucle : d'où la
-//      capture UNIQUE au montage de la tuile, rafraîchie à la demande.
+//      capture ponctuelle, jamais pendant un jeu ni hors du QAM.
 const GOLIVE_PREVIEW_ENABLED = true;
+
+// gamescopectl + ffmpeg coûtent environ 0,57 cœur·s par vignette. Une image
+// toutes les cinq secondes est acceptable quand on la REGARDE, et gaspillée
+// sinon — c'est tout le critère.
+//
+// `document.visibilityState` suffit, et c'est mesuré : dans le contexte du QAM
+// (cible CDP « QuickAccess_uid2 ») il vaut "hidden" dès que le panneau est
+// fermé, y compris pendant une partie. Une condition supplémentaire sur
+// `Router.MainRunningApp` a été essayée puis RETIRÉE : elle bloquait le
+// rafraîchissement dès qu'un jeu tournait, même panneau ouvert et vignette à
+// l'écran — c'est-à-dire exactement le moment où l'on consulte l'aperçu de son
+// propre Go Live.
+function canCaptureGoLivePreview() {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible";
+}
 
 // Aperçu LOCAL de mon Go Live NATIF (portail). La capture vit dans le Chromium
 // de Vesktop → aucun flux accessible d'ici.
@@ -203,7 +220,8 @@ const GOLIVE_PREVIEW_ENABLED = true;
 // consommateur PipeWire sur le node gamescope empêchait le recyclage des
 // tampons et FIGEAIT le partage chez les spectateurs (mesuré le 01/09 :
 // 880 « out of buffers » / 15 s avec, 0 sans). Le backend prend donc une seule
-// capture `gamescopectl` au montage de la tuile ; le bouton la rafraîchit.
+// capture `gamescopectl` au montage de la tuile, puis toutes les cinq secondes
+// uniquement tant que le QAM est visible et qu'aucun jeu ne tourne.
 function GoLivePreviewTile() {
   const [snap, setSnap] = useState("");
   // Diagnostic honnête (issue #12 : « Starting Preview… » éternel sur SteamOS) :
@@ -213,7 +231,19 @@ function GoLivePreviewTile() {
   const [giveUp, setGiveUp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
+  const [captureAllowed, setCaptureAllowed] = useState(canCaptureGoLivePreview);
   useEffect(() => {
+    const sync = () => setCaptureAllowed((current) => {
+      const next = canCaptureGoLivePreview();
+      return current === next ? current : next;
+    });
+    sync();
+    const timer = setInterval(sync, 5000);
+    document.addEventListener("visibilitychange", sync);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", sync); };
+  }, []);
+  useEffect(() => {
+    if (!captureAllowed) return;
     let alive = true;
     let polls = 0;
     call<[], { ok: boolean; code?: string; cmd?: string }>("start_golive_preview")
@@ -226,19 +256,27 @@ function GoLivePreviewTile() {
         const r = await call<[], { jpg: string; pending: boolean }>("get_golive_preview");
         if (!alive) return;
         if (r.jpg) { setSnap(r.jpg); setBusy(false); clearInterval(poll); return; }
-        if (!r.pending && ++polls >= 12) { setGiveUp(true); clearInterval(poll); }
+        if (!r.pending && ++polls >= 12) { setGiveUp(true); setBusy(false); clearInterval(poll); }
       } catch (_) { /* backend pas prêt : on retentera */ }
     }, 1000);
     return () => { alive = false; clearInterval(poll); call("stop_golive_preview").catch(() => {}); };
-  }, [tick]);
-  const refresh = useCallback(() => {
-    setBusy(true);
-    setSnap("");
+  }, [tick, captureAllowed]);
+  const refresh = useCallback((quiet = false) => {
+    if (!captureAllowed) return;
+    if (!quiet) {
+      setBusy(true);
+      setSnap("");
+    }
     setGiveUp(false);
     call("refresh_golive_preview")
       .catch(() => {})
       .finally(() => setTick((n) => n + 1));  // relance le poll ci-dessus
-  }, []);
+  }, [captureAllowed]);
+  useEffect(() => {
+    if (!captureAllowed) return;
+    const timer = setInterval(() => refresh(true), 5000);
+    return () => clearInterval(timer);
+  }, [captureAllowed, refresh]);
   if (snap) {
     return (
       <div style={{ marginTop: 6 }}>
@@ -279,11 +317,26 @@ function useScreenCam() {
 export function VoiceChatChannel() {
   const state = useSteamcordState();
   if (!state?.vc) return <div />;
-  // DM calls have no guild — the backend sends null and we localize the label.
+  // Un appel en MP n'a ni salon ni serveur : les deux champs sont nuls. Comme
+  // chacun retombait sur le MÊME libellé, l'en-tête affichait « Message privé
+  // Message privé ». Le titre reste ce libellé, et la ligne secondaire dit
+  // plutôt AVEC QUI on est — la seule information utile à cet endroit.
+  const inGuild = !!state.vc.guild_name;
+  const others = (state.vc.users || [])
+    .filter((u: any) => u && u.id !== state.me?.id)
+    .map((u: any) => u.username)
+    .filter(Boolean);
+  const subtitle = inGuild
+    ? state.vc.guild_name
+    : others.length === 1 ? others[0]
+    : others.length > 1 ? others.slice(0, 3).join(", ") + (others.length > 3 ? "…" : "")
+    : "";
   return (
     <div style={{ marginBottom: 4 }}>
       <span style={{ fontSize: 13, fontWeight: 600 }}>{state.vc.channel_name || t("private_message")}</span>
-      <span style={{ fontSize: 11, opacity: 0.5, marginLeft: 6 }}>{state.vc.guild_name || t("private_message")}</span>
+      {subtitle && (
+        <span style={{ fontSize: 11, opacity: 0.5, marginLeft: 6 }}>{subtitle}</span>
+      )}
     </div>
   );
 }
@@ -452,6 +505,7 @@ export const SoundboardPanel = memo(function SoundboardPanel() {
 });
 
 function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
+  const sliderFix = useSliderClipFix();
   const [volume, setVolume] = useState<number>(100);
   // Mute LOCAL : on ne l'entend plus, de NOTRE côté seulement (lui ne le sait pas).
   const [localMuted, setLocalMuted] = useState<boolean>(false);
@@ -615,7 +669,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       )}
 
       {/* Volume VOIX (à quel point TU l'entends) — barre PLEINE LARGEUR. */}
-      <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
+      <div ref={sliderFix} className="steamcord-slider" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
         <SliderFieldAny
           label={<><IcSpeaker /> {localMuted ? t("video_muted") : volume + "%"}</>}
           value={volume}
@@ -639,7 +693,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           largeur (le son micro et le son du stream sont distincts). Jamais sur
           sa propre ligne : Discord ignore ce volume pour son propre id. */}
       {user?.is_live && !isSelf && (
-        <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
+        <div ref={sliderFix} className="steamcord-slider" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
           <SliderFieldAny
             label={<><IcMonitor /> {t("video_stream")} {streamVol}%</>}
             value={streamVol}
@@ -653,7 +707,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       {/* MA ligne en live : volume BROADCAST (ce que les spectateurs entendent).
           Max 100 % : le signal venmic est déjà à pleine échelle, au-delà ça sature. */}
       {user?.is_live && isSelf && (
-        <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
+        <div ref={sliderFix} className="steamcord-slider" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
           <SliderFieldAny
             label={<><IcMonitor /> {t("broadcast_volume")} {bcastVol}%</>}
             value={bcastVol}
@@ -847,6 +901,11 @@ export function VoiceChatMembers() {
           </ActionCard>
         </div>
       )}
+      {/* La pastille des curseurs dépasse le rail d'un demi-diamètre à fond de
+          course. `overflow: visible` la laissait alors SORTIR de la carte, ce
+          qui est aussi laid que la coupe d'avant : on garde donc le rognage
+          ici, et c'est la marge intérieure des curseurs (20 px, ci-dessous)
+          qui lui fait la place dont elle a besoin. */}
       <ul style={{ margin: 0, padding: "0 4px", boxSizing: "border-box", width: "100%", listStyle: "none", overflow: "hidden" }}>
         {state.vc.users.map((user: any) => (
           <UserRow key={user.id} user={user} isSelf={user.id === meId} />

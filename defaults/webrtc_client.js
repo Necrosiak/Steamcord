@@ -25,13 +25,24 @@
     // (le natif a déjà échoué) — sinon boucle.
     const nativeFirst = (constraints) => new Promise((resolve, reject) => {
         let done = false;
-        // 25s : auto-validation de la modale (~1s) + venmic + Start du portail
-        // (≤5s de recherche du node) + établissement PipeWire. Au-delà = bloqué.
+        // 8s, et plus 25. Le budget d'origine additionnait les pires cas
+        // (auto-validation ~1s + venmic + Start ≤5s + établissement PipeWire),
+        // mais quand le chemin natif ABOUTIT il répond en 1 à 2 s : les 25 s
+        // n'étaient jamais un temps d'attente utile, seulement le prix de
+        // l'échec. Or sur une machine où le natif échoue systématiquement —
+        // mesuré le 13/09, tous les Go Live finissent sur le relais — c'est
+        // 25 s d'attente à chaque lancement, pour rien. Le repli produit une
+        // image et un son corrects ; le seul coût est un réencodage.
         const timer = setTimeout(() => {
             if (done) return;
             done = true;
-            reject(new Error("native portal timeout (25s)"));
-        }, 25000);
+            console.warn("[Steamcord] portail natif muet après 8s → repli sur le relais");
+            try {
+                window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                    m: "[golive] portail natif muet après 8s → repli relais" }));
+            } catch (_) {}
+            reject(new Error("native portal timeout (8s)"));
+        }, 8000);
         nativeGetDisplayMedia(constraints).then((stream) => {
             if (done) {
                 // Résolution APRÈS le timeout : ne pas laisser une session de
@@ -139,18 +150,68 @@
         ws.onerror = () => { clearTimeout(fbTimer); fail("ws error"); };
     });
 
+    // L'aperçu du QAM se sert de CETTE stream, pas d'une capture à part.
+    //
+    // Avant, la vignette coûtait un `gamescopectl screenshot` + un ffmpeg à
+    // chaque rafraîchissement — mesuré ~0,57 cœur·seconde par image. Or Vesktop
+    // détient déjà la stream qu'il encode et envoie : en tirer une image ne
+    // coûte qu'un `drawImage`, et surtout n'ajoute AUCUN consommateur PipeWire.
+    // C'est ce dernier point qui compte : c'est un second consommateur sur le
+    // node gamescope qui figeait le partage chez les spectateurs (01/09).
+    const keepShareStream = (stream) => {
+        window.STEAMCORD_SHARE_STREAM = stream;
+        try {
+            const t = stream.getVideoTracks()[0];
+            if (t) t.addEventListener("ended", () => {
+                if (window.STEAMCORD_SHARE_STREAM === stream) window.STEAMCORD_SHARE_STREAM = undefined;
+            });
+        } catch (_) {}
+        return stream;
+    };
+
+    // Rend une image JPEG en base64, ou "" si aucune stream n'est disponible.
+    window.STEAMCORD_GRAB_FRAME = async (maxWidth) => {
+        const stream = window.STEAMCORD_SHARE_STREAM;
+        const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+        if (!track || track.readyState !== "live") return "";
+        const bmp = await new ImageCapture(track).grabFrame();
+        const w = Math.min(maxWidth || 640, bmp.width || 640);
+        const h = Math.max(1, Math.round((bmp.height || 360) * (w / (bmp.width || 640))));
+        const canvas = new OffscreenCanvas(w, h);
+        canvas.getContext("2d").drawImage(bmp, 0, 0, w, h);
+        try { bmp.close(); } catch (_) {}
+        const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.6 });
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+        return btoa(bin);
+    };
+
+    // Le portail natif a-t-il déjà échoué dans CETTE session ? Sur une machine
+    // où il ne répond pas, le réessayer à chaque Go Live coûte les 8 s du budget
+    // à chaque fois — mesuré ce jour : 8 s sur 9 s de latence totale, pour un
+    // chemin qui n'a jamais abouti une seule fois. On ne le retente donc pas
+    // avant le prochain chargement du plugin, ce qui laisse une chance à une
+    // machine où il se remettrait à marcher, sans faire payer les autres.
+    let nativePortalDead = false;
+
     const steamcordGDM = async (constraints) => {
         /* STEAMCORD_RTC 65124 — marqueur pour looksLikeOurs (anti re-wrap) */
-        if (nativeGetDisplayMedia) {
+        if (nativeGetDisplayMedia && !nativePortalDead) {
             try {
                 const stream = await nativeFirst(constraints);
                 console.log("[Steamcord] getDisplayMedia → portail natif OK");
-                return stream;
+                return keepShareStream(stream);
             } catch (e) {
-                console.log("[Steamcord] getDisplayMedia natif KO (" + ((e && e.message) || e) + ") → relais GStreamer local");
+                nativePortalDead = true;
+                console.log("[Steamcord] getDisplayMedia natif KO (" + ((e && e.message) || e) + ") → relais GStreamer local ; les prochains partages iront direct au relais");
+                try {
+                    window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                        m: "[golive] portail natif écarté pour cette session — les prochains Go Live partent direct au relais" }));
+                } catch (_) {}
             }
         }
-        return getRTCStream(constraints);
+        return keepShareStream(await getRTCStream(constraints));
     };
 
     if (window.navigator?.mediaDevices) {

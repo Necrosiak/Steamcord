@@ -297,80 +297,35 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             // autres participants en écho.
             const scText = (el) => String((el && el.textContent) || "").trim();
             const scBad = /^(none|aucun|vesktop|discord)/i;
-            const scDrop = Array.from(dlg.querySelectorAll("[role=button], [class*='select' i], [class*='dropdown' i]"))
-                .find((el) => /^(none|aucun)$/i.test(scText(el)));
-            if (!scDrop) {
-                scDiag("[golive] déclencheur de source audio INTROUVABLE — partage sans son");
-            } else {
-                scReactClick(scDrop);
-                await new Promise((r) => setTimeout(r, 300));
-                // La liste s'ouvre souvent dans un portail HORS de la modale :
-                // on cherche donc dans tout le document, pas seulement dans dlg.
-                // Ne garder que les options VISIBLES : à un stop→start rapproché
-                // le menu de la modale précédente est encore dans le DOM, et le
-                // 06/09 on a cliqué dedans — dans un menu mort, donc sans effet
-                // (les options sortaient en double dans le relevé).
-                const scVisible = (el) => {
-                    if (!el.offsetParent && getComputedStyle(el).position !== "fixed") return false;
-                    const r = el.getBoundingClientRect();
-                    return r.width > 0 && r.height > 0;
-                };
-                let scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"))
-                    .filter(scVisible);
-                if (!scOpts.length) {
-                    // Liste vide : Vesktop propose « Refresh Audio Sources ».
-                    const rb = Array.from(dlg.querySelectorAll("button"))
-                        .find((b) => /refresh audio/i.test(scText(b)));
-                    if (rb) {
-                        scReactClick(rb);
-                        await new Promise((r) => setTimeout(r, 400));
-                        scOpts = Array.from(document.querySelectorAll("[role=option], [role=menuitem], [role=menuitemradio]"))
-                            .filter(scVisible);
-                    }
-                }
-                scDiag("[golive] options audio: " + (scOpts.length
-                    ? scOpts.slice(0, 12).map((o) => "«" + scText(o).slice(0, 30) + "»").join(" | ")
-                    : "AUCUNE"));
-                // On veut LE JEU, pas « Entire System » : capter tout le système
-                // réinjecte Vesktop, donc les voix des autres participants leur
-                // reviennent en écho (demande explicite du user). « Entire
-                // System » ne sert que de repli si aucune application n'est
-                // proposée. Chromium = le rendu de Vesktop, à écarter aussi.
-                const scGeneric = /^(none|aucun|entire system|tout le syst|vesktop|discord|chromium|speech-dispatcher)/i;
-                // Les options sortent en double même filtrées sur la visibilité :
-                // on prend la DERNIÈRE correspondance, la plus récemment montée.
-                const scLast = (pred) => { for (let i = scOpts.length - 1; i >= 0; i--) if (pred(scOpts[i])) return scOpts[i]; };
-                const scPick = scLast((o) => !scGeneric.test(scText(o)))
-                            || scLast((o) => /^(entire system|tout le syst)/i.test(scText(o)));
-                if (scPick) {
-                    const scWanted = scText(scPick).slice(0, 40);
-                    scReactClick(scPick);
-                    await new Promise((r) => setTimeout(r, 250));
-                    // VÉRIFIER, pas espérer : si le déclencheur affiche encore
-                    // « None », le clic React n'a rien validé (le 06/09 la bonne
-                    // option était choisie et le partage partait quand même sans
-                    // son). On rejoue alors une vraie séquence de souris.
-                    if (/^(none|aucun)$/i.test(scText(scDrop))) {
-                        for (const t of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
-                            try {
-                                scPick.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }));
-                            } catch (_) {}
-                        }
-                        await new Promise((r) => setTimeout(r, 300));
-                    }
-                    scAudioPicked.ok = !/^(none|aucun)$/i.test(scText(scDrop));
-                    scDiag("[golive] source audio «" + scWanted + "» → déclencheur affiche «"
-                           + scText(scDrop).slice(0, 40) + "»");
-                } else {
-                    scDiag("[golive] aucune option audio exploitable — partage sans son");
-                }
-            }
-            // Repli : aucune source retenue dans la modale → on refait ce qu'on
-            // faisait avant, tout le système moins Vesktop, plutôt que rien.
-            if (!scAudioPicked.ok) {
-                scDiag("[golive] aucune source retenue → repli venmic startSystem");
-                try { await window.VesktopNative?.virtmic?.startSystem?.(scExclude); } catch (_) {}
-            }
+            // ⛔ ON NE CHOISIT PLUS DE SOURCE AUDIO DANS LA MODALE, et on ne
+            // démarre plus venmic. Le son du partage vient désormais du pont
+            // monté par le backend : les flux du jeu sont déplacés dans
+            // `steamcord_share_sink`, dont le monitor est exposé sous le label
+            // exact que Vesktop cherche (`vencord-screen-share`).
+            //
+            // Choisir une source ici DÉMARRE venmic, qui crée un second nœud
+            // portant LE MÊME label. Vesktop fait
+            // `find(({label}) => label === "vencord-screen-share")` et prend le
+            // premier que Chromium lui rend — on ne contrôle pas cet ordre.
+            // Mesuré le 13/09 : il a pris celui de venmic, n'a pas pu l'ouvrir,
+            // et est retombé sur l'entrée par défaut — LE MICRO. Résultat, deux
+            // captures Vesktop sur le micro : la voix partait en double (écho
+            // chez l'interlocutrice) et le jeu ne partait pas du tout.
+            //
+            // Un seul périphérique doit porter ce label. En laissant la modale
+            // sur « None », venmic ne démarre pas, et le nôtre est le seul
+            // candidat. Bénéfice de bord : plus besoin de deviner quelle entrée
+            // du menu est « le jeu » — c'est nous qui décidons ce qui entre dans
+            // le sink, donc le contenu du stream ne dépend plus de ce que la
+            // modale a bien voulu énumérer.
+            scDiag("[golive] source audio laissée sur « None » — le son vient du "
+                   + "pont backend (un seul périphérique porte le label)");
+            scAudioPicked.ok = true;   // rien à valider, rien à réparer
+
+            // ⛔ Plus de repli `venmic.startSystem` : il capte TOUT le système,
+            // Discord compris, donc il réinjecte la voix des autres dans le
+            // stream. C'est précisément l'écho qu'on cherche à éliminer, et le
+            // pont backend rend ce repli inutile.
             // RE-CHERCHER le bouton : `btn` a été trouvé AVANT de choisir la
             // source audio. Choisir re-rend la modale, et React peut remplacer
             // le nœud — on cliquerait alors un bouton détaché de l'arbre vivant,
@@ -407,13 +362,31 @@ window.Vencord.Plugins.plugins.Steamcord = {
             window.old_enumerate_devices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
             navigator.mediaDevices.enumerateDevices = async () => {
                 const devices = await window.old_enumerate_devices();
-                // "vencord-screen-share" est le device venmic : c'est la sortie
-                // système destinée au STREAM, jamais une entrée micro. Tant qu'il
-                // restait énumérable, Discord pouvait le prendre pour micro et
-                // renvoyer le salon dans le salon (larsen, 31/08). Le retirer ici
-                // n'empêche pas Vesktop de s'en servir : screenShareFixes l'ouvre
-                // par deviceId exact, sans passer par enumerateDevices.
-                return devices.filter(f => f.label != "Filter Chain Source" && f.label != "Virtual Source" && f.label != "vencord-screen-share" && !(f.label == "" && f.deviceId == "default"))
+                // ⚠️ "vencord-screen-share" A ÉTÉ RETIRÉ DE CE FILTRE le 13/09.
+                //
+                // On l'y avait mis le 31/08 contre un larsen : Discord pouvait le
+                // prendre pour un micro et renvoyer le salon dans le salon. Le
+                // commentaire d'alors affirmait que « le retirer ici n'empêche pas
+                // Vesktop de s'en servir : screenShareFixes l'ouvre par deviceId
+                // exact, sans passer par enumerateDevices ». C'est FAUX, et son
+                // asar le dit :
+                //
+                //     const devices = await navigator.mediaDevices.enumerateDevices();
+                //     const audioDevice = devices.find(({label}) => label === "vencord-screen-share");
+                //     return audioDevice?.deviceId;
+                //
+                // Il passe précisément par là, et compare le LABEL. En le filtrant
+                // ici, on retirait à Vesktop le seul périphérique qu'il cherche
+                // pour attacher le son du partage : `find` rendait undefined,
+                // aucune piste audio n'était attachée, et le spectateur avait une
+                // barre de volume sans un son. C'est la moitié du #42.
+                //
+                // Le larsen, lui, reste couvert — par Vesktop lui-même, et au bon
+                // endroit : il patche la liste de périphériques de DISCORD
+                // (`getFilteredDevices`, même label), donc le device n'est
+                // toujours pas proposable comme micro. Notre filtre global était
+                // redondant côté larsen, et destructeur côté partage.
+                return devices.filter(f => f.label != "Filter Chain Source" && f.label != "Virtual Source" && !(f.label == "" && f.deviceId == "default"))
             }
         }
 
@@ -1221,6 +1194,27 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         let result;
                         try {
                             switch (data.type) {
+                                // Image de l'aperçu, tirée de la stream que
+                                // Vesktop encode déjà (cf. webrtc_client.js).
+                                // Rien n'est capturé en plus.
+                                case "$preview_grab":
+                                    try {
+                                        result = await window.STEAMCORD_GRAB_FRAME?.(data.width || 640);
+                                    } catch (e) {
+                                        result = "";
+                                        // ⚠️ PAS `scDiag` ici : il n'est pas dans cette
+                                        // portée, et l'appeler jetait « scDiag is not
+                                        // defined » DEPUIS le gestionnaire d'erreur —
+                                        // l'aperçu retombait alors sur gamescopectl en
+                                        // masquant la vraie raison. `STEAMCORD_WS`, lui,
+                                        // est bien là : on est dans son propre handler.
+                                        console.warn("[Steamcord] image d'aperçu impossible", e);
+                                        try {
+                                            window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                                                m: "[golive] image d'aperçu impossible : " + e }));
+                                        } catch (_) {}
+                                    }
+                                    break;
                                 case "$getuser":
                                     result = Vencord.Webpack.Common.UserStore.getUser(data.id);
                                     break;

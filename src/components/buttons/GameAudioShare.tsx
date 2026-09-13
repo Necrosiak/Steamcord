@@ -5,7 +5,7 @@ import { FaVolumeUp, FaStop } from "react-icons/fa";
 import { IcController, IcMic } from "../Icons";
 import { call } from "@decky/api";
 import { t } from "../../i18n";
-import { DANGER, InlineBtn, Notice } from "../Styled";
+import { DANGER, InlineBtn, Notice, useSliderClipFix } from "../Styled";
 
 const Slider = SliderField as any;
 
@@ -14,6 +14,7 @@ const Slider = SliderField as any;
 // main.py). Les deux jauges règlent le volume de chaque branche du mix — ce que
 // les AUTRES entendent, pas le volume local.
 export function GameAudioShare() {
+  const sliderFix = useSliderClipFix();
   const state = useSteamcordState();
   const [on, setOn] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -57,7 +58,7 @@ export function GameAudioShare() {
         {on ? t("game_audio_stop") : t("game_audio_start")}
       </InlineBtn>
       {on && (
-        <div style={{ padding: "0 6px", boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
+        <div ref={sliderFix} className="steamcord-slider" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
           {hasMic ? (
             <Slider
               label={<><IcMic /> {t("game_audio_voice")} {voice}%</>}

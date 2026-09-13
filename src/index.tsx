@@ -245,6 +245,33 @@ const STATUSES: { id: string; color: string }[] = [
 const steamToDiscord = (s: number): string =>
   ({ 1: "online", 2: "dnd", 3: "idle", 4: "idle", 7: "invisible", 0: "invisible" } as any)[s] || "online";
 
+// ── Vue d'ouverture du panneau ─────────────────────────────────────────────
+// Le panneau s'ouvrait toujours sur Vocal + Serveurs. Pour qui s'en sert
+// surtout pour lire ses MP écrits, c'était deux crans de manette à repasser à
+// chaque ouverture (#43). Le choix est purement local à la machine → un
+// localStorage suffit, pas de réglage backend.
+
+const OPEN_TOP_KEY = "steamcord_open_top";
+const OPEN_SRC_KEY = "steamcord_open_src";
+
+export type OpenTop = "voice" | "text";
+export type OpenSrc = "servers" | "dms";
+
+const getOpenTop = (): OpenTop => {
+  try { return localStorage.getItem(OPEN_TOP_KEY) === "text" ? "text" : "voice"; }
+  catch { return "voice"; }
+};
+const setOpenTop = (v: OpenTop) => {
+  try { localStorage.setItem(OPEN_TOP_KEY, v); } catch { }
+};
+const getOpenSrc = (): OpenSrc => {
+  try { return localStorage.getItem(OPEN_SRC_KEY) === "dms" ? "dms" : "servers"; }
+  catch { return "servers"; }
+};
+const setOpenSrc = (v: OpenSrc) => {
+  try { localStorage.setItem(OPEN_SRC_KEY, v); } catch { }
+};
+
 // ── Sync de statut Steam→Discord ───────────────────────────────────────────
 // Tourne en TÂCHE DE FOND au niveau plugin (démarrée dans definePlugin), donc
 // indépendante de l'ouverture du QAM. Le flag "auto" est persisté ; un pub-sub
@@ -820,18 +847,34 @@ const UpdaterSection = () => {
   const doInstall = async () => {
     setStatus("installing");
     setUpdErr("");
-    // Decky re-chown le dossier top-level du plugin (et plugin.json) à root à
-    // CHAQUE chargement, et n'attribue à l'utilisateur que le contenu. Notre
-    // backend tourne en utilisateur : il peut réécrire les fichiers existants,
-    // mais jamais créer une nouvelle entrée top-level. Toute release qui ajoute
-    // un fichier ou un dossier à la racine échouait donc en Permission denied
-    // (cf #16 — c'est game_overlay/ qui bloquait en 1.18.x).
+    // ORDRE INVERSÉ le 13/09 : on essaie NOTRE décompression d'abord.
     //
-    // On délègue donc à l'installeur natif de Decky, exposé par le loader qui,
-    // lui, tourne en root : il télécharge l'artefact, le décompresse et rétablit
-    // les droits derrière lui (set_plugin_dir_permissions). C'est exactement le
-    // chemin qu'emprunte le Store Decky. Decky affiche sa propre modale de
-    // confirmation puis recharge le plugin.
+    // Decky re-chown le dossier top-level du plugin (et plugin.json) à root à
+    // chaque chargement et n'attribue à l'utilisateur que le contenu : on peut
+    // réécrire les fichiers existants, jamais créer une nouvelle entrée à la
+    // racine (#16, game_overlay/ en 1.18.x). D'où la délégation, jusqu'ici en
+    // premier, à l'installeur de Decky, qui tourne en root.
+    //
+    // Sauf que c'est la route du STORE Decky : après avoir décompressé, elle
+    // déclare l'install à plugins.deckbrew.xyz, qui ne connaît pas nos plugins
+    // → 404 → la suite ne s'exécute pas. Mesuré le 13/09, journal du loader à
+    // l'appui : fichiers écrits, plugin JAMAIS rechargé, et la modale « Mise à
+    // jour en cours » reste figée en travers de l'interface Steam.
+    //
+    // Notre updater sait désormais dire AVANT d'écrire s'il peut tout écrire.
+    // Il traite donc le cas courant, et Decky n'est plus qu'un dernier recours,
+    // pour les releases qui ajoutent vraiment un fichier à la racine.
+    let applyErr = "";
+    try {
+      const r: any = await call<[string], any>("apply_update", url);
+      if (r === true || r?.ok) return;   // le backend redémarre le loader
+      applyErr = r?.error || "";
+    } catch {
+      applyErr = "";
+    }
+
+    // Dernier recours. Il écrira les fichiers, mais sa modale peut rester
+    // ouverte : le minuteur rend le bouton utilisable quoi qu'il arrive.
     const backend: any = (window as any).DeckyBackend;
     if (backend?.call) {
       try {
@@ -839,9 +882,6 @@ const UpdaterSection = () => {
         await backend.call("utilities/install_plugin", url, "Steamcord", latest, "", 2);
         setStatus("confirm");
         hookCancel();
-        // Garde-fou si l'annulation nous échappe (modale fermée autrement) :
-        // sans lui le bouton resterait inutilisable jusqu'à la réouverture du
-        // QAM. `plugin_download_start` annule le minuteur.
         if (confirmTimer.current) clearTimeout(confirmTimer.current);
         confirmTimer.current = setTimeout(() => {
           confirmTimer.current = null;
@@ -850,21 +890,11 @@ const UpdaterSection = () => {
         }, 30000);
         return;
       } catch {
-        // Loader trop ancien / route absente → on retombe sur l'ancien chemin.
+        // Loader trop ancien / route absente.
       }
     }
-    // Repli : le backend décompresse lui-même et redémarre plugin_loader.
-    // En cas d'échec il renvoie {ok:false, error} — on le remonte au lieu de
-    // laisser le bouton bloqué sur « installation… » pour toujours.
-    try {
-      const r: any = await call<[string], any>("apply_update", url);
-      if (!(r === true || r?.ok)) {
-        setUpdErr(r?.error || "");
-        setStatus("failed");
-      }
-    } catch {
-      setStatus("failed");
-    }
+    setUpdErr(applyErr);
+    setStatus("failed");
   };
 
   const onToggle = (v: boolean) => {
@@ -958,8 +988,9 @@ const Content = () => (
 
 const ContentBody = () => {
   const state = useSteamcordState();
-  const [topTab, setTopTab] = useState<"voice" | "text" | "config">("voice");
-  const [srcTab, setSrcTab] = useState<"servers" | "dms">("servers");
+  // Vue d'ouverture : réglable, « Vocal » + « Serveurs » par défaut (#43).
+  const [topTab, setTopTab] = useState<"voice" | "text" | "config">(getOpenTop);
+  const [srcTab, setSrcTab] = useState<"servers" | "dms">(getOpenSrc);
   const [tabFocus, setTabFocus] = useState<string | null>(null);
   // En appel : la vue par défaut est l'appel en cours. « Parcourir Discord »
   // bascule browsing=true pour révéler la navigation SANS quitter l'appel.
@@ -1496,6 +1527,45 @@ const VoiceShortcutConfig = () => {
   );
 };
 
+// Deux listes : quel onglet du haut, et quelle source, à l'ouverture du QAM.
+// Le changement ne rebascule PAS la vue courante — on règle ce qu'on verra la
+// prochaine fois, pas ce qu'on regarde maintenant.
+const OpenViewConfig = () => {
+  const [top, setTop] = useState<OpenTop>(getOpenTop());
+  const [src, setSrc] = useState<OpenSrc>(getOpenSrc());
+  const topOpts = [
+    { data: "voice" as OpenTop, label: t("tab_voice") },
+    { data: "text" as OpenTop, label: t("tab_text") },
+  ];
+  const srcOpts = [
+    { data: "servers" as OpenSrc, label: t("tab_servers") },
+    { data: "dms" as OpenSrc, label: t("tab_dms") },
+  ];
+  return (
+    <>
+      <SR>
+        <Dropdown
+          rgOptions={topOpts as any}
+          selectedOption={top}
+          onChange={(o: any) => { setOpenTop(o.data); setTop(o.data); }}
+        />
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={srcOpts as any}
+          selectedOption={src}
+          onChange={(o: any) => { setOpenSrc(o.data); setSrc(o.data); }}
+        />
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>
+          {t("config_open_on_desc")}
+        </div>
+      </SR>
+    </>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div>
@@ -1506,6 +1576,11 @@ const ConfigPanel = () => {
       <RpcToggle />
       <RpcDetectToggle />
       <RpcOverrideField />
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcChat /> {t("config_open_on")}</div>
+      </SR>
+      <OpenViewConfig />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcJoystick /> {t("config_shortcut")}</div>
