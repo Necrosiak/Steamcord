@@ -37,7 +37,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 - **Audio device selection** — From Settings, choose the **output (Discord sound)** and **input (microphone)** device — *Auto (system default)* or a specific device, e.g. send Discord audio to your **headset only** while games stay on HDMI.
 - **Mute / Deafen / Disconnect** — One-tap voice controls from the QAM, with Discord's own native sound cues (mute/unmute, deafen/undeafen, disconnect, participants joining/leaving).
 - **Soundboard** — Browse and play the default sounds, the current server's sounds, and (with Nitro) every other server's sounds, right from the voice call view. You hear your own sounds too, just like the real client.
-- **Screen share** — Share your whole screen to a voice channel (Go Live). Works natively in Desktop / Big Picture, **and now natively in Gaming Mode too**: gamescope ships no screen-capture portal (which is why the normal Go Live used to be a black screen there), so the plugin runs its own tiny ScreenCast portal (`portal_shim.py`) that hands Chromium the gamescope PipeWire node — the same node Steam's built-in Game Recording uses. Real Go Live, full resolution, game audio via venmic, no kernel module, nothing written to the rootfs (survives SteamOS A/B updates). The legacy paths remain as fallbacks: the local GStreamer WebRTC relay (automatic when no portal answers) and the **"Share screen (game mode)"** virtual-camera button (v4l2loopback, needs one-time setup). The Go Live thumbnail in the QAM is **back**, taken with `gamescopectl` instead: it is a snapshot rather than a live feed, and that is deliberate — a live thumbnail needs a second PipeWire consumer on the gamescope node, which starves its buffer pool and freezes the picture for your viewers.
+- **Screen share** — Share your whole screen to a voice channel (Go Live), natively in Desktop, Big Picture and Gaming Mode. In Gaming Mode Steamcord supplies a small ScreenCast portal (`portal_shim.py`) that gives Chromium the gamescope PipeWire node used by Steam Game Recording. Game audio is carried through a dedicated isolated bridge, so Discord call audio is never sent back into the stream. No kernel module or rootfs write is needed. The GStreamer WebRTC relay and the **"Share screen (game mode)"** virtual-camera button (v4l2loopback) remain fallbacks. The QAM thumbnail is a `gamescopectl` snapshot, refreshed only while the QAM is visible outside a running game, to avoid starving the screen-share buffer pool.
 - **Share game audio** — Stream your game's sound into the voice channel **along with your voice**. Two mix sliders (🎙️ voice / 🎮 game) control what the others hear, while you keep hearing the game normally — and it works even **without a physical microphone** (the plugin creates a virtual *Steamcord Mic* input).
 - **In-game notifications** — Incoming DM calls and pings appear as **native Steam notifications (popup + sound)**, respecting your Discord status (silenced when invisible / do-not-disturb).
 - **🕹️ Controller voice shortcut** — Capture **any button combo on your controller** and bind it to **mute toggle** or **push-to-talk**. It works globally in-game, even with the QAM closed (set it up in the Settings tab).
@@ -156,6 +156,13 @@ Feature requests and "it works!" reports on unusual setups are just as valuable.
 Steamcord is largely shaped by the people who report things. The full list —
 who found what, and which release it landed in — lives in
 **[CREDITS.md](CREDITS.md)**.
+
+### Goes well with
+
+- [decky-quick-tab](https://github.com/moi952/decky-quick-tab) by
+  [@moi952](https://github.com/moi952) — pins a plugin as its own tab in the
+  Quick Access Menu, so Steamcord opens in one press instead of going through
+  the Decky list. Not affiliated with this project, just genuinely useful with it.
 
 ## AI disclaimer
 

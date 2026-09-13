@@ -58,8 +58,9 @@ gamescope has no screen-cast portal, so Steamcord ships its own: the backend
 runs `portal_shim.py`, a tiny `org.freedesktop.portal.ScreenCast` service that
 auto-approves capture requests with the gamescope PipeWire node (the one Steam
 Game Recording uses). The regular **Go Live** button therefore works natively
-in Game Mode — full resolution, game audio via venmic, no kernel module, no
-rootfs writes (survives SteamOS A/B updates). It needs nothing beyond what
+in Game Mode — full resolution and game audio through an isolated bridge that
+excludes Discord call audio, with no kernel module or rootfs writes (survives
+SteamOS A/B updates). It needs nothing beyond what
 every gamescope-capable distro already has: PipeWire, D-Bus and `pw-dump`.
 
 In Desktop Mode the shim steps aside automatically (releases the portal name)
