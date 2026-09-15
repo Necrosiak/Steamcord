@@ -55,12 +55,16 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Steamcord-paneel in het snelmenu, serverlijst"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Steamcord-paneel tijdens een spraakgesprek"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Uitgebreide weergave, online vrienden met hun activiteit"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Uitgebreide weergave, serverlijst"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Uitgebreide weergave, chat in de weergave"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Uitgebreide weergave, huidig gesprek"/>
 </p>
 
 ## Installatie

@@ -55,12 +55,16 @@ Le passage au natif règle les problèmes difficiles de l'ancienne approche par 
 ## 📸 Captures d'écran
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Panneau Steamcord dans le menu d'accès rapide, liste des serveurs"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Panneau Steamcord pendant un appel vocal"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Vue agrandie, amis en ligne avec leur activité"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Vue agrandie, liste des serveurs"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Vue agrandie, chat ouvert dans la vue"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Vue agrandie, appel en cours"/>
 </p>
 
 ## Installation

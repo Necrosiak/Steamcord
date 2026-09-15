@@ -55,12 +55,16 @@ Pasar a nativo resuelve los problemas difíciles del antiguo enfoque de navegado
 ## 📸 Capturas de pantalla
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Panel de Steamcord en el menú de acceso rápido, lista de servidores"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Panel de Steamcord durante una llamada de voz"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Vista ampliada, amigos en línea con su actividad"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Vista ampliada, lista de servidores"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Vista ampliada, chat abierto dentro de la vista"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Vista ampliada, llamada en curso"/>
 </p>
 
 ## Instalación

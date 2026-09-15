@@ -55,12 +55,16 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 ## 📸 Zrzuty ekranu
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Panel Steamcord w menu szybkiego dostępu, lista serwerów"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Panel Steamcord podczas rozmowy głosowej"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Widok rozszerzony, znajomi online z aktywnością"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Widok rozszerzony, lista serwerów"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Widok rozszerzony, czat otwarty w widoku"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Widok rozszerzony, bieżące połączenie"/>
 </p>
 
 ## Instalacja

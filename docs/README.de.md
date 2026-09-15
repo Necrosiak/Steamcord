@@ -55,12 +55,16 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Steamcord-Panel im Schnellzugriffsmenü, Serverliste"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Steamcord-Panel während eines Sprachanrufs"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Erweiterte Ansicht, Freunde online mit Aktivität"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Erweiterte Ansicht, Serverliste"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Erweiterte Ansicht, Chat in der Ansicht"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Erweiterte Ansicht, aktueller Anruf"/>
 </p>
 
 ## Installation

@@ -56,12 +56,16 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="docs/img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="docs/img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="docs/img/steamcord-qam-servers.jpg" width="49%" alt="Steamcord panel in the Quick Access Menu, server list"/>
+  <img src="docs/img/steamcord-qam-call.jpg" width="49%" alt="Steamcord panel during a voice call"/>
 </p>
 <p align="center">
-  <img src="docs/img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="docs/img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="docs/img/steamcord-expanded-friends.jpg" width="49%" alt="Expanded view, friends online with their activity"/>
+  <img src="docs/img/steamcord-expanded-servers.jpg" width="49%" alt="Expanded view, server list"/>
+</p>
+<p align="center">
+  <img src="docs/img/steamcord-expanded-chat.jpg" width="49%" alt="Expanded view, chat opened inside the view"/>
+  <img src="docs/img/steamcord-expanded-call.jpg" width="49%" alt="Expanded view, current call"/>
 </p>
 
 ## Installation

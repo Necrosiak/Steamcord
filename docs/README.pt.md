@@ -55,12 +55,16 @@ Ir para o nativo resolve os problemas difíceis da antiga abordagem de navegador
 ## 📸 Capturas de ecrã
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Painel do Steamcord no menu de acesso rápido, lista de servidores"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Painel do Steamcord durante uma chamada de voz"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Vista ampliada, amigos online com a sua atividade"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Vista ampliada, lista de servidores"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Vista ampliada, chat aberto dentro da vista"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Vista ampliada, chamada em curso"/>
 </p>
 
 ## Instalação

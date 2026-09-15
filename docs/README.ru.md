@@ -55,12 +55,16 @@ Steamcord запускает **[Vesktop](https://github.com/Vencord/Vesktop)** �
 ## 📸 Скриншоты
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Панель Steamcord в меню быстрого доступа, список серверов"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Панель Steamcord во время голосового звонка"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Расширенный вид, друзья в сети с их активностью"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Расширенный вид, список серверов"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Расширенный вид, чат внутри вида"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Расширенный вид, текущий звонок"/>
 </p>
 
 ## Установка

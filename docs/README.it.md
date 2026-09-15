@@ -55,12 +55,16 @@ Il passaggio al nativo risolve i problemi difficili del vecchio approccio a brow
 ## 📸 Screenshot
 
 <p align="center">
-  <img src="img/steamcord-servers.jpg" width="49%" alt="Discord servers"/>
-  <img src="img/steamcord-dm-chat.jpg" width="49%" alt="Direct messages"/>
+  <img src="img/steamcord-qam-servers.jpg" width="49%" alt="Pannello Steamcord nel menu di accesso rapido, elenco server"/>
+  <img src="img/steamcord-qam-call.jpg" width="49%" alt="Pannello Steamcord durante una chiamata vocale"/>
 </p>
 <p align="center">
-  <img src="img/steamcord-voice-call.jpg" width="49%" alt="Voice call"/>
-  <img src="img/steamcord-voice-live.jpg" width="49%" alt="Screen share live"/>
+  <img src="img/steamcord-expanded-friends.jpg" width="49%" alt="Vista estesa, amici online con la loro attività"/>
+  <img src="img/steamcord-expanded-servers.jpg" width="49%" alt="Vista estesa, elenco server"/>
+</p>
+<p align="center">
+  <img src="img/steamcord-expanded-chat.jpg" width="49%" alt="Vista estesa, chat aperta nella vista"/>
+  <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Vista estesa, chiamata in corso"/>
 </p>
 
 ## Installazione
