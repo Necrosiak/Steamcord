@@ -13,7 +13,7 @@ interface Guild { id: string; name: string; icon: string | null; channels: Voice
 
 const Btn = DialogButton as any;
 
-function MemberAvatars({ members }: { members: ChannelMember[] }) {
+export function MemberAvatars({ members }: { members: ChannelMember[] }) {
   const { px } = useQamUi();
   if (!members || members.length === 0) return null;
   const shown = members.slice(0, 4);

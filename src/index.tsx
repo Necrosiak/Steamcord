@@ -14,6 +14,7 @@ import {
   TextField,
   findModuleExport,
   SteamSpinner,
+  showModal,
 } from "@decky/ui";
 import { Component, Suspense, useState, useEffect, useRef } from "react";
 import { FaDiscord } from "react-icons/fa";
@@ -39,12 +40,12 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { patchMenu } from "./patches/menuPatch";
-import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts } from "./notify";
+import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode } from "./notify";
 import { ACCENT, DANGER, focusHalo } from "./components/Styled";
 import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
 import { initVideoRelay } from "./videoRelay";
-import { DiscordTab } from "./components/DiscordTab";
+import { DiscordExpandedModal } from "./components/DiscordExpanded";
 import { EventsPanel } from "./components/EventsPanel";
 import { openCaptchaSolver } from "./components/CaptchaSolver";
 import {
@@ -71,13 +72,14 @@ import { ScreenCameraButton } from "./components/buttons/ScreenCameraButton";
 import { GameAudioShare } from "./components/buttons/GameAudioShare";
 import { ChannelBrowser } from "./components/ChannelBrowser";
 import { DMBrowser } from "./components/DMBrowser";
+import { ServerHub } from "./components/ServerHub";
+import { useOpenChat } from "./components/ExpandedNav";
 import { TextChat } from "./components/TextChat";
 import { t } from "./i18n";
 import {
   call,
   addEventListener,
   removeEventListener,
-  routerHook,
 } from "@decky/api";
 
 declare global {
@@ -261,8 +263,12 @@ const getOpenTop = (): OpenTop => {
   try { return localStorage.getItem(OPEN_TOP_KEY) === "text" ? "text" : "voice"; }
   catch { return "voice"; }
 };
+// Chaque choix part aussi au backend (~/.config/steamcord-view.json) : copie de
+// secours si Steam vide son stockage web (#43, vue revenue à Vocal + Serveurs
+// après un redémarrage chez moi952).
 const setOpenTop = (v: OpenTop) => {
   try { localStorage.setItem(OPEN_TOP_KEY, v); } catch { }
+  call("set_open_view", v, null).catch(() => {});
 };
 const getOpenSrc = (): OpenSrc => {
   try { return localStorage.getItem(OPEN_SRC_KEY) === "dms" ? "dms" : "servers"; }
@@ -270,6 +276,34 @@ const getOpenSrc = (): OpenSrc => {
 };
 const setOpenSrc = (v: OpenSrc) => {
   try { localStorage.setItem(OPEN_SRC_KEY, v); } catch { }
+  call("set_open_view", null, v).catch(() => {});
+};
+const readStored = (key: string): string | null => {
+  try { return localStorage.getItem(key); } catch { return null; }
+};
+
+// À l'ouverture : clé locale absente mais copie backend présente → le stockage
+// a été vidé, on reprend la copie (et on la remet en local). Clé locale présente
+// mais pas de copie (install venant de 1.32/1.33) → on remplit la copie.
+const syncOpenView = (apply: (top?: OpenTop, src?: OpenSrc) => void) => {
+  call<[], { top?: OpenTop | null; src?: OpenSrc | null }>("get_open_view")
+    .then((b) => {
+      if (!b) return;
+      let top: OpenTop | undefined;
+      let src: OpenSrc | undefined;
+      if (readStored(OPEN_TOP_KEY) === null) {
+        if (b.top) { try { localStorage.setItem(OPEN_TOP_KEY, b.top); } catch { } top = b.top; }
+      } else if (!b.top) {
+        call("set_open_view", getOpenTop(), null).catch(() => {});
+      }
+      if (readStored(OPEN_SRC_KEY) === null) {
+        if (b.src) { try { localStorage.setItem(OPEN_SRC_KEY, b.src); } catch { } src = b.src; }
+      } else if (!b.src) {
+        call("set_open_view", null, getOpenSrc()).catch(() => {});
+      }
+      if (top || src) apply(top, src);
+    })
+    .catch(() => {});
 };
 
 // ── Sync de statut Steam→Discord ───────────────────────────────────────────
@@ -330,7 +364,44 @@ const stopStatusSync = () => { if (_statusTimer) { clearInterval(_statusTimer); 
 
 // Pseudo cliquable : avatar + nom + icône du statut courant à droite. Clic →
 // déplie le sélecteur de statut (en ligne). Une sélection manuelle coupe l'auto-sync.
-const UserStatusButton = ({ me }: { me: any }) => {
+// #43 : icône de la vue agrandie — une fenêtre de navigateur contenant le logo
+// Discord, en SVG. Une icône seule plutôt qu'un bouton pleine largeur : le QAM
+// est déjà dense, l'accès à la vue ne doit pas coûter une ligne.
+const DiscordWindowIcon = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="1.5" y="3" width="21" height="18" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
+    <path d="M1.5 7.5h21" stroke="currentColor" strokeWidth="1.6" />
+    <circle cx="4.3" cy="5.25" r="0.8" fill="currentColor" />
+    <circle cx="6.8" cy="5.25" r="0.8" fill="currentColor" />
+    <circle cx="9.3" cy="5.25" r="0.8" fill="currentColor" />
+    <FaDiscord x="6.5" y="8.8" size={11} />
+  </svg>
+);
+
+const ExpandDiscordBtn = ({ onClick }: { onClick: () => void }) => {
+  const { px } = useQamUi();
+  const [focused, setFocused] = useState(false);
+  const s = px(48);
+  return (
+    <BtnTab
+      onClick={onClick}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      title={t("open_discord_full")}
+      style={{
+        width: s, minWidth: s, minHeight: s, padding: 0, margin: 0, flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        boxSizing: "border-box", overflow: "visible", color: "#fff",
+        background: focused ? "rgba(88,101,242,0.6)" : "rgba(255,255,255,0.06)",
+        ...focusHalo(ACCENT, focused),
+      }}
+    >
+      <DiscordWindowIcon size={px(26)} />
+    </BtnTab>
+  );
+};
+
+const UserStatusButton = ({ me, onExpand }: { me: any; onExpand?: () => void }) => {
   const [current, setCurrent] = useState<string>(currentDiscordStatus);
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState<string | null>(null);
@@ -355,12 +426,14 @@ const UserStatusButton = ({ me }: { me: any }) => {
 
   return (
     <div>
+      {/* Pseudo à gauche, icône de la vue agrandie tout à droite (D-pad →). */}
+      <Focusable flow-children="row" style={{ display: "flex", alignItems: "stretch", gap: px(6) }}>
       <BtnTab
         onClick={() => setOpen((o) => !o)}
         onFocus={() => setFocused("name")}
         onBlur={() => setFocused((f) => (f === "name" ? null : f))}
         style={{
-          display: "flex", alignItems: "center", gap: px(8), width: "100%",
+          display: "flex", alignItems: "center", gap: px(8), flex: 1, minWidth: 0,
           padding: `${px(6)}px ${px(8)}px`, margin: 0, minHeight: px(48),
           boxSizing: "border-box", overflow: "visible", lineHeight: 1,
           // Blanc forcé : le focus natif du DialogButton passe le texte en
@@ -382,11 +455,13 @@ const UserStatusButton = ({ me }: { me: any }) => {
             style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center", display: "block" }}
           />
         </div>
-        <span style={{ flex: 1, textAlign: "left", fontSize: px(14), fontWeight: 600 }}>{me?.username}</span>
+        <span style={{ flex: 1, minWidth: 0, textAlign: "left", fontSize: px(14), fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{me?.global_name || me?.username}</span>
         {/* Statut courant (icône) à droite du pseudo. */}
         <span style={{ fontSize: px(16) }}><IcStatus id={cur.id} color={cur.color} size={px(16)} /></span>
         <span style={{ opacity: 0.4, fontSize: px(12) }}>{open ? "▲" : "▼"}</span>
       </BtnTab>
+      {onExpand && <ExpandDiscordBtn onClick={onExpand} />}
+      </Focusable>
       {open && (
         <Focusable
           style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 6 }}
@@ -629,6 +704,35 @@ const NotifStyleToggle = () => {
 // #25 — « leave active or disabled to receive notifications while playing »
 // (Havok027). Trois modes plutôt qu'un simple oui/non : couper TOUT prive aussi
 // des MP et des appels entrants, ce que personne ne veut vraiment.
+// Mode streamer (voir notify.ts) : retient les notifications pendant un live
+// pour qu'elles ne s'impriment pas dans la vidéo. Réglage partagé avec
+// BoneCast, SkullKey et BC250 Toolkit (même clé localStorage).
+const StreamerModeSetting = () => {
+  const [mode, setMode] = useState<StreamerMode>(getStreamerMode());
+  const opts = [
+    { data: "auto", label: t("streamer_auto") },
+    { data: "always", label: t("streamer_always") },
+    { data: "off", label: t("streamer_off") },
+  ];
+  return (
+    <>
+      <SR>
+        <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("streamer_mode")}</div>
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={opts as any}
+          selectedOption={mode}
+          onChange={(o: any) => { const v = o.data as StreamerMode; setMode(v); setStreamerMode(v); }}
+        />
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>{t("streamer_desc")}</div>
+      </SR>
+    </>
+  );
+};
+
 const NotifModeSetting = ({ ctx }: { ctx: NotifyCtx }) => {
   const [mode, setMode] = useState<NotifyInGame>(notifyModeOf(ctx));
   useEffect(() => {
@@ -986,11 +1090,62 @@ const Content = () => (
   <QamUiRoot><BackNavRoot><ContentBody /></BackNavRoot></QamUiRoot>
 );
 
+// Vue agrandie : l'appel en cours est lu dans l'état VIVANT, pas figé à
+// l'ouverture de la modale — il apparaît dès qu'un salon est rejoint depuis
+// Serveurs ou Messages privés. Fermer la vue ne touche pas à l'appel.
+const ExpandedCallPanel = () => {
+  const state = useSteamcordState();
+  const shareEnv = useShareEnv();
+  const openChat = useOpenChat();
+  const [chatFocus, setChatFocus] = useState(false);
+  if (!state?.vc?.channel_id) {
+    return <div style={{ opacity: 0.62, lineHeight: 1.6 }}>
+      {t("xv_no_call")}<br />{t("xv_no_call_hint")}
+    </div>;
+  }
+  const vc = state.vc;
+  return <>
+    {/* Le chat écrit du salon vocal (même id que le salon) ou du MP de l'appel,
+        ouvert dans le bloc de droite — L1/B ramène à l'appel (demande user 15/09). */}
+    <div style={{ marginBottom: 10 }}>
+      <WideBtn
+        onClick={() => openChat(String(vc.channel_id), vc.channel_name || "Discord", !vc.guild_name)}
+        focused={chatFocus}
+        onFocus={() => setChatFocus(true)}
+        onBlur={() => setChatFocus(false)}
+      >
+        <IcChat /> {t("xv_voice_chat")}{vc.channel_name ? ` · ${vc.channel_name}` : ""}
+      </WideBtn>
+    </div>
+    <Focusable flow-children="row" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <MuteButton /><DeafenButton /><DisconnectButton />
+    </Focusable>
+    <VoiceChatChannel />
+    <SoundboardPanel />
+    <VoiceChatMembers />
+    <div style={{ marginTop: 8 }}><GoLiveButton /></div>
+    {shareEnv !== "desktop" && <div style={{ marginTop: 8 }}><ScreenCameraButton /></div>}
+    <div style={{ marginTop: 8 }}><GameAudioShare /></div>
+  </>;
+};
+
 const ContentBody = () => {
   const state = useSteamcordState();
   // Vue d'ouverture : réglable, « Vocal » + « Serveurs » par défaut (#43).
   const [topTab, setTopTab] = useState<"voice" | "text" | "config">(getOpenTop);
   const [srcTab, setSrcTab] = useState<"servers" | "dms">(getOpenSrc);
+  // Copie backend : n'écrase la vue que si l'utilisateur n'a pas déjà changé
+  // d'onglet entre le montage et la réponse.
+  const initialView = useRef({ top: topTab, src: srcTab });
+  useEffect(() => {
+    let alive = true;
+    syncOpenView((top, src) => {
+      if (!alive) return;
+      if (top) setTopTab((cur) => (cur === initialView.current.top ? top : cur));
+      if (src) setSrcTab((cur) => (cur === initialView.current.src ? src : cur));
+    });
+    return () => { alive = false; };
+  }, []);
   const [tabFocus, setTabFocus] = useState<string | null>(null);
   // En appel : la vue par défaut est l'appel en cours. « Parcourir Discord »
   // bascule browsing=true pour révéler la navigation SANS quitter l'appel.
@@ -999,6 +1154,14 @@ const ContentBody = () => {
   const vesktopBackend = useVesktopBackend(!state?.loaded);
 
   const inCall = !!state?.vc?.channel_id;
+  // #43 : vue agrandie native Steam (jamais l'ancienne BrowserView pré-Vesktop).
+  const openExpanded = () => showModal(
+    <DiscordExpandedModal
+      serverContent={<ServerHub />}
+      settingsContent={<ConfigPanel />}
+      callContent={<ExpandedCallPanel />}
+    />
+  );
   // Chaque début/fin d'appel ramène à la vue naturelle (appel si en appel).
   useEffect(() => { setBrowsing(false); }, [inCall]);
   useBackHandler(() => { setBrowsing(false); return true; }, !!(inCall && browsing && topTab === "voice"));
@@ -1036,7 +1199,7 @@ const ContentBody = () => {
         {/* Pseudo TOUJOURS en haut → changement de statut accessible en permanence. */}
         <div style={{ marginBottom: "12px" }}>
           <SR>
-            <UserStatusButton me={state?.me} />
+            <UserStatusButton me={state?.me} onExpand={openExpanded} />
           </SR>
           <NowPlayingRow />
         </div>
@@ -1587,6 +1750,54 @@ const OpenViewConfig = () => {
   );
 };
 
+// Nom affiché sur Discord (global_name) — distinct de l'identifiant de
+// connexion (username), que le panneau montrait jusqu'ici. Vide = revenir à
+// l'identifiant, comme dans Discord.
+const DisplayNameConfig = () => {
+  const state = useSteamcordState();
+  const current: string = state?.me?.global_name || "";
+  const [draft, setDraft] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { setDraft(current); }, [current]);
+  const save = async () => {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r: any = await call("set_global_name", draft.trim());
+      setMsg(r?.ok ? t("display_name_saved") : `${t("display_name_failed")}${r?.error ? ` (${r.error})` : ""}`);
+    } catch {
+      setMsg(t("display_name_failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <SR>
+        <TextField
+          label={t("config_display_name")}
+          description={t("display_name_desc", { login: state?.me?.username || "" })}
+          value={draft}
+          onChange={(e: any) => setDraft(String(e?.target?.value ?? "").slice(0, 32))}
+        />
+      </SR>
+      <SR>
+        <WideBtn
+          onClick={save}
+          focused={focused}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        >
+          {busy ? "…" : t("display_name_save")}
+        </WideBtn>
+      </SR>
+      {msg && <SR><div style={{ fontSize: 12, opacity: 0.8 }}>{msg}</div></SR>}
+    </>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div>
@@ -1597,6 +1808,11 @@ const ConfigPanel = () => {
       <RpcToggle />
       <RpcDetectToggle />
       <RpcOverrideField />
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcUser /> {t("config_display_name")}</div>
+      </SR>
+      <DisplayNameConfig />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcChat /> {t("config_open_on")}</div>
@@ -1629,6 +1845,7 @@ const ConfigPanel = () => {
       <NotifStyleToggle />
       <NotifModeSetting ctx="in_game" />
       <NotifModeSetting ctx="idle" />
+      <StreamerModeSetting />
       <StreamQualitySetting />
       <hr />
       <AboutSection />
@@ -1846,6 +2063,11 @@ export default definePlugin(() => {
   // (Decky + plugins tiers) qui crée des entrées sans notification_type.
   patchDeckyToaster();
 
+  // Mode streamer : notre Go Live est une source de live (voir notify.ts).
+  const onStateForStreamer = (st: any) => setLiveSource("steamcord-golive", !!st?.me?.is_live);
+  addEventListener("state", onStateForStreamer);
+  call("get_state").then(onStateForStreamer).catch(() => {});
+
   // Always follow the default audio INPUT automatically: when a mic is plugged
   // in/out (headset, RØDECaster…), swap the relayed track for the new default
   // without renegotiating. (Output already follows: Discord is set to "default",
@@ -1912,10 +2134,6 @@ export default definePlugin(() => {
     setPlaying();
   })();
 
-  routerHook.addRoute("/discord", () => {
-    return <DiscordTab />;
-  });
-
   // Sync de statut Steam→Discord en tâche de fond (indépendante du QAM).
   startStatusSync();
 
@@ -1924,7 +2142,6 @@ export default definePlugin(() => {
     content: <Suspense fallback={<div style={{ padding: 8 }}>{t("loading")}</div>}><ContentErrorBoundary><Content /></ContentErrorBoundary></Suspense>,
     icon: <FaDiscord />,
     onDismount() {
-      routerHook.removeRoute("/discord");
       unpatchMenu();
       stopStatusSync();
       removeEventListener("webrtc", webrtcEventListener);

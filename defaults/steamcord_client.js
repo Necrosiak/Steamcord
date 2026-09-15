@@ -1179,6 +1179,24 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     if (data.type.startsWith("$")) {
                         let result;
                         try {
+                            // Statut + activité en cours d'un utilisateur, pour la vue agrandie (amis, MP).
+                            // Activité « principale » = la première qui n'est pas un statut personnalisé
+                            // (type 4), gardé à part : Discord les affiche l'un sous l'autre.
+                            const scPresenceOf = (id) => {
+                                try {
+                                    const PS = Vencord.Webpack.findStore("PresenceStore");
+                                    const acts = PS?.getActivities?.(id) || [];
+                                    const main = acts.find(a => a && a.type !== 4);
+                                    const custom = acts.find(a => a && a.type === 4);
+                                    return {
+                                        status: PS?.getStatus?.(id) || "offline",
+                                        activity: main ? { type: main.type, name: main.name || "", details: main.details || "", state: main.state || "", start: main.timestamps?.start || null } : null,
+                                        custom: custom && (custom.state || custom.emoji) ? { text: custom.state || "", emoji: custom.emoji && !custom.emoji.id ? (custom.emoji.name || "") : "", emoji_id: custom.emoji?.id || null, emoji_animated: !!custom.emoji?.animated } : null,
+                                    };
+                                } catch (_) {
+                                    return { status: "offline", activity: null, custom: null };
+                                }
+                            };
                             switch (data.type) {
                                 // Image de l'aperçu, tirée de la stream que
                                 // Vesktop encode déjà (cf. webrtc_client.js).
@@ -1751,7 +1769,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             : [];
                                         const recipients = recipientIds.map(id => {
                                             const u = US?.getUser?.(id);
-                                            return { id: String(id), username: u?.username ?? String(id), avatar: u?.avatar ?? null };
+                                            return { id: String(id), username: u?.username ?? String(id), global_name: u?.globalName ?? null, avatar: u?.avatar ?? null, relationship: Vencord.Webpack.findStore("RelationshipStore")?.getRelationshipType?.(id) ?? 0, ...scPresenceOf(id) };
                                         });
                                         const name = ch.name || (recipients.length === 1 ? recipients[0].username : `Group (${recipients.length + 1})`);
                                         return {
@@ -1763,6 +1781,161 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             active_call: activeCall,
                                         };
                                     });
+                                    break;
+                                }
+                                // ── Amis (vue agrandie) ──────────────────────────────────────────────────
+                                // RelationshipStore : 1 = ami, 3 = demande reçue, 4 = demande envoyée
+                                // (2 = bloqué, jamais exposé). Mesuré en live le 15/09.
+                                // Profil d'une personne (menu Y de la vue agrandie) : bio, bannière, serveurs et
+                                // amis en commun. API REST du client lui-même, mesurée le 15/09.
+                                case "$get_profile": {
+                                    const uid = String(data.user_id);
+                                    const r = await Vencord.Webpack.Common.RestAPI.get({
+                                        url: `/users/${uid}/profile`,
+                                        query: { with_mutual_guilds: true, with_mutual_friends: true, with_mutual_friends_count: true },
+                                    });
+                                    const b = r?.body || {};
+                                    const u = b.user || {};
+                                    const GS = Vencord.Webpack.Common.GuildStore;
+                                    result = {
+                                        id: uid, username: u.username || uid, global_name: u.global_name || null, avatar: u.avatar || null,
+                                        banner: u.banner || b.user_profile?.banner || null, banner_color: u.banner_color || null,
+                                        bio: b.user_profile?.bio || u.bio || "",
+                                        mutual_guilds: (b.mutual_guilds || []).map(g => ({ id: String(g.id), name: GS?.getGuild?.(g.id)?.name || "", nick: g.nick || null })).filter(g => g.name),
+                                        mutual_friends: (b.mutual_friends || []).slice(0, 12).map(f => ({ id: String(f.id), username: f.username, global_name: f.global_name || null, avatar: f.avatar || null })),
+                                        mutual_friends_count: b.mutual_friends_count ?? (b.mutual_friends || []).length,
+                                        relationship: Vencord.Webpack.findStore("RelationshipStore")?.getRelationshipType?.(uid) ?? 0,
+                                        ...scPresenceOf(uid),
+                                    };
+                                    break;
+                                }
+                                case "$close_dm": {
+                                    // Retire la conversation de la liste des MP, comme « Fermer le MP » de Discord.
+                                    const PCA = Vencord.Webpack.find(mod => mod && typeof mod.closePrivateChannel === "function");
+                                    await PCA.closePrivateChannel(String(data.channel_id));
+                                    result = { ok: true };
+                                    break;
+                                }
+                                // Membres d'un serveur « comme dans Discord ». Le client ne les connaît pas
+                                // tant qu'aucun salon n'est affiché (42 649 membres, 2 en cache, mesuré 15/09) :
+                                // on les demande comme lui, par plages de 100 (GUILD_SUBSCRIPTIONS_CHANNEL), puis
+                                // on lit ChannelMemberStore — groupes par rôle affiché à part + en ligne/hors ligne.
+                                case "$get_guild_members": {
+                                    const Wp = Vencord.Webpack, Cm = Wp.Common;
+                                    const gid = String(data.guild_id);
+                                    const start = Math.max(0, parseInt(data.start || 0, 10) || 0);
+                                    const GCS = Wp.findStore("GuildChannelStore"), CMS = Wp.findStore("ChannelMemberStore");
+                                    const RS = Wp.findStore("RelationshipStore"), GRS = Wp.findStore("GuildRoleStore");
+                                    const US = Cm.UserStore;
+                                    // La liste des membres de Discord dépend du SALON : seuls ceux qui peuvent le
+                                    // voir y figurent. Le 1er salon d'un serveur est souvent privé
+                                    // (« moderator-only » de GAMING ZONE : 3 membres au lieu de 15, retour user
+                                    // 15/09). On prend le 1er salon visible par @everyone (liste « everyone »),
+                                    // sinon le 1er tout court.
+                                    const VIEW_CHANNEL = 1n << 10n;
+                                    const selectable = (GCS?.getChannels?.(gid)?.SELECTABLE || []).map(x => x?.channel).filter(Boolean);
+                                    const everyoneSees = (c) => {
+                                        try { const ow = c.permissionOverwrites?.[gid]; return !ow || (BigInt(ow.deny ?? 0) & VIEW_CHANNEL) === 0n; }
+                                        catch (_) { return false; }
+                                    };
+                                    const chan = selectable.find(everyoneSees) || selectable[0];
+                                    if (!chan) { result = { rows: [], end: 0, total_rows: 0 }; break; }
+                                    const ranges = [[0, 99]];
+                                    if (start > 0) ranges.push([start, start + 99]);
+                                    Cm.FluxDispatcher.dispatch({ type: "GUILD_SUBSCRIPTIONS_CHANNEL", guildId: gid, channelId: chan.id, ranges });
+                                    const want = start + 100;
+                                    let props = null;
+                                    for (let i = 0; i < 20; i++) {
+                                        props = CMS?.getProps?.(gid, chan.id);
+                                        const known = (props?.groups || []).some(g => g && g.id !== "unknown");
+                                        const loaded = (props?.rows || []).slice(start, want).some(r => r && r.type === "MEMBER");
+                                        if (known && loaded) break;
+                                        await new Promise(r => setTimeout(r, 200));
+                                    }
+                                    const roleInfo = {};
+                                    try { for (const r of (GRS?.getSortedRoles?.(gid) || [])) roleInfo[r.id] = { name: r.name, position: r.position }; } catch (_) {}
+                                    const meId = US?.getCurrentUser?.()?.id;
+                                    const allRows = props?.rows || [];
+                                    // Le nombre de membres d'un groupe vit dans props.groups, pas dans la
+                                    // ligne GROUP (toujours 0 — mesuré 15/09).
+                                    const groupCount = {};
+                                    for (const g of (props?.groups || [])) if (g) groupCount[String(g.id)] = g.count || 0;
+                                    const rows = [];
+                                    for (const r of allRows.slice(start, want)) {
+                                        if (!r) continue;
+                                        if (r.type === "GROUP") { rows.push({ type: "group", id: String(r.id), title: r.title || "", count: groupCount[String(r.id)] ?? r.count ?? 0 }); continue; }
+                                        if (r.type !== "MEMBER") continue;
+                                        const u = r.user || US?.getUser?.(r.userId);
+                                        const id = String(r.userId || u?.id || "");
+                                        if (!id) continue;
+                                        const roles = (r.roles || []).map(x => roleInfo[x]).filter(Boolean)
+                                            .sort((a, b) => b.position - a.position).slice(0, 3).map(x => x.name);
+                                        rows.push({ type: "member", id, username: u?.username || id, global_name: u?.globalName ?? null,
+                                            nick: r.nick || null, avatar: u?.avatar ?? null, color: r.colorString || null, bot: !!u?.bot,
+                                            roles, relationship: RS?.getRelationshipType?.(id) ?? 0, self: id === meId, ...scPresenceOf(id) });
+                                    }
+                                    result = { rows, end: Math.min(want, allRows.length), total_rows: allRows.length };
+                                    break;
+                                }
+                                case "$get_friends": {
+                                    const RS = Vencord.Webpack.findStore("RelationshipStore");
+                                    const US = Vencord.Webpack.Common.UserStore;
+                                    const rels = RS?.getMutableRelationships?.() || new Map();
+                                    const entries = rels instanceof Map ? [...rels.entries()] : Object.entries(rels);
+                                    const out = { friends: [], incoming: [], outgoing: [] };
+                                    const bucket = { 1: "friends", 3: "incoming", 4: "outgoing" };
+                                    for (const [id, type] of entries) {
+                                        const key = bucket[type];
+                                        if (!key) continue;
+                                        const u = US?.getUser?.(id);
+                                        out[key].push({ id: String(id), username: u?.username ?? String(id), global_name: u?.globalName ?? null, avatar: u?.avatar ?? null, ...scPresenceOf(id) });
+                                    }
+                                    const rank = { online: 0, idle: 1, dnd: 2 };
+                                    const label = (f) => String(f.global_name || f.username).toLowerCase();
+                                    out.friends.sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3) || label(a).localeCompare(label(b)));
+                                    result = out;
+                                    break;
+                                }
+                                case "$open_dm": {
+                                    // Conversation existante ou créée : permet d'écrire à un ami à qui on
+                                    // n'a jamais écrit (demande user 15/09).
+                                    const PCA = Vencord.Webpack.find(m => m && typeof m.getOrEnsurePrivateChannel === "function");
+                                    const channelId = await PCA.getOrEnsurePrivateChannel(String(data.user_id));
+                                    result = { id: String(channelId) };
+                                    break;
+                                }
+                                case "$friend_request": {
+                                    // REST direct et non RelationshipActions.sendRequest : ce dernier avale
+                                    // l'erreur et l'affiche dans la fenêtre de Vesktop, invisible en mode jeu.
+                                    const raw = String(data.username || "").trim().replace(/^@/, "");
+                                    const [username, disc] = raw.split("#");
+                                    try {
+                                        await Vencord.Webpack.Common.RestAPI.post({
+                                            url: "/users/@me/relationships",
+                                            body: { username, discriminator: disc ? parseInt(disc, 10) : null },
+                                        });
+                                        result = { ok: true };
+                                    } catch (e) {
+                                        const b = e?.body || {};
+                                        result = { ok: false, code: b.code ?? e?.status ?? null, captcha: !!b.captcha_key, message: b.message || String(e?.message || e) };
+                                    }
+                                    break;
+                                }
+                                case "$friend_block":
+                                case "$friend_add":
+                                case "$friend_accept":
+                                case "$friend_remove": {
+                                    // PUT = accepter une demande reçue ; DELETE = refuser une demande reçue
+                                    // ou annuler une demande envoyée, retirer un ami, débloquer (menu Y).
+                                    // PUT = envoyer une demande (par id) ou accepter ; DELETE = refuser/annuler.
+                                    const method = data.type === "$friend_remove" ? "del" : "put";
+                                    try {
+                                        await Vencord.Webpack.Common.RestAPI[method]({ url: `/users/@me/relationships/${String(data.user_id)}`, body: data.type === "$friend_block" ? { type: 2 } : {} });
+                                        result = { ok: true };
+                                    } catch (e) {
+                                        const b = e?.body || {};
+                                        result = { ok: false, code: b.code ?? e?.status ?? null, message: b.message || String(e?.message || e) };
+                                    }
                                     break;
                                 }
                                 case "$dm_call": {
@@ -2009,6 +2182,18 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         body: { content: String(data.content || "") },
                                     });
                                     result = true;
+                                    break;
+                                }
+                                case "$set_global_name": {
+                                    // Nom AFFICHÉ (global_name), pas l'identifiant de
+                                    // connexion : PATCH /users/@me, sans mot de passe
+                                    // (seul l'identifiant en exige un). null = revenir
+                                    // à l'identifiant, comme le champ vide de Discord.
+                                    const res = await Vencord.Webpack.Common.RestAPI.patch({
+                                        url: "/users/@me",
+                                        body: { global_name: data.name ? String(data.name) : null },
+                                    });
+                                    result = { ok: true, global_name: res?.body?.global_name ?? (data.name || "") };
                                     break;
                                 }
                                 case "$delete_message": {

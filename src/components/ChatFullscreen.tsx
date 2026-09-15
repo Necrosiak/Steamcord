@@ -121,8 +121,11 @@ const isFsNearBottom = (list: HTMLElement | null) => !list || -list.scrollTop < 
 // n'a pas scrollé loin des derniers messages (mêmes heuristique/seuil que
 // l'ancien panneau QAM) ; dès qu'il s'en éloigne, l'auto-scroll s'arrête et un
 // bouton "revenir aux derniers messages" apparaît pour reprendre le flux.
-export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, onClosed }:
-  { channelId: string; channelName: string; isDm: boolean; closeModal?: () => void; onClosed?: () => void }) {
+// Le chat lui-même, sans fenêtre : rendu tel quel dans le bloc de droite de la
+// vue agrandie (`embedded`), ou enveloppé par ChatFullscreenModal ailleurs.
+// Toute la logique (direct, brouillons, ancrage #21) vit ici, une seule fois.
+export function ChatView({ channelId, channelName, isDm, onClosed, embedded }:
+  { channelId: string; channelName: string; isDm: boolean; onClosed?: () => void; embedded?: boolean }) {
   const myId = useSteamcordState()?.me?.id;
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -541,12 +544,7 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
   const attachShortcutComposer = (el: HTMLDivElement | null) => { composerElRef.current = el; wire(el); };
 
   return (
-    <ModalRootAny
-      closeModal={closeModal}
-      onCancel={() => closeModal?.()}
-      onCancelActionDescription={t("video_exit_fullscreen")}
-      bAllowFullSize
-    >
+    <>
       {/* Enveloppe Focusable = l'accroche du raccourci manette. Mesuré au CDP
           le 26/07 : ModalRoot n'implémente PAS les props de FooterLegendProps,
           il se contente de les étaler sur le <form> qu'il rend — une prop
@@ -566,14 +564,18 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
         // long commentaire sur rootRef plus haut). L'action passe par l'écouteur
         // DOM, pas par une prop `on*Button`.
         onSecondaryActionDescription={t("jump_to_latest")}
-        style={{ display: "flex", flexDirection: "column", height: "78vh", maxWidth: 720, margin: "0 auto", width: "100%" }}
+        style={embedded
+          // Dans la vue agrandie : occupe le bloc de droite, borné par lui.
+          ? { display: "flex", flexDirection: "column", flex: 1, minHeight: 0, width: "100%" }
+          : { display: "flex", flexDirection: "column", height: "78vh", maxWidth: 720, margin: "0 auto", width: "100%" }}
       >
-        <div style={{
+        {/* Titre inutile en vue agrandie : l'en-tête de la vue le porte déjà. */}
+        {!embedded && <div style={{
           fontSize: 16, fontWeight: 600, textAlign: "center", marginBottom: 8,
           padding: "8px 12px", borderRadius: 8, background: "rgba(255,255,255,0.06)",
         }}>
           {isDm ? channelName : `#${channelName}`}
-        </div>
+        </div>}
 
         {/* Ancrage bas type chat : le SCROLLER est en flex column-reverse →
             le navigateur ancre nativement la vue en bas (scrollTop 0 = bas,
@@ -713,6 +715,21 @@ export function ChatFullscreenModal({ channelId, channelName, isDm, closeModal, 
           {error && <div style={{ color: "#ff6b6b", fontSize: 11, marginTop: 4 }}>{error}</div>}
         </div>
       </Focusable>
+    </>
+  );
+}
+
+// Chat plein écran en fenêtre (QAM, et partout hors vue agrandie).
+export function ChatFullscreenModal({ closeModal, ...props }:
+  { channelId: string; channelName: string; isDm: boolean; closeModal?: () => void; onClosed?: () => void }) {
+  return (
+    <ModalRootAny
+      closeModal={closeModal}
+      onCancel={() => closeModal?.()}
+      onCancelActionDescription={t("video_exit_fullscreen")}
+      bAllowFullSize
+    >
+      <ChatView {...props} />
     </ModalRootAny>
   );
 }

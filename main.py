@@ -1167,6 +1167,52 @@ class Plugin:
                     if not dead:
                         await sleep(1)
 
+    # ── Vue à l'ouverture (#43) ───────────────────────────────────────────────
+    # Le frontend la range dans le localStorage de Steam. moi952 la voit revenir
+    # à Vocal + Serveurs après un redémarrage — non reproduit ici (le stockage
+    # survit), mais ce stockage peut être vidé sans que le plugin le sache. Copie
+    # de secours dans un fichier : le frontend s'en sert si sa clé a disparu.
+    _VIEW_CFG = os.path.expanduser("~/.config/steamcord-view.json")
+    _VIEW_TOPS = ("voice", "text")
+    _VIEW_SRCS = ("servers", "dms")
+
+    @classmethod
+    async def get_open_view(cls):
+        from json import load as _load
+        try:
+            with open(cls._VIEW_CFG) as f:
+                cfg = _load(f)
+            if not isinstance(cfg, dict):
+                cfg = {}
+        except Exception:
+            cfg = {}
+        return {
+            "top": cfg.get("top") if cfg.get("top") in cls._VIEW_TOPS else None,
+            "src": cfg.get("src") if cfg.get("src") in cls._VIEW_SRCS else None,
+        }
+
+    @classmethod
+    async def set_open_view(cls, top=None, src=None):
+        """Chaque valeur se pose seule : le front envoie celle qui change."""
+        from json import dump as _dump
+        cfg = {k: v for k, v in (await cls.get_open_view()).items() if v is not None}
+        for key, val, allowed in (("top", top, cls._VIEW_TOPS), ("src", src, cls._VIEW_SRCS)):
+            if val is None:
+                continue
+            if val not in allowed:
+                return {"ok": False, "error": f"valeur inconnue: {val}"}
+            cfg[key] = val
+        tmp = cls._VIEW_CFG + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(cls._VIEW_CFG), exist_ok=True)
+            with open(tmp, "w") as f:
+                _dump(cfg, f)
+            os.replace(tmp, cls._VIEW_CFG)
+        except Exception as e:
+            logger.warning(f"save {cls._VIEW_CFG} failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, **cfg}
+
     # ── Notifications en jeu (#25) ────────────────────────────────────────────
     # Havok027 : « Would it be possible to leave active or disabled to receive
     # notifications while playing? Or select whatever receives notification? »
@@ -2154,6 +2200,55 @@ class Plugin:
     async def get_dm_channels(cls):
         return await cls.evt_handler.api.get_dm_channels()
 
+    # ── Amis (vue agrandie) ──────────────────────────────────────────────────
+    @classmethod
+    async def get_friends(cls):
+        return await cls.evt_handler.api.get_friends()
+
+    @classmethod
+    async def open_dm(cls, user_id):
+        """Conversation privée avec un utilisateur, créée si besoin."""
+        return await cls.evt_handler.api.open_dm(str(user_id))
+
+    @classmethod
+    async def friend_request(cls, username):
+        name = str(username or "").strip()
+        if not name:
+            return {"ok": False, "message": "empty"}
+        return await cls.evt_handler.api.friend_request(name[:64])
+
+    @classmethod
+    async def get_guild_members(cls, guild_id, start=0):
+        """Membres d'un serveur par plages de 100, groupés comme dans Discord."""
+        return await cls.evt_handler.api.get_guild_members(str(guild_id), int(start or 0))
+
+    @classmethod
+    async def get_profile(cls, user_id):
+        """Profil d'une personne : bio, bannière, serveurs et amis en commun."""
+        return await cls.evt_handler.api.get_profile(str(user_id))
+
+    @classmethod
+    async def close_dm(cls, channel_id):
+        return await cls.evt_handler.api.close_dm(str(channel_id))
+
+    @classmethod
+    async def friend_block(cls, user_id):
+        return await cls.evt_handler.api.friend_block(str(user_id))
+
+    @classmethod
+    async def friend_add(cls, user_id):
+        """Demande d'ami envoyée par identifiant (depuis la liste des membres)."""
+        return await cls.evt_handler.api.friend_add(str(user_id))
+
+    @classmethod
+    async def friend_accept(cls, user_id):
+        return await cls.evt_handler.api.friend_accept(str(user_id))
+
+    @classmethod
+    async def friend_remove(cls, user_id):
+        """Refuse une demande reçue ou annule une demande envoyée."""
+        return await cls.evt_handler.api.friend_remove(str(user_id))
+
     @classmethod
     async def dm_call(cls, channel_id, join_existing=False):
         return await cls.evt_handler.api.dm_call(channel_id, join_existing)
@@ -2238,6 +2333,26 @@ class Plugin:
         return await cls._msg_action(
             "edit_message",
             cls.evt_handler.api.edit_message(channel_id, message_id, content))
+
+    @classmethod
+    async def set_global_name(cls, name):
+        """Nom affiché Discord (global_name). Vide = retour à l'identifiant.
+
+        Le panneau montrait jusqu'ici l'identifiant de connexion (username), que
+        l'utilisateur ne reconnaît pas comme « son » pseudo.
+        """
+        name = str(name or "").strip()[:32]  # limite Discord : 32 caractères
+        try:
+            res = await cls.evt_handler.api.set_global_name(name or None)
+        except Exception as e:
+            logger.warning(f"set_global_name failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+        if isinstance(res, dict) and res.get("ok"):
+            cls.evt_handler.me.global_name = res.get("global_name") or ""
+            cls.evt_handler.state_changed_event.set()  # en-tête du QAM à jour tout de suite
+            return {"ok": True, "global_name": cls.evt_handler.me.global_name}
+        logger.warning(f"set_global_name refused: {res!r}")
+        return {"ok": False, "error": str(res.get("error") if isinstance(res, dict) else res)}
 
     @classmethod
     async def delete_message(cls, channel_id, message_id):

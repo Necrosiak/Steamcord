@@ -19,6 +19,60 @@
 //   rendre. Si l'écran d'erreur apparaît, l'utilisateur désactive et le
 //   balayage du tray au chargement suivant purge les entrées empoisonnées.
 
+import { t } from "./i18n";
+
+// ── Mode streamer ──────────────────────────────────────────────────────────
+// Pendant un live (Go Live Discord, stream ou enregistrement BoneCast), un toast
+// Steam finit DANS la vidéo : gamescope le compose avec le jeu, et c'est cette
+// image-là que capturent Vesktop comme BoneCast (demande user 15/09). On retient
+// donc les notifications, puis on les rend à la fin du live.
+//
+// Contrat PARTAGÉ avec BoneCast, SkullKey et BC250 Toolkit — tous les frontends
+// vivent dans le même contexte JS de Steam, un objet global suffit :
+//   window.__necroStreamer.sources = { <source>: bool }  (qui est en live)
+//   localStorage « necro_streamer_mode » = auto | always | off
+//   événement window « necro-streamer-change » à chaque changement
+// « always » couvre OBS et tout logiciel de stream qu'on ne sait pas détecter.
+export type StreamerMode = "auto" | "always" | "off";
+const STREAMER_KEY = "necro_streamer_mode";
+export const getStreamerMode = (): StreamerMode => {
+  try { const v = localStorage.getItem(STREAMER_KEY); return v === "always" || v === "off" ? v : "auto"; } catch { return "auto"; }
+};
+export const setStreamerMode = (m: StreamerMode) => {
+  try { localStorage.setItem(STREAMER_KEY, m); } catch {}
+  window.dispatchEvent(new Event("necro-streamer-change"));
+};
+export function setLiveSource(name: string, live: boolean) {
+  const w = window as any;
+  const g = (w.__necroStreamer ||= { sources: {} });
+  if (!!g.sources[name] === live) return;
+  g.sources[name] = live;
+  window.dispatchEvent(new Event("necro-streamer-change"));
+}
+export function streamerActive(): boolean {
+  const m = getStreamerMode();
+  if (m !== "auto") return m === "always";
+  return Object.values((window as any).__necroStreamer?.sources || {}).some(Boolean);
+}
+
+// Notifications retenues pendant le live. À la fin : rejouées telles quelles
+// s'il y en a peu, sinon UN résumé — dix toasts d'affilée à la sortie d'un
+// stream seraient pires que le problème.
+const HELD_REPLAY_MAX = 3;
+const held: Array<() => void> = [];
+let streamerListening = false;
+function holdForStream(show: () => void) {
+  held.push(show);
+  if (streamerListening) return;
+  streamerListening = true;
+  window.addEventListener("necro-streamer-change", () => {
+    if (streamerActive() || held.length === 0) return;
+    const pending = held.splice(0);
+    if (pending.length <= HELD_REPLAY_MAX) pending.forEach((fn) => { try { fn(); } catch {} });
+    else chatStyleNotification("Steamcord", t("streamer_summary", { n: pending.length }), "Steamcord", undefined, true);
+  });
+}
+
 const NATIVE_TOASTS_KEY = "steamcord_native_toasts";
 export const getNativeToasts = (): boolean => {
   try { return localStorage.getItem(NATIVE_TOASTS_KEY) === "1"; } catch { return false; } // défaut OFF
@@ -163,6 +217,9 @@ function verifyFirstToastRendered(resend: () => void) {
 }
 
 function chatStyleNotification(title: string, body: string, sender?: string, avatar?: string, dm?: boolean, onClick?: () => void) {
+  // Point de passage de TOUT ce qui s'affiche en mode sûr (nos notifs et les
+  // toasts reroutés des autres plugins Decky) → une seule garde suffit.
+  if (streamerActive()) { holdForStream(() => chatStyleNotification(title, body, sender, avatar, dm, onClick)); return; }
   try {
     const name = sender || title || "Steamcord";
     const { sid64, accountid } = fakeSenderSid(name);
@@ -191,6 +248,7 @@ function chatStyleNotification(title: string, body: string, sender?: string, ava
 // Notification Steamcord : chat-style persona en mode sûr, toast Decky natif si
 // le user a activé le mode natif.
 export function notify(payload: { title: string; body: string; sender?: string; avatar?: string; dm?: boolean; onClick?: () => void }) {
+  if (streamerActive()) { holdForStream(() => notify(payload)); return; }
   try {
     const dpl: any = (window as any).DeckyPluginLoader;
     if (getNativeToasts() && typeof dpl?.toaster?.toast === "function") {
@@ -223,6 +281,7 @@ export function patchDeckyToaster(_tries = 0) {
     if (typeof orig !== "function") return;
     dpl.toaster.__steamcordSafe = 2;
     dpl.toaster.toast = (toast: any) => {
+      if (streamerActive()) { holdForStream(() => dpl.toaster.toast(toast)); return; }
       if (getNativeToasts()) {
         return orig.call(dpl.toaster, toast);
       }

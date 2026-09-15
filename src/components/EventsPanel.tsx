@@ -15,7 +15,7 @@ import { ACCENT, DANGER, focusHalo, Notice, Pill } from "./Styled";
 import { useQamUi } from "../qamUi";
 import { IcChevronDown, IcChevronUp, IcUser } from "./Icons";
 
-type SCEvent = {
+export type SCEvent = {
   id: string; guild_id: string; guild: string; name: string; description: string;
   start: string | null; status: number; channel_id: string | null;
   location: string; count: number; image?: string | null; end?: string | null;
@@ -32,11 +32,12 @@ const ONE_LINE = {
   minWidth: 0,
 };
 
-const ACTIVE = 2;
+export const EVENT_ACTIVE = 2;
+const ACTIVE = EVENT_ACTIVE;
 
 // « aujourd'hui 21:00 » / « sam. 14:30 » : dans le QAM on veut savoir quand,
 // pas lire une date ISO. La locale vient du navigateur Steam.
-function whenLabel(iso: string | null): string {
+export function whenLabel(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
@@ -51,7 +52,7 @@ function whenLabel(iso: string | null): string {
 // pour s'y joindre — l'équivalent de ce que Discord montre en ouvrant un
 // événement. Le panneau du QAM reste une LISTE : tout ce qui est long (la
 // description, la liste des participants) vit ici, où il y a la place.
-function EventDetail({ ev, closeModal }: { ev: SCEvent; closeModal?: () => void }) {
+export function EventDetail({ ev, closeModal }: { ev: SCEvent; closeModal?: () => void }) {
   const [users, setUsers] = useState<EventUser[] | null>(null);
   const [interested, setInterested] = useState(false);
   const [busy, setBusy] = useState(false);

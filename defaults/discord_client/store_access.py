@@ -6,6 +6,9 @@ class User:
         self.name = data["username"]
         self.discriminator = data["discriminator"]
         self.avatar = data["avatar"]
+        # Nom affiché Discord, distinct de l'identifiant de connexion. L'objet
+        # UserStore du client le nomme `globalName`, l'API REST `global_name`.
+        self.global_name = data.get("globalName") or data.get("global_name") or ""
 
         self.is_muted = False
         self.is_deafened = False
@@ -34,6 +37,7 @@ class User:
         return {
             "id": self.id,
             "username": str(self),
+            "global_name": self.global_name,
             "avatar": self.avatar,
             "is_muted": self.is_muted,
             "is_deafened": self.is_deafened,
@@ -150,6 +154,36 @@ class StoreAccess:
     async def get_dm_channels(self):
         return await self._store_access_request("$get_dm_channels")
 
+    async def get_friends(self):
+        return await self._store_access_request("$get_friends")
+
+    async def open_dm(self, user_id):
+        return await self._store_access_request("$open_dm", user_id=user_id)
+
+    async def friend_request(self, username):
+        return await self._store_access_request("$friend_request", username=username)
+
+    async def get_guild_members(self, guild_id, start=0):
+        return await self._store_access_request("$get_guild_members", guild_id=guild_id, start=start)
+
+    async def get_profile(self, user_id):
+        return await self._store_access_request("$get_profile", user_id=user_id)
+
+    async def close_dm(self, channel_id):
+        return await self._store_access_request("$close_dm", channel_id=channel_id)
+
+    async def friend_block(self, user_id):
+        return await self._store_access_request("$friend_block", user_id=user_id)
+
+    async def friend_add(self, user_id):
+        return await self._store_access_request("$friend_add", user_id=user_id)
+
+    async def friend_accept(self, user_id):
+        return await self._store_access_request("$friend_accept", user_id=user_id)
+
+    async def friend_remove(self, user_id):
+        return await self._store_access_request("$friend_remove", user_id=user_id)
+
     async def dm_call(self, channel_id, join_existing=False):
         return await self._store_access_request("$dm_call", id=channel_id, join_existing=join_existing)
 
@@ -181,6 +215,9 @@ class StoreAccess:
 
     async def edit_message(self, channel_id, message_id, content):
         return await self._store_access_request("$edit_message", id=channel_id, message_id=message_id, content=content)
+
+    async def set_global_name(self, name):
+        return await self._store_access_request("$set_global_name", name=name)
 
     async def delete_message(self, channel_id, message_id):
         return await self._store_access_request("$delete_message", id=channel_id, message_id=message_id)
