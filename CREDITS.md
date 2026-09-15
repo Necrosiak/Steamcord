@@ -120,6 +120,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - The report that the navigation did not look like navigation ([#43](https://github.com/Necrosiak/Steamcord/issues/43)): it took him a while to realise that Voice/Text and Servers/DMs were tabs. They were three buttons in a row with the selected one slightly bluer, and nothing said the choices were exclusive — they are drawn as tabs now.
 - And the question nobody had asked: whether not being able to download an attachment was a limitation. It was not — it had simply never been written, and saving one to the Downloads folder now exists because he asked.
 - And the annoyance nobody had put into words: the panel always opened on Voice and Servers, so anyone who mainly reads text DMs redid the same two controller moves every single time they opened it ([#43](https://github.com/Necrosiak/Steamcord/issues/43)). The opening view is a setting now.
+- And the bigger idea behind it ([#43](https://github.com/Necrosiak/Steamcord/issues/43)): a real full-screen Discord rather than a narrow side panel, pointing at how Deck-Shelves lays one out. It became the expanded view in v1.34.0 — DMs, friends, servers with their members and events, the current call, all navigable with the controller.
 
 ### [@cymbatpd23](https://github.com/cymbatpd23)
 

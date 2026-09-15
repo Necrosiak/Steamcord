@@ -16,6 +16,76 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.34.0 — 2026-09-15
+
+### Expanded view — a full-screen Discord (proof of concept)
+
+> This is a **proof of concept that is already well along**. Expect bugs, and
+> please report them on the [issues](https://github.com/Necrosiak/Steamcord/issues).
+
+Open it from the new icon next to your name at the top of the panel (a browser
+window with the Discord logo). It turns Steamcord into a full-screen app with a
+sidebar:
+
+- **Direct messages** — each conversation shows what the other person is doing
+  right now. A opens the chat; a **Call / Join** button sits on the same row.
+- **Friends** — online first, with their status and **current activity**
+  (playing, listening, custom status). Message anyone, even people you have
+  never written to, call them, **add a friend by username**, and accept, decline
+  or cancel requests.
+- **Servers** — each server unfolds into its **members**, **scheduled events**,
+  **text channels** and **voice channels** with who is inside. Selecting a voice
+  channel joins it; the **Channel chat** button next to it opens the text chat
+  every voice channel has. Hide, reorder and refresh servers as in the panel.
+- **Members** — the server's member list as Discord shows it: grouped by role,
+  names in the role colour, roles or activity underneath, with **Message** and
+  **Add friend**. The list comes from a channel everyone can see, so private
+  channels no longer shrink it.
+- **Events** — every event from every server in one place, live ones first.
+- **Current call** — mute, deafen, disconnect, members, soundboard, Go Live,
+  camera, game audio and the call's own chat. Joining a call switches here on
+  its own.
+- **Settings** — the panel's settings, full width.
+
+Chats open **inside the view** instead of a separate window. **L1 / R1** move back
+and forward through what you opened; **B** goes back, and closes the view only
+when there is nothing behind. Leaving the view never ends a call or a stream —
+it is only the interface.
+
+**Y on a person** (friends, members, DMs) opens a menu: Profile (banner, bio,
+mutual servers and friends), Message, Call, Close DM, add / accept / cancel /
+remove friend, and block / unblock. Removing a friend and blocking ask first.
+
+Suggested by [@moi952](https://github.com/moi952) in
+[#43](https://github.com/Necrosiak/Steamcord/issues/43).
+
+### Streamer mode
+
+A Steam notification that pops up while you are live ends up in the video:
+gamescope draws it over the game, and that is the picture Discord and BoneCast
+capture. Notifications are now **held while you stream** — Discord Go Live, or a
+[BoneCast](https://github.com/Necrosiak/BoneCast) stream or recording — and shown
+once it ends: as they were if there are three or fewer, as one summary
+otherwise. **Always on** covers OBS and any streaming software a plugin cannot
+detect. Set it in Settings → Notifications → *Streamer mode*.
+
+It covers Steamcord's notifications and the toasts of other Decky plugins, which
+already go through Steamcord. Steam's own notifications (friends, achievements)
+do not go through a plugin and are not held.
+
+### Your display name
+
+The name at the top of the panel is now your **Discord display name** rather than
+your login, and you can change it from Settings → *Display name*.
+
+### Fixed
+- **Opening view kept across restarts, even if Steam clears its web storage**
+  (#43) — the *Opening view* choice (Voice/Text × Servers/DMs) was stored only
+  in Steam's localStorage. It is now also saved by the plugin in
+  `~/.config/steamcord-view.json`, and restored from there when the local copy
+  is missing. Not reproduced on the test machine, so this is a safeguard rather
+  than a confirmed fix.
+
 ## 1.33.0 — 2026-09-13
 
 ### A button to reload audio devices
