@@ -7,7 +7,7 @@ import { ExpandedNavContext } from "./ExpandedNav";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { EVENT_ACTIVE, EventDetail, SCEvent, whenLabel } from "./EventsPanel";
 import { ACCENT, DANGER, FULL_BLEED, ONLINE, chromeHideMarkerRef, focusHalo } from "./Styled";
-import { IcBell, IcChat, IcGear, IcHome, IcPhone, IcUser } from "./Icons";
+import { IcBell, IcChat, IcGear, IcPhone, IcUser } from "./Icons";
 import { t } from "../i18n";
 import { FaUserFriends } from "react-icons/fa";
 import { FriendsHub, activityLine } from "./FriendsHub";
@@ -16,6 +16,27 @@ import { openPersonMenu } from "./PersonMenu";
 import { useOpenChat } from "./ExpandedNav";
 
 const ModalRootAny = ModalRoot as any;
+
+// Logo « SC » (piste B, choisie par le user le 15/09) : icône d'app aux couleurs
+// de Steam, silhouette façon mascotte Discord (tracé maison) avec SC en creux,
+// orbite + rotule en clin d'œil au piston Steam. Lettres dessinées en tracés :
+// aucune dépendance aux polices installées dans Steam.
+function SteamcordLogo({ size = 30 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <defs>
+      <linearGradient id="scLogoBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2a475e" /><stop offset="1" stopColor="#171a21" /></linearGradient>
+    </defs>
+    <rect width="64" height="64" rx="16" fill="url(#scLogoBg)" />
+    <rect x=".5" y=".5" width="63" height="63" rx="15.5" fill="none" stroke="#66c0f4" strokeOpacity={0.35} />
+    <ellipse cx="32" cy="33" rx="27" ry="10" fill="none" stroke="#66c0f4" strokeWidth={1.6} strokeOpacity={0.75} transform="rotate(-18 32 33)" />
+    <g transform="translate(9 12) scale(.72)">
+      <path fill="#5865F2" d="M13 6C18 4 23 3 26 3L28 7C30.6 6.6 33.4 6.6 36 7L38 3C41 3 46 4 51 6C58 16 61 26 60 37C55 41 50 43 45 44L42 39C44.5 38.2 46.8 37 48.8 35.5L47.6 34.6C37.5 39.4 26.5 39.4 16.4 34.6L15.2 35.5C17.2 37 19.5 38.2 22 39L19 44C14 43 9 41 4 37C3 26 6 16 13 6Z" />
+      <path d="M28.2 17.4C26.9 15.9 24.9 15.4 23.1 15.4C20.4 15.4 18.4 16.8 18.4 19C18.4 21.3 20.4 22 23 22.8C25.8 23.6 27.9 24.4 27.9 27C27.9 29.3 25.8 30.8 22.9 30.8C20.6 30.8 18.8 30 17.6 28.6" fill="none" stroke="#171a21" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M46.2 17.9C45 16.3 42.9 15.4 40.6 15.4C36.2 15.4 33.2 18.6 33.2 23.1C33.2 27.6 36.2 30.8 40.6 30.8C42.9 30.8 45 29.9 46.2 28.3" fill="none" stroke="#171a21" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" />
+    </g>
+    <circle cx="56" cy="24" r="3.4" fill="#66c0f4" /><circle cx="56" cy="24" r="1.4" fill="#171a21" />
+  </svg>;
+}
 type Recipient = { id: string; avatar: string | null; status?: string; activity?: any; custom?: any };
 type Dm = { id: string; name: string; icon: string | null; type: number; recipients: Recipient[]; active_call?: boolean };
 type Mode = "dms" | "friends" | "servers" | "events" | "call" | "settings";
@@ -219,7 +240,7 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
       onButtonDown={(e: any) => { const b = e?.detail?.button; if (b === 5) navOnce(back); else if (b === 6) navOnce(forward); }} style={{ ...FULL_BLEED, height: "80vh", display: "flex", overflow: "hidden", borderRadius: 12, background: "#11151d", boxShadow: "0 22px 60px rgba(0,0,0,.55)" }}>
       <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
       <Focusable flow-children="column" onScroll={pinTop} style={{ width: 268, flexShrink: 0, padding: 14, overflow: "hidden", display: "flex", flexDirection: "column", background: "#20252f", borderRight: "1px solid rgba(255,255,255,.08)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px 17px", fontSize: 18, fontWeight: 800 }}><IcHome /> Steamcord</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px 17px", fontSize: 18, fontWeight: 800 }}><SteamcordLogo size={32} /> Steamcord</div>
         <div style={{ fontSize: 11, letterSpacing: .8, fontWeight: 700, opacity: .48, padding: "0 10px 7px" }}>{t("xv_navigation")}</div>
         <SidebarItem active={mode === "dms"} icon={<IcUser />} label={t("xv_dms")} onPick={() => go("dms")} />
         <SidebarItem active={mode === "friends"} icon={<FaUserFriends />} label={t("friends")} onPick={() => go("friends")} />
