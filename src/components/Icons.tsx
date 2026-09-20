@@ -7,15 +7,13 @@ import {
   BsChatDots, BsCheckCircle, BsChevronDown, BsChevronUp, BsCircle, BsCircleFill, BsController,
   BsDisplay, BsExclamationTriangle, BsEye, BsEyeSlash, BsFilm, BsFolder2Open, BsGear,
   BsGithub, BsHeadphones, BsHouseDoor, BsInfoCircle, BsJoystick,
-  BsLink45Deg, BsMic, BsMicMute, BsMicMuteFill, BsMoon, BsPaperclip,
+  BsLayoutSidebarInsetReverse, BsLink45Deg, BsMic, BsMicMute, BsMicMuteFill, BsMoon, BsPaperclip,
   BsPerson, BsPhone, BsSlashCircle, BsSoundwave, BsTelephone,
   BsVolumeMuteFill, BsVolumeUp,
 } from "react-icons/bs";
 
 type IcProps = { size?: number | string; color?: string; style?: any };
 
-// Alignement sur la ligne de base du texte (les SVG react-icons débordent
-// sous la baseline sinon) + jamais écrasées par un conteneur flex.
 const mk = (C: any) => (p: IcProps = {}) => (
   <C size={p.size} color={p.color}
      style={{ verticalAlign: "-0.125em", flexShrink: 0, ...(p.style || {}) }} />
@@ -55,6 +53,8 @@ export const IcChevronUp = mk(BsChevronUp);
 export const IcEye = mk(BsEye);
 export const IcEyeSlash = mk(BsEyeSlash);
 export const IcReorder = mk(BsArrowDownUp);
+// Le panneau d'accès rapide vu depuis la vue agrandie (bouton de retour).
+export const IcPanel = mk(BsLayoutSidebarInsetReverse);
 
 // Statuts Discord : pastilles teintées façon Discord (rond plein / lune /
 // cercle barré / cercle creux) — la couleur porte le sens, pas l'emoji.

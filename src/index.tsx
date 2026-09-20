@@ -15,6 +15,7 @@ import {
   findModuleExport,
   SteamSpinner,
   showModal,
+  useQuickAccessVisible,
 } from "@decky/ui";
 import { Component, Suspense, useState, useEffect, useRef } from "react";
 import { FaDiscord } from "react-icons/fa";
@@ -278,6 +279,27 @@ const setOpenSrc = (v: OpenSrc) => {
   try { localStorage.setItem(OPEN_SRC_KEY, v); } catch { }
   call("set_open_view", null, v).catch(() => {});
 };
+// Ce que l'icône Steamcord ouvre (demande user 20/09) : le panneau comme
+// aujourd'hui, ou directement la vue agrandie. Ce n'est qu'un DÉFAUT : l'icône
+// à côté du pseudo ouvre toujours la vue, et B la referme sur le panneau.
+const OPEN_BIG_KEY = "steamcord_open_big";
+export type OpenBig = "qam" | "big";
+const getOpenBig = (): OpenBig => {
+  try { return localStorage.getItem(OPEN_BIG_KEY) === "big" ? "big" : "qam"; }
+  catch { return "qam"; }
+};
+const setOpenBig = (v: OpenBig) => {
+  try { localStorage.setItem(OPEN_BIG_KEY, v); } catch { }
+  call("set_open_view", null, null, v).catch(() => {});
+};
+// Ouverture automatique : l'état ne peut PAS vivre dans le composant du
+// panneau. Ouvrir la vue agrandie masque le QAM, donc le panneau se cache (et
+// peut se démonter) — au retour il repartait à zéro et rouvrait la vue :
+// impossible de revenir au panneau, ni avec B ni avec le bouton (bug vu par le
+// user le 20/09). On distingue donc « le QAM disparaît parce que NOTRE vue
+// s'ouvre » de « le QAM se ferme pour de bon », ce que seul `bigOpen` sait.
+let bigOpen = false;      // notre vue agrandie est affichée
+let bigSuppress = false;  // elle vient d'être refermée → ne pas la rouvrir
 const readStored = (key: string): string | null => {
   try { return localStorage.getItem(key); } catch { return null; }
 };
@@ -286,11 +308,16 @@ const readStored = (key: string): string | null => {
 // a été vidé, on reprend la copie (et on la remet en local). Clé locale présente
 // mais pas de copie (install venant de 1.32/1.33) → on remplit la copie.
 const syncOpenView = (apply: (top?: OpenTop, src?: OpenSrc) => void) => {
-  call<[], { top?: OpenTop | null; src?: OpenSrc | null }>("get_open_view")
+  call<[], { top?: OpenTop | null; src?: OpenSrc | null; big?: OpenBig | null }>("get_open_view")
     .then((b) => {
       if (!b) return;
       let top: OpenTop | undefined;
       let src: OpenSrc | undefined;
+      if (readStored(OPEN_BIG_KEY) === null) {
+        if (b.big) { try { localStorage.setItem(OPEN_BIG_KEY, b.big); } catch { } }
+      } else if (!b.big) {
+        call("set_open_view", null, null, getOpenBig()).catch(() => {});
+      }
       if (readStored(OPEN_TOP_KEY) === null) {
         if (b.top) { try { localStorage.setItem(OPEN_TOP_KEY, b.top); } catch { } top = b.top; }
       } else if (!b.top) {
@@ -1155,13 +1182,40 @@ const ContentBody = () => {
 
   const inCall = !!state?.vc?.channel_id;
   // #43 : vue agrandie native Steam (jamais l'ancienne BrowserView pré-Vesktop).
-  const openExpanded = () => showModal(
-    <DiscordExpandedModal
-      serverContent={<ServerHub />}
-      settingsContent={<ConfigPanel />}
-      callContent={<ExpandedCallPanel />}
-    />
-  );
+  const openExpanded = () => {
+    bigOpen = true;
+    bigSuppress = false;
+    showModal(
+      <DiscordExpandedModal
+        serverContent={<ServerHub />}
+        settingsContent={<ConfigPanel />}
+        callContent={<ExpandedCallPanel />}
+        // Refermée (B, bouton, ou Steam qui la ferme) : on rend la main au
+        // panneau et on ne la rouvre pas d'office.
+        onClosed={() => { bigOpen = false; bigSuppress = true; }}
+      />
+    );
+  };
+  // Réglage « ouvrir sur » : la vue agrandie s'ouvre d'elle-même à l'ouverture
+  // du QAM, et PLUS tant qu'on ne l'a pas refermé — sinon B et le bouton
+  // « Retour au panneau » n'ont aucun effet visible, la vue se rouvre aussitôt.
+  const qamVisible = useQuickAccessVisible();
+  useEffect(() => {
+    if (!qamVisible) {
+      // QAM disparu alors que notre vue n'est PAS ouverte = fermeture réelle :
+      // la prochaine ouverture a de nouveau droit à la vue agrandie.
+      if (!bigOpen) bigSuppress = false;
+      return;
+    }
+    // Pas pendant le spinner de connexion ni sur l'écran de login : la vue
+    // agrandie n'a rien à montrer tant que Discord n'a pas répondu.
+    if (!state?.loaded || !state?.logged_in) return;
+    if (bigOpen || bigSuppress || getOpenBig() !== "big") return;
+    openExpanded();
+  }, [qamVisible, state?.loaded, state?.logged_in]);
+  // Le panneau peut se démonter quand la vue s'ouvre par-dessus : ne remettre
+  // le compteur à zéro que s'il s'en va SANS que ce soit à cause d'elle.
+  useEffect(() => () => { if (!bigOpen) bigSuppress = false; }, []);
   // Chaque début/fin d'appel ramène à la vue naturelle (appel si en appel).
   useEffect(() => { setBrowsing(false); }, [inCall]);
   useBackHandler(() => { setBrowsing(false); return true; }, !!(inCall && browsing && topTab === "voice"));
@@ -1717,6 +1771,11 @@ const VoiceShortcutConfig = () => {
 const OpenViewConfig = () => {
   const [top, setTop] = useState<OpenTop>(getOpenTop());
   const [src, setSrc] = useState<OpenSrc>(getOpenSrc());
+  const [big, setBig] = useState<OpenBig>(getOpenBig());
+  const bigOpts = [
+    { data: "qam" as OpenBig, label: t("config_open_qam") },
+    { data: "big" as OpenBig, label: t("config_open_xv") },
+  ];
   const topOpts = [
     { data: "voice" as OpenTop, label: t("tab_voice") },
     { data: "text" as OpenTop, label: t("tab_text") },
@@ -1744,6 +1803,18 @@ const OpenViewConfig = () => {
       <SR>
         <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>
           {t("config_open_on_desc")}
+        </div>
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={bigOpts as any}
+          selectedOption={big}
+          onChange={(o: any) => { setOpenBig(o.data); setBig(o.data); }}
+        />
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>
+          {t("config_open_xv_desc")}
         </div>
       </SR>
     </>

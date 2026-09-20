@@ -7,7 +7,7 @@ import { ExpandedNavContext } from "./ExpandedNav";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { EVENT_ACTIVE, EventDetail, SCEvent, whenLabel } from "./EventsPanel";
 import { ACCENT, DANGER, FULL_BLEED, ONLINE, chromeHideMarkerRef, focusHalo } from "./Styled";
-import { IcBell, IcChat, IcGear, IcPhone, IcUser } from "./Icons";
+import { IcBell, IcChat, IcGear, IcPanel, IcPhone, IcUser } from "./Icons";
 import { t } from "../i18n";
 import { FaUserFriends } from "react-icons/fa";
 import { FriendsHub, activityLine } from "./FriendsHub";
@@ -16,7 +16,6 @@ import { openPersonMenu } from "./PersonMenu";
 import { useOpenChat } from "./ExpandedNav";
 
 const ModalRootAny = ModalRoot as any;
-
 // Logo « SC » (piste B, choisie par le user le 15/09) : icône d'app aux couleurs
 // de Steam, silhouette façon mascotte Discord (tracé maison) avec SC en creux,
 // orbite + rotule en clin d'œil au piston Steam. Lettres dessinées en tracés :
@@ -42,10 +41,19 @@ type Dm = { id: string; name: string; icon: string | null; type: number; recipie
 type Mode = "dms" | "friends" | "servers" | "events" | "call" | "settings";
 // Une page du bloc de droite. Un chat retient la section d'où il a été ouvert,
 // pour garder la barre latérale allumée dessus.
-type Page = { kind: "section"; mode: Mode }
+type PageKind = { kind: "section"; mode: Mode }
   | { kind: "chat"; mode: Mode; channelId: string; name: string; isDm: boolean }
   | { kind: "members"; mode: Mode; guildId: string; name: string };
+// `from` = la page D'OÙ celle-ci a été ouverte, ou null si c'est une page
+// racine (une section choisie dans la barre latérale). C'est ce qui distingue
+// « remonter d'un niveau » (B) de « revenir en arrière dans l'historique »
+// (L1) — voir `up()`.
+type Page = PageKind & { id: number; from: number | null };
 const NAV_MAX = 30;
+const samePage = (a: Page, b: PageKind) => {
+  const { id, from, ...bare } = a;
+  return JSON.stringify(bare) === JSON.stringify(b);
+};
 
 // La navigation manette appelle scrollIntoView sur l'élément focalisé, et le
 // navigateur fait défiler TOUS les ancêtres, overflow:hidden compris : la carte
@@ -128,23 +136,50 @@ function EventRow({ ev }: { ev: SCEvent }) {
   </Focusable>;
 }
 
-export function DiscordExpandedModal({ closeModal, serverContent, callContent, settingsContent }: { closeModal?: () => void; serverContent?: any; callContent?: any; settingsContent?: any }) {
+export function DiscordExpandedModal({ closeModal, serverContent, callContent, settingsContent, onClosed }: { closeModal?: () => void; serverContent?: any; callContent?: any; settingsContent?: any; onClosed?: () => void }) {
+  // Démontage = vue refermée, quel que soit le chemin (B, bouton, Steam).
+  const closedRef = useRef(onClosed);
+  closedRef.current = onClosed;
+  useEffect(() => () => { closedRef.current?.(); }, []);
   // Historique (demande user 15/09) : sections et chats s'empilent dans le bloc
   // de droite ; L1 recule, R1 avance, B recule puis ferme. Changer de page ne
   // coupe rien — appel, Go Live, direct : c'est seulement l'affichage.
-  const [nav, setNav] = useState<{ pages: Page[]; index: number }>({ pages: [{ kind: "section", mode: "dms" }], index: 0 });
+  const [nav, setNav] = useState<{ pages: Page[]; index: number }>({ pages: [{ kind: "section", mode: "dms", id: 0, from: null }], index: 0 });
   const navRef = useRef(nav);
   navRef.current = nav;
+  const seq = useRef(0);
   const page = nav.pages[nav.index];
   const mode = page.mode;
-  const navigate = (next: Page) => setNav((cur) => {
-    if (JSON.stringify(cur.pages[cur.index]) === JSON.stringify(next)) return cur;
-    const pages = [...cur.pages.slice(0, cur.index + 1), next].slice(-NAV_MAX);
+  // `nested` : la nouvelle page est un CONTENU ouvert depuis la page courante
+  // (un chat, les membres d'un serveur, l'appel qu'on vient de rejoindre). Une
+  // section choisie dans la barre latérale, elle, est une racine : B la ferme.
+  const navigate = (next: PageKind, nested = false) => setNav((cur) => {
+    if (samePage(cur.pages[cur.index], next)) return cur;
+    const page: Page = { ...next, id: ++seq.current, from: nested ? cur.pages[cur.index].id : null };
+    const pages = [...cur.pages.slice(0, cur.index + 1), page].slice(-NAV_MAX);
     return { pages, index: pages.length - 1 };
   });
   const go = (m: Mode) => navigate({ kind: "section", mode: m });
-  const openChat = (channelId: string, name: string, isDm: boolean) => navigate({ kind: "chat", mode, channelId, name, isDm });
-  const openMembers = (guildId: string, name: string) => navigate({ kind: "members", mode, guildId, name });
+  const openChat = (channelId: string, name: string, isDm: boolean) => navigate({ kind: "chat", mode, channelId, name, isDm }, true);
+  const openMembers = (guildId: string, name: string) => navigate({ kind: "members", mode, guildId, name }, true);
+  // B = REMONTER D'UN NIVEAU, pas reculer dans l'historique (retour user
+  // 20/09) : en dépilant l'historique il fallait autant d'appuis qu'on avait
+  // visité de pages pour rendre la main au QAM. Maintenant, depuis un contenu
+  // (conversation, membres d'un serveur, appel rejoint) on revient à la page
+  // d'où il a été ouvert ; depuis une section, la vue se ferme — un appui, le
+  // QAM. L'historique complet reste sur L1 / R1.
+  const up = () => {
+    const cur = navRef.current;
+    const here = cur.pages[cur.index];
+    if (here.from === null) return false;      // page racine → fermer la vue
+    let target = cur.pages.findIndex((p) => p.id === here.from);
+    // Parent sorti de l'historique (NAV_MAX) : la racine la plus proche fait
+    // l'affaire ; s'il n'y en a plus, fermer vaut mieux que sauter n'importe où.
+    if (target < 0) for (let i = cur.index - 1; i >= 0; i--) if (cur.pages[i].from === null) { target = i; break; }
+    if (target < 0) return false;
+    setNav((c) => ({ ...c, index: Math.min(target, c.pages.length - 1) }));
+    return true;
+  };
   const back = () => {
     if (navRef.current.index === 0) return false;
     setNav((cur) => ({ ...cur, index: Math.max(0, cur.index - 1) }));
@@ -157,7 +192,7 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
   const vcId: string | null = useSteamcordState()?.vc?.channel_id ?? null;
   const lastVcId = useRef<string | null>(null);
   useEffect(() => {
-    if (vcId && vcId !== lastVcId.current) go("call");
+    if (vcId && vcId !== lastVcId.current) navigate({ kind: "section", mode: "call" }, true);
     lastVcId.current = vcId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vcId]);
@@ -179,11 +214,12 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
     if (!el || (el as any).__scExpandedNav) return;
     (el as any).__scExpandedNav = true;
     el.addEventListener("vgp_oncancel", (e: Event) => {
-      if (navRef.current.index === 0) return; // rien derrière : la vue se ferme normalement
+      // Page racine : rien à remonter, on laisse la vue se fermer (→ QAM).
+      if (navRef.current.pages[navRef.current.index].from === null) return;
       e.preventDefault();
       e.stopPropagation();
       (e as any).stopImmediatePropagation?.();
-      navOnce(back);
+      navOnce(up);
     }, true);
     el.addEventListener("vgp_onbuttondown", (e: any) => {
       const b = e?.detail?.button;
@@ -233,7 +269,7 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
     : page.kind === "members" ? [page.name, t("xv_members")]
     : titles[mode];
   const canBack = nav.index > 0, canForward = nav.index < nav.pages.length - 1;
-  return <ExpandedNavContext.Provider value={{ openChat, openMembers }}><ModalRootAny closeModal={closeModal} onCancel={() => { if (!navOnce(back)) closeModal?.(); }} bAllowFullSize>
+  return <ExpandedNavContext.Provider value={{ openChat, openMembers }}><ModalRootAny closeModal={closeModal} onCancel={() => { if (!navOnce(up)) closeModal?.(); }} bAllowFullSize>
     <div ref={attachNav} style={{ display: "contents" }}>
     <Focusable flow-children="row" onScroll={pinTop}
       // L1 = 5, R1 = 6 (GamepadButton de @decky/ui) ; même mécanisme que B dans backNav.
@@ -248,7 +284,13 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
         <SidebarItem active={mode === "events"} icon={<IcBell />} label={t("events")} badge={eventsBadge} onPick={() => go("events")} />
         <SidebarItem active={mode === "call"} icon={<IcPhone />} label={t("xv_call")} onPick={() => go("call")} />
         <SidebarItem active={mode === "settings"} icon={<IcGear />} label={t("xv_settings")} onPick={() => go("settings")} />
-        <div style={{ marginTop: "auto", padding: "12px 9px 2px", opacity: .48, fontSize: 11 }}>{t("xv_back")}</div>
+        {/* Retour au panneau (retour user 20/09) : symétrique de l'icône qui
+            ouvre cette vue depuis le QAM. Le pense-bête « B · Retour » ne
+            suffisait pas — surtout quand la vue s'ouvre toute seule au
+            démarrage, où rien ne dit comment revenir au panneau. */}
+        <div style={{ marginTop: "auto", paddingTop: 12 }}>
+          <SidebarItem active={false} icon={<IcPanel />} label={t("xv_to_panel")} badge={page.from === null ? <span style={{ fontSize: 11, opacity: .5 }}>B</span> : undefined} onPick={() => closeModal?.()} />
+        </div>
       </Focusable>
       <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onScroll={pinTop} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", padding: "24px 28px 18px" }}>
         <div style={{ flexShrink: 0, display: "flex", alignItems: "baseline", gap: 12, borderBottom: "1px solid rgba(255,255,255,.09)", paddingBottom: 15, marginBottom: 14 }}><div style={{ fontSize: 23, fontWeight: 800, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{head[0]}</div><div style={{ opacity: .52, fontSize: 13, flexShrink: 0 }}>{head[1]}</div>{(canBack || canForward) && <div style={{ marginLeft: "auto", opacity: .45, fontSize: 11, flexShrink: 0 }}>{canBack ? "L1 ◀" : ""}{canBack && canForward ? "  ·  " : ""}{canForward ? "▶ R1" : ""}</div>}</div>

@@ -1175,6 +1175,8 @@ class Plugin:
     _VIEW_CFG = os.path.expanduser("~/.config/steamcord-view.json")
     _VIEW_TOPS = ("voice", "text")
     _VIEW_SRCS = ("servers", "dms")
+    # Ce que l'icône Steamcord ouvre : le panneau, ou la vue agrandie (20/09).
+    _VIEW_BIGS = ("qam", "big")
 
     @classmethod
     async def get_open_view(cls):
@@ -1189,14 +1191,16 @@ class Plugin:
         return {
             "top": cfg.get("top") if cfg.get("top") in cls._VIEW_TOPS else None,
             "src": cfg.get("src") if cfg.get("src") in cls._VIEW_SRCS else None,
+            "big": cfg.get("big") if cfg.get("big") in cls._VIEW_BIGS else None,
         }
 
     @classmethod
-    async def set_open_view(cls, top=None, src=None):
+    async def set_open_view(cls, top=None, src=None, big=None):
         """Chaque valeur se pose seule : le front envoie celle qui change."""
         from json import dump as _dump
         cfg = {k: v for k, v in (await cls.get_open_view()).items() if v is not None}
-        for key, val, allowed in (("top", top, cls._VIEW_TOPS), ("src", src, cls._VIEW_SRCS)):
+        for key, val, allowed in (("top", top, cls._VIEW_TOPS), ("src", src, cls._VIEW_SRCS),
+                                  ("big", big, cls._VIEW_BIGS)):
             if val is None:
                 continue
             if val not in allowed:
