@@ -325,6 +325,17 @@ async def is_up():
 # à la casse, assez précis pour ne pas matcher steamcord-vesktop (nom d'unité,
 # absent des cmdlines).
 _PROC_PATTERN = "[Vv]esktop"
+# Idem, mais SANS les processus enfants d'Electron. Chromium éclate l'app en
+# `--type=zygote`, `--type=gpu-process`, `--type=renderer`, `--type=utility`… et
+# leur argv contient « vesktop » lui aussi : un pkill -f large en signalait donc
+# une douzaine (14 processus pour une seule fenêtre, mesuré le 20/09/2026).
+# Tuer le zygote ou le GPU process sous les pieds du parent le fait sortir par
+# « GPU process isn't usable. Goodbye. » → SIGTRAP. C'est exactement le crash en
+# boucle de l'issue #49 (bureau CachyOS, Vesktop natif) : notre `initialize()`
+# repassait toutes les 2 s et démembrait l'instance que l'utilisateur venait
+# d'ouvrir. On ne signale donc que le processus PRINCIPAL — il emmène ses
+# enfants avec lui. `(?s)` pour que le lookahead balaie tout l'argv.
+_MAIN_PROC_PATTERN = r"(?s)\A(?!.*--type=).*[Vv]esktop"
 
 
 async def _running():
@@ -408,8 +419,14 @@ def _any_display(runtime_dir):
     backend 16:01:31 → systemd-run 16:03:31, +120s pile). Electron retombe seul
     sur X11 quand WAYLAND_DISPLAY pointe dans le vide, donc n'importe laquelle de
     ces sockets suffit pour que Vesktop rende et ouvre le port CDP."""
-    if (Path(runtime_dir) / "wayland-0").exists():
-        return True
+    try:
+        # N'IMPORTE quel wayland-* : un bureau qui n'expose que wayland-1 (cas de
+        # l'issue #49) attendait sinon les 120 s complètes pour rien.
+        if any(p.name.startswith("wayland-") and p.is_socket()
+               for p in Path(runtime_dir).iterdir()):
+            return True
+    except Exception:
+        pass
     try:
         if any(p.name.startswith("gamescope-") and p.is_socket()
                for p in Path(runtime_dir).iterdir()):
@@ -432,6 +449,31 @@ async def _wait_for_display(runtime_dir, timeout=120):
             return True
         await sleep(1)
     return _any_display(runtime_dir)
+
+
+def _pick_wayland(session_env, runtime_dir, gamescope):
+    """Quel WAYLAND_DISPLAY annoncer à Vesktop.
+
+    Le socket de la session n'est PAS toujours wayland-0 : chez le rapporteur de
+    l'issue #49 (bureau CachyOS) elle vivait sur wayland-1, et annoncer wayland-0
+    donnait à Electron un socket inexistant — aucune fenêtre, CDP 9223 jamais
+    ouvert, « Initialisation… » sans fin. Hors gamescope on prend donc celui que
+    la session déclare, à condition qu'il existe VRAIMENT.
+
+    En gamescope on garde wayland-0 tel quel : il n'existe pas non plus, mais
+    c'est délibéré (le vrai socket est gamescope-0, et le rendu est épinglé sur
+    X11 par --ozone-platform=x11 ; cf. le commentaire des --setenv).
+    """
+    if gamescope:
+        return "wayland-0"
+    wl = session_env.get("WAYLAND_DISPLAY") or ""
+    if not wl:
+        return "wayland-0"
+    sock = Path(wl) if wl.startswith("/") else Path(runtime_dir) / wl
+    try:
+        return wl if sock.is_socket() else "wayland-0"
+    except OSError:
+        return "wayland-0"
 
 
 async def launch():
@@ -457,6 +499,18 @@ async def launch():
     # systemd-run client only needs to reach the user manager:
     env = _user_env()
 
+    # Quel compositeur ? (test remonté ici : la réponse sert AUSSI au choix du
+    # socket Wayland juste en dessous, pas seulement aux --setenv plus bas.)
+    # KWin testé en PREMIER (même logique que main.py:get_share_env) : les
+    # sockets gamescope-* PERSISTENT dans XDG_RUNTIME_DIR après une session
+    # gamemode, et un gamescope imbriqué par-jeu peut tourner sous KWin
+    # (= bureau quand même) — le test socket seul força(it) wayland à tort
+    # au bureau.
+    gamescope = (not proc_running(comm="kwin_wayland|kwin_x11")
+                 and proc_running(comm="gamescope|gamescope-wl"))
+
+    wayland_display = _pick_wayland(session_env, runtime_dir, gamescope)
+
     # [launchdiag] Gamemode-specific stuck-on-Initializing diagnosis: capture exactly
     # which compositor sockets exist and what graphical env the manager exported. In
     # pure gamemode the root compositor is gamescope (not KWin), so wayland-0 may be
@@ -472,7 +526,7 @@ async def launch():
     logger.info(
         f"[launchdiag] sockets={socks} env.WAYLAND_DISPLAY={session_env.get('WAYLAND_DISPLAY')!r} "
         f"env.DISPLAY={session_env.get('DISPLAY')!r} env.XAUTHORITY={'set' if xauth else 'empty'} "
-        f"targeting WAYLAND_DISPLAY=wayland-0"
+        f"targeting WAYLAND_DISPLAY={wayland_display} (gamescope={gamescope})"
     )
 
     # Multi-sessions: pick the Vesktop profile of the ACTIVE Steam account.
@@ -524,7 +578,7 @@ async def launch():
                 )
                 await killer.wait()
             else:
-                proc_kill(_PROC_PATTERN)
+                proc_kill(_MAIN_PROC_PATTERN)
             for _ in range(10):
                 await sleep(1)
                 if not await _running():
@@ -543,7 +597,7 @@ async def launch():
         pass
 
     setenv = [
-        "--setenv=WAYLAND_DISPLAY=wayland-0",
+        f"--setenv=WAYLAND_DISPLAY={wayland_display}",
         f"--setenv=DISPLAY={display}",
         f"--setenv=XDG_RUNTIME_DIR={runtime_dir}",
         f"--setenv=DBUS_SESSION_BUS_ADDRESS={dbus}",
@@ -557,13 +611,6 @@ async def launch():
     # Le rendu, lui, retombe sur X11 comme avant (WAYLAND_DISPLAY pointe dans le
     # vide sous gamescope pur — cf. _any_display). Pas de --setenv hors gamescope :
     # sur un bureau X11 classique, forcer "wayland" casserait la capture X11 native.
-    # KWin testé en PREMIER (même logique que main.py:get_share_env) : les
-    # sockets gamescope-* PERSISTENT dans XDG_RUNTIME_DIR après une session
-    # gamemode, et un gamescope imbriqué par-jeu peut tourner sous KWin
-    # (= bureau quand même) — le test socket seul força(it) wayland à tort
-    # au bureau.
-    gamescope = (not proc_running(comm="kwin_wayland|kwin_x11")
-                 and proc_running(comm="gamescope|gamescope-wl"))
     extra_flags = []
     if gamescope:
         setenv.append("--setenv=XDG_SESSION_TYPE=wayland")
@@ -740,7 +787,7 @@ async def kill_for_recovery(tag="[recover]"):
             )
             await killer.wait()
         else:
-            proc_kill(_PROC_PATTERN)
+            proc_kill(_MAIN_PROC_PATTERN)
         for _ in range(10):
             await sleep(1)
             if not await _running():
