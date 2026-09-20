@@ -16,6 +16,28 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.35.1 — 2026-09-20
+
+Same-day follow-up to v1.35.0, from a maintainer report.
+
+### Fixed
+
+- **An incoming message no longer rings twice.** Vesktop plays Discord's own
+  `message1` sound, and the Steam notification we post rings on top of it — two
+  sounds for one message. Settings → Notifications now has **Message
+  notification sound**, with four values: *Discord* (the new default: Discord
+  rings, our Steam toast stays quiet), *Steam* (Discord's message sound is
+  muted, the toast rings), *Both* (the previous behaviour) and *None*. The
+  setting shows up in the Quick Access panel and in the expanded view, since
+  both render the same settings page.
+
+  Only message notifications are affected: calls, screen-share and camera
+  notices, and the plugin's own notices keep their sound on both sides. Nothing
+  is written to your Discord account either — the sound is muted on this machine
+  only, in the running client, and your own Discord sound settings are left
+  untouched. Steam's other notifications (friend messages, downloads) are
+  untouched as well: only the notifications Steamcord itself posts are silenced.
+
 ## 1.35.0 — 2026-09-20
 
 ### The expanded view hands the panel back
