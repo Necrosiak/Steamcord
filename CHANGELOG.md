@@ -16,6 +16,51 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.35.0 — 2026-09-20
+
+### The expanded view hands the panel back
+
+**B now goes up one level instead of walking back through the history.** It
+leaves the conversation, the server's members or the call you just joined and
+returns to the page each was opened from; from a section chosen in the sidebar
+it closes the view. Before, a few minutes of browsing meant pressing B as many
+times as you had opened pages to get the Quick Access panel back. **L1 / R1**
+still move through the whole history, so nothing is lost.
+
+**A "Back to panel" button** sits at the bottom of the sidebar, where a grey
+hint used to be.
+
+**Settings choose what the Steamcord icon opens** — the panel, as before, or
+the expanded view straight away. You can still switch either way at any time:
+the icon next to your name opens the view, B and the new button close it. The
+choice is stored locally with a backup in the plugin, so clearing Steam's web
+storage does not lose it.
+
+### Desktop mode: we were killing your Vesktop
+
+On a desktop session with a **native** Vesktop, the plugin crashed it in a loop
+— within a minute, every time, unless you stopped Decky.
+
+Two faults, both ours. Our `pkill` matched **Electron's own child processes**
+(zygote, GPU, renderer, utility — twelve processes for one window), and killing
+the zygote or the GPU process makes Electron leave by *"GPU process isn't
+usable. Goodbye."*; our retry loop then relaunched and dismembered it again
+every two seconds. Only the main process is signalled now. And the Wayland
+socket was **hardcoded to wayland-0**, so a session living on wayland-1 got a
+socket that does not exist: nothing rendered and the debug port never opened,
+which is the endless *Initializing*. The session's own socket is used when it
+really exists. Game Mode is unchanged.
+
+Reported by [@P1XEL0711](https://github.com/P1XEL0711) in
+[#49](https://github.com/Necrosiak/Steamcord/issues/49), with the log that made
+both faults visible.
+
+### Also
+
+- **A logo of its own** — monochrome and transparent so it sits with the rest
+  of the interface, drawn from a real `assets/logo.svg` rather than living
+  inside the code.
+
 ## 1.34.0 — 2026-09-15
 
 ### Expanded view — a full-screen Discord (proof of concept)
