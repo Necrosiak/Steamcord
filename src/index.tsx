@@ -41,7 +41,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { patchMenu } from "./patches/menuPatch";
-import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode } from "./notify";
+import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
 import { ACCENT, DANGER, focusHalo } from "./components/Styled";
 import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
@@ -798,6 +798,46 @@ const NotifModeSetting = ({ ctx }: { ctx: NotifyCtx }) => {
         <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>
           {t(ctx === "in_game" ? "notif_ingame_desc" : "notif_idle_desc")}
         </div>
+      </SR>
+    </>
+  );
+};
+
+// Son des notifications de message (retour user 20/09) : un message Discord
+// sonnait DEUX fois — Vesktop joue le son `message1` de Discord, et le toast
+// Steam que nous émettons sonne à son tour. Les deux côtés se coupent
+// séparément (voir notify.ts pour Steam, `$set_notif_sound` pour Discord), donc
+// un seul menu à quatre valeurs. Persisté par le backend et pas en
+// localStorage : c'est lui qui doit pouvoir repousser le réglage au client
+// injecté à chaque redémarrage de Vesktop.
+const NotifSoundSetting = () => {
+  const [mode, setMode] = useState<NotifSound>(getNotifSound());
+  const opts = [
+    { data: "discord", label: t("notif_sound_discord") },
+    { data: "steam", label: t("notif_sound_steam") },
+    { data: "both", label: t("notif_sound_both") },
+    { data: "none", label: t("notif_sound_none") },
+  ];
+  return (
+    <>
+      <SR>
+        <div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("notif_sound")}</div>
+      </SR>
+      <SR>
+        <Dropdown
+          rgOptions={opts as any}
+          selectedOption={mode}
+          onChange={(o: any) => {
+            const v = o.data as NotifSound;
+            setMode(v);
+            setNotifSoundCache(v);
+            // in_game et idle restent intacts : le backend ne pose que ce qu'on envoie.
+            call("set_notify_prefs", null, null, v).catch(() => {});
+          }}
+        />
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>{t("notif_sound_desc")}</div>
       </SR>
     </>
   );
@@ -1916,6 +1956,7 @@ const ConfigPanel = () => {
       <NotifStyleToggle />
       <NotifModeSetting ctx="in_game" />
       <NotifModeSetting ctx="idle" />
+      <NotifSoundSetting />
       <StreamerModeSetting />
       <StreamQualitySetting />
       <hr />
@@ -1988,11 +2029,14 @@ export default definePlugin(() => {
   // puisse tomber. En cas d'échec on reste sur "all", c'est-à-dire le
   // comportement historique : un réglage illisible ne doit jamais faire taire
   // les notifications à l'insu de l'utilisateur.
-  call<[], { in_game?: string; idle?: string }>("get_notify_prefs")
+  call<[], { in_game?: string; idle?: string; sound?: string }>("get_notify_prefs")
     .then((p) => {
       const ok = (m: any): m is NotifyInGame => m === "all" || m === "priority" || m === "off";
       if (ok(p?.in_game)) setNotifyModeCache("in_game", p.in_game);
       if (ok(p?.idle)) setNotifyModeCache("idle", p.idle);
+      const okSound = (m: any): m is NotifSound =>
+        m === "discord" || m === "steam" || m === "both" || m === "none";
+      if (okSound(p?.sound)) setNotifSoundCache(p.sound);
     })
     .catch(() => {});
 
@@ -2068,6 +2112,9 @@ export default definePlugin(() => {
           sender: payload.title,
           avatar: payload.icon,
           dm: payload.kind === "dm",
+          // Discord joue DÉJÀ son son `message1` pour ce message-là : c'est la
+          // seule famille de notifications que le réglage du son peut taire.
+          message: true,
         });
       }
     },

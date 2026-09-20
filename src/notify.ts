@@ -69,8 +69,69 @@ function holdForStream(show: () => void) {
     if (streamerActive() || held.length === 0) return;
     const pending = held.splice(0);
     if (pending.length <= HELD_REPLAY_MAX) pending.forEach((fn) => { try { fn(); } catch {} });
-    else chatStyleNotification("Steamcord", t("streamer_summary", { n: pending.length }), "Steamcord", undefined, true);
+    else chatStyleNotification({ title: "Steamcord", body: t("streamer_summary", { n: pending.length }), sender: "Steamcord", dm: true });
   });
+}
+
+// ── Son des notifications de message (retour user 20/09) ───────────────────
+// « quand je reçois un message Discord, j'ai le son Discord + le son de notif
+// Steam ». Les deux sons sont réels et indépendants : Vesktop joue `message1`,
+// et le toast que NOUS émettons fait sonner Steam. Le mode est persisté par le
+// backend (`~/.config/steamcord-notify.json`, clé `sound`) parce qu'il pilote
+// aussi le client injecté dans Vesktop ; ici on n'en garde qu'un cache, posé au
+// démarrage par index.tsx. Défaut « discord » = on garde le son de Discord.
+export type NotifSound = "discord" | "steam" | "both" | "none";
+let notifSound: NotifSound = "discord";
+export const getNotifSound = (): NotifSound => notifSound;
+export const setNotifSoundCache = (v: NotifSound) => { notifSound = v; };
+const steamToastMuted = () => notifSound === "discord" || notifSound === "none";
+
+// Steam sonne dans `NotificationStore.PlayNotificationSound(notif)`. Mesuré au
+// CDP le 20/09 : elle est appelée UNE fois par notification, avec l'objet
+// complet, et `notif.data.steamid()` rend exactement le steamid envoyé — nos
+// notifications sont donc reconnaissables à leur persona factice. On ne coupe
+// que celles qu'on a nous-mêmes marquées : toute vraie notification Steam
+// (message d'un ami, téléchargement fini…) garde son son.
+// Fenêtre + compteur plutôt qu'un simple drapeau : le toast part en asynchrone
+// (aller-retour vers le client Steam), et deux messages du même expéditeur coup
+// sur coup doivent taire DEUX sons.
+const SILENT_TOAST_WINDOW_MS = 8000;
+const silentToasts = new Map<string, { n: number; exp: number }>();
+let toastSoundPatched = false;
+
+function patchToastSound() {
+  if (toastSoundPatched) return;
+  try {
+    const ns = (window as any).NotificationStore;
+    const orig = ns && Object.getPrototypeOf(ns)?.PlayNotificationSound;
+    if (typeof orig !== "function") return;
+    toastSoundPatched = true;
+    ns.PlayNotificationSound = function (n: any) {
+      try {
+        const d = n?.data;
+        const raw = d ? (typeof d.steamid === "function" ? d.steamid() : d.steamid) : null;
+        const sid = raw == null ? "" : String(raw);
+        const e = sid ? silentToasts.get(sid) : undefined;
+        if (e) {
+          if (e.exp > Date.now()) {
+            if (--e.n <= 0) silentToasts.delete(sid);
+            return; // la nôtre : c'est Discord qui sonne
+          }
+          silentToasts.delete(sid); // périmée : le son revient
+        }
+      } catch {}
+      return orig.call(this, n);
+    };
+  } catch (e) {
+    console.error("[Steamcord] patch du son des toasts échoué", e);
+  }
+}
+
+function markToastSilent(sid: string) {
+  patchToastSound();
+  const exp = Date.now() + SILENT_TOAST_WINDOW_MS;
+  const e = silentToasts.get(sid);
+  if (e && e.exp > Date.now()) { e.n++; e.exp = exp; } else silentToasts.set(sid, { n: 1, exp });
 }
 
 const NATIVE_TOASTS_KEY = "steamcord_native_toasts";
@@ -216,14 +277,26 @@ function verifyFirstToastRendered(resend: () => void) {
   }, 60);
 }
 
-function chatStyleNotification(title: string, body: string, sender?: string, avatar?: string, dm?: boolean, onClick?: () => void) {
+type ChatNotif = {
+  title: string; body: string; sender?: string; avatar?: string; dm?: boolean;
+  // `message: true` = Discord joue DÉJÀ son propre son pour cet évènement (un
+  // message reçu). Seules ces notifications-là peuvent voir leur son Steam
+  // coupé par le réglage : un avis du plugin ou un toast rerouté d'un autre
+  // plugin Decky n'a pas de son Discord en face, il garderait le silence.
+  message?: boolean;
+  onClick?: () => void;
+};
+
+function chatStyleNotification(n: ChatNotif) {
   // Point de passage de TOUT ce qui s'affiche en mode sûr (nos notifs et les
   // toasts reroutés des autres plugins Decky) → une seule garde suffit.
-  if (streamerActive()) { holdForStream(() => chatStyleNotification(title, body, sender, avatar, dm, onClick)); return; }
+  if (streamerActive()) { holdForStream(() => chatStyleNotification(n)); return; }
+  const { title, body, sender, avatar, dm, message, onClick } = n;
   try {
     const name = sender || title || "Steamcord";
     const { sid64, accountid } = fakeSenderSid(name);
     primeSenderPersona(sid64, accountid, name, avatar || DEFAULT_AVATAR);
+    if (message && steamToastMuted()) markToastSilent(sid64);
     // Type 2 (FriendChatMessage) pour les MP/appels : rendu « message privé »
     // (le type 1 affichait « Message de groupe » sur un MP — retour user).
     // Type 1 (GroupChatMessage) pour les chans de serveur et les notifs système.
@@ -247,16 +320,19 @@ function chatStyleNotification(title: string, body: string, sender?: string, ava
 
 // Notification Steamcord : chat-style persona en mode sûr, toast Decky natif si
 // le user a activé le mode natif.
-export function notify(payload: { title: string; body: string; sender?: string; avatar?: string; dm?: boolean; onClick?: () => void }) {
+export function notify(payload: ChatNotif) {
   if (streamerActive()) { holdForStream(() => notify(payload)); return; }
   try {
     const dpl: any = (window as any).DeckyPluginLoader;
+    // ⚠️ Mode « notifications natives » (opt-in) : le toast part par le toaster
+    // Decky, sans notre persona factice — le réglage du son ne peut donc pas le
+    // reconnaître et ne s'applique pas à ce chemin-là.
     if (getNativeToasts() && typeof dpl?.toaster?.toast === "function") {
       dpl.toaster.toast({ title: payload.sender || payload.title, body: payload.body, onClick: payload.onClick });
       return;
     }
   } catch {}
-  chatStyleNotification(payload.title, payload.body, payload.sender, payload.avatar, payload.dm, payload.onClick);
+  chatStyleNotification(payload);
 }
 
 // Enrobe toaster.toast (Decky + tous les plugins) selon le mode. Marqueur
@@ -289,7 +365,7 @@ export function patchDeckyToaster(_tries = 0) {
         const str = (v: any) => (typeof v === "string" ? v : v == null ? "" : "Notification");
         // Toast d'un plugin quelconque → avatar « ? » Steam neutre, PAS le logo
         // Discord (issue #4 : AutoFlatpaks passait pour un message Discord).
-        chatStyleNotification(str(toast?.title) || "Decky", str(toast?.body), undefined, NEUTRAL_AVATAR);
+        chatStyleNotification({ title: str(toast?.title) || "Decky", body: str(toast?.body), avatar: NEUTRAL_AVATAR });
       } catch (e) {
         console.error("[Steamcord] safe toaster failed", e);
       }

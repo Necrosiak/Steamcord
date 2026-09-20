@@ -2106,6 +2106,37 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     result = true;
                                     break;
                                 }
+                                case "$set_notif_sound": {
+                                    // Un message Discord sonnait DEUX fois : ici (son `message1`
+                                    // de Discord) et sur le toast Steam émis par le plugin.
+                                    // Le point de passage mesuré au CDP le 20/09 est
+                                    // `NotificationSettingsStore.isSoundDisabled(nom)`, lu juste
+                                    // avant de jouer (`let g = !F.A.isSoundDisabled("message1")`
+                                    // dans le module de notifications). On patche l'INSTANCE du
+                                    // store : rien n'est écrit dans les réglages de l'utilisateur
+                                    // (le store est un DeviceSettingsStore persisté), et la coupure
+                                    // disparaît avec Vesktop.
+                                    // "message3" = le bip du salon déjà ouvert
+                                    // (`notifyMessagesInSelectedChannel`), même famille.
+                                    // ⚠️ Nos propres sons ($play_sound) construisent un
+                                    // WebAudioSound directement et ne passent PAS par ce test :
+                                    // mute/deafen/join/leave continuent de jouer.
+                                    try {
+                                        const store = Vencord.Webpack.findStore("NotificationSettingsStore");
+                                        if (!store) { result = { ok: false, error: "store introuvable" }; break; }
+                                        if (!store.__steamcordOrigIsSoundDisabled)
+                                            store.__steamcordOrigIsSoundDisabled = store.isSoundDisabled.bind(store);
+                                        const orig = store.__steamcordOrigIsSoundDisabled;
+                                        const MUTED = ["message1", "message3"];
+                                        if (data.mute) store.isSoundDisabled = (name) => MUTED.indexOf(name) !== -1 || orig(name);
+                                        else store.isSoundDisabled = orig;
+                                        console.log("[Steamcord] son de message Discord " + (data.mute ? "coupé" : "rendu"));
+                                        result = { ok: true, muted: !!data.mute };
+                                    } catch (e) {
+                                        result = { ok: false, error: String(e) };
+                                    }
+                                    break;
+                                }
                                 case "$get_text_channels": {
                                     // Serveurs → salons texte (type 0) + annonces (type 5) accessibles.
                                     const GS = Vencord.Webpack.Common.GuildStore;

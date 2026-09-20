@@ -1108,6 +1108,15 @@ class Plugin:
                 except Exception:
                     pass
             create_task(_replay_rpc())
+
+        # Le patch qui tait le son de message de Discord vit DANS la page : un
+        # Vesktop relancé (bascule bureau↔gamemode, recovery) revient sans lui.
+        # On le repose à chaque connexion, avec le même délai que le RPC le temps
+        # que l'écouteur du client soit en place.
+        async def _replay_notif_sound():
+            await sleep(2)
+            await cls._push_notif_sound()
+        create_task(_replay_notif_sound())
         await cls.evt_handler.main(ws)
         return ws
 
@@ -1235,6 +1244,18 @@ class Plugin:
     # QUE pendant une partie, ce que son titre disait sans que ça se devine.
     _NOTIFY_MODES = ("all", "priority", "off")
 
+    # ── Son des notifications de message (retour user 20/09) ─────────────────
+    # Un message Discord sonnait DEUX fois : Vesktop joue le son `message1` de
+    # Discord, et le toast Steam que nous émettons sonne à son tour. Les deux
+    # côtés se coupent séparément, d'où un seul réglage à quatre valeurs :
+    #   "discord" (défaut) : Vesktop sonne, notre toast Steam est muet ;
+    #   "steam"            : le son de message de Vesktop est coupé, le toast sonne ;
+    #   "both"             : comportement d'avant ce réglage (les deux) ;
+    #   "none"             : aucun des deux (la notif reste visible).
+    # Ne concerne QUE les messages : appels, partages d'écran et avis du plugin
+    # gardent leur son des deux côtés.
+    _NOTIFY_SOUNDS = ("discord", "steam", "both", "none")
+
     @classmethod
     def _load_notify_settings(cls):
         from json import load as _load
@@ -1247,6 +1268,8 @@ class Plugin:
         for key in ("in_game", "idle"):
             if cls._notify_settings.get(key) not in cls._NOTIFY_MODES:
                 cls._notify_settings[key] = "all"
+        if cls._notify_settings.get("sound") not in cls._NOTIFY_SOUNDS:
+            cls._notify_settings["sound"] = "discord"
         return cls._notify_settings
 
     @classmethod
@@ -1254,15 +1277,17 @@ class Plugin:
         return cls._load_notify_settings()
 
     @classmethod
-    async def set_notify_prefs(cls, in_game=None, idle=None):
+    async def set_notify_prefs(cls, in_game=None, idle=None, sound=None):
         """Chaque réglage se pose seul : un front à jour envoie celui qui change,
         un front plus ancien n'envoie que `in_game` et ne doit pas écraser `idle`."""
         from json import dump as _dump
         cfg = cls._load_notify_settings()
-        for key, val in (("in_game", in_game), ("idle", idle)):
+        for key, val, allowed in (("in_game", in_game, cls._NOTIFY_MODES),
+                                  ("idle", idle, cls._NOTIFY_MODES),
+                                  ("sound", sound, cls._NOTIFY_SOUNDS)):
             if val is None:
                 continue
-            if val not in cls._NOTIFY_MODES:
+            if val not in allowed:
                 return {"ok": False, "error": f"mode inconnu: {val}"}
             cfg[key] = val
         try:
@@ -1272,7 +1297,26 @@ class Plugin:
         except Exception as e:
             logger.warning(f"save {cls._NOTIFY_CFG} failed: {e!r}")
             return {"ok": False, "error": str(e)}
+        if sound is not None:
+            await cls._push_notif_sound()
         return {"ok": True, **cfg}
+
+    @classmethod
+    async def _push_notif_sound(cls):
+        """Dit au client injecté s'il doit taire le son de message de Discord.
+        Best-effort : Vesktop peut être en train de (re)démarrer, et un réglage
+        de confort ne doit jamais faire échouer l'appel qui le pose. Le client
+        est re-notifié à chaque (re)connexion (`_websocket_handler`), sinon un
+        Vesktop relancé revient avec son son."""
+        mute = cls._notif_sound_pref() in ("steam", "none")
+        try:
+            await cls.evt_handler.send_client({"type": "$set_notif_sound", "mute": mute})
+        except Exception as e:
+            logger.info(f"$set_notif_sound non transmis (client absent ?): {e!r}")
+
+    @classmethod
+    def _notif_sound_pref(cls):
+        return cls._load_notify_settings()["sound"]
 
     # ── enregistrer une pièce jointe (issue #43) ─────────────────────────────
     # moi952 : « si je reçois un message avec une pièce jointe, je ne peux pas la
