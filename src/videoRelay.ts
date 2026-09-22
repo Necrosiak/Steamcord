@@ -3,6 +3,7 @@
 // expose le MediaStream reçu, indexé par userId, pour l'afficher dans son bloc.
 // Miroir du relais micro (qui va QAM→Vesktop) ; ici c'est Vesktop→QAM.
 import { call, addEventListener } from "@decky/api";
+import { armKeepAwake, releaseKeepAwake } from "./keepAwake";
 
 type Listener = () => void;
 export type TrackKind = "screen" | "camera" | "video";
@@ -14,7 +15,22 @@ const pcs = new Map<string, RTCPeerConnection>();
 const watching = new Set<string>();
 const listeners = new Set<Listener>();
 
-const notify = () => listeners.forEach((l) => l());
+// #51 : tant qu'au moins un stream est regardé, on tient l'économiseur d'écran
+// de SteamOS. Le point de branchement est `notify()` plutôt que watchVideo /
+// stopVideo : tous les chemins (panneau QAM, grille multi-POV, plein écran)
+// passent par là, et l'exclusivité du QAM (stop de l'autre PUIS ajout) ne
+// provoque pas un relâchement-rearmement inutile — le timer à 0 ms coalesce la
+// rafale synchrone en une seule décision.
+let keepAwakeTimer: any = null;
+const syncKeepAwake = () => {
+  if (keepAwakeTimer) return;
+  keepAwakeTimer = setTimeout(() => {
+    keepAwakeTimer = null;
+    if (watching.size > 0) armKeepAwake(); else releaseKeepAwake();
+  }, 0);
+};
+
+const notify = () => { syncKeepAwake(); listeners.forEach((l) => l()); };
 
 let initialized = false;
 export function initVideoRelay() {

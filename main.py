@@ -1716,6 +1716,62 @@ class Plugin:
             pass
         return True
 
+    # ── #51 : inhibiteur d'économiseur d'écran pendant le visionnage ────────
+    # Le front (keepAwake.ts) met le délai de l'économiseur de SteamOS à 0 le
+    # temps du visionnage d'un stream. On garde ici la préférence de
+    # l'utilisateur ET les valeurs d'origine : si Steam meurt en plein stream,
+    # le front les remet telles quelles au prochain chargement du plugin.
+    _KA_CFG = os.path.expanduser("~/.config/steamcord-keepawake.json")
+    _ka_cache = None
+
+    @staticmethod
+    def _ka_delays(values):
+        """Ne garde que des délais en secondes plausibles : un 0 ou un non-nombre
+        ne vaut pas la peine d'être restauré (0 = économiseur déjà coupé)."""
+        if not isinstance(values, dict):
+            return {}
+        return {str(k): int(v) for k, v in values.items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0}
+
+    @classmethod
+    def _ka_cfg(cls):
+        from json import load
+        if cls._ka_cache is None:
+            try:
+                with open(cls._KA_CFG) as f:
+                    cfg = load(f) or {}
+            except Exception:
+                cfg = {}
+            cls._ka_cache = {"enabled": bool(cfg.get("enabled", True)),
+                             "pending": cls._ka_delays(cfg.get("pending"))}
+        return cls._ka_cache
+
+    @classmethod
+    def _ka_save(cls):
+        from json import dump
+        try:
+            os.makedirs(os.path.dirname(cls._KA_CFG), exist_ok=True)
+            with open(cls._KA_CFG, "w") as f:
+                dump(cls._ka_cfg(), f)
+        except Exception as e:
+            logger.warning(f"save keepawake cfg failed: {e!r}")
+
+    @classmethod
+    async def get_keepawake_prefs(cls):
+        return cls._ka_cfg()
+
+    @classmethod
+    async def set_keepawake_enabled(cls, enabled):
+        cls._ka_cfg()["enabled"] = bool(enabled)
+        cls._ka_save()
+        return True
+
+    @classmethod
+    async def set_keepawake_pending(cls, values=None):
+        cls._ka_cfg()["pending"] = cls._ka_delays(values)
+        cls._ka_save()
+        return True
+
     @classmethod
     async def set_rpc(cls, game):
         logger.info("Setting RPC")

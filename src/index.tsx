@@ -46,6 +46,7 @@ import { ACCENT, DANGER, focusHalo } from "./components/Styled";
 import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
 import { initVideoRelay } from "./videoRelay";
+import { initKeepAwake, releaseKeepAwake, setKeepAwakeEnabled } from "./keepAwake";
 import { DiscordExpandedModal } from "./components/DiscordExpanded";
 import { EventsPanel } from "./components/EventsPanel";
 import { openCaptchaSolver } from "./components/CaptchaSolver";
@@ -1909,6 +1910,30 @@ const DisplayNameConfig = () => {
   );
 };
 
+// #51 : pendant qu'on regarde un stream, plus personne ne touche à la manette
+// — l'économiseur d'écran de SteamOS finit par tomber au milieu du visionnage.
+// Détail du mécanisme (et de ses limites) dans keepAwake.ts.
+const KeepAwakeSetting = () => {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    call<[], any>("get_keepawake_prefs")
+      .then((p) => setOn(p?.enabled !== false))
+      .catch(() => setOn(true));
+  }, []);
+  if (on === null) return null;
+  return (
+    <SR>
+      <ToggleField
+        label={t("keep_awake")}
+        description={t("keep_awake_desc")}
+        checked={on}
+        onChange={(v: boolean) => { setOn(v); setKeepAwakeEnabled(v); }}
+        bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div>
@@ -1959,6 +1984,7 @@ const ConfigPanel = () => {
       <NotifSoundSetting />
       <StreamerModeSetting />
       <StreamQualitySetting />
+      <KeepAwakeSetting />
       <hr />
       <AboutSection />
       <LogoutSection />
@@ -2175,6 +2201,9 @@ export default definePlugin(() => {
 
   // Réception vidéo (voir le Go Live/cam des autres dans leur bloc).
   initVideoRelay();
+  // Préférence + filet de restauration si une session précédente est morte
+  // en plein visionnage (délai d'économiseur laissé à 0).
+  initKeepAwake();
   initVoiceShortcut();
 
   // Anti-crash panneau de notifs Steam : sécurise le toaster Decky partagé
@@ -2262,6 +2291,7 @@ export default definePlugin(() => {
     onDismount() {
       unpatchMenu();
       stopStatusSync();
+      releaseKeepAwake();
       removeEventListener("webrtc", webrtcEventListener);
       try {
         appLifetimeUnregister();
