@@ -33,8 +33,50 @@ export const FULL_BLEED = {
 // Styles inline !important : gagnent sur les classes minifiées de Steam sans
 // dépendre de leurs noms, et Steam ne re-render pas ces nœuds pendant la vie
 // de la modale (vérifié en patchant en live au CDP).
+// Opacité du voile, réglable (#52 : « the "full" view … is too transparent for
+// my liking »). 0.94 reste le défaut — les 6 % restants suffisent à laisser
+// transparaître un jeu clair ou le magasin BPM, ce qui gêne à la lecture.
+// Le curseur vit dans l'onglet Réglages, qui existe AUSSI dans la vue agrandie :
+// on garde donc le nœud peint pour le repeindre pendant que l'utilisateur règle,
+// sinon il faudrait fermer et rouvrir la vue pour voir ce qu'on change.
+let veilAlpha = 0.94;
+let veilNodes: HTMLElement[] = [];
+
+const paintVeil = (el: HTMLElement | null | undefined) => {
+  if (!el) return;
+  el.style.setProperty("background", `rgba(0, 0, 0, ${veilAlpha})`, "important");
+  if (!veilNodes.includes(el)) veilNodes.push(el);
+};
+
+export const setVeilAlpha = (a: number) => {
+  veilAlpha = Math.min(1, Math.max(0.6, a));
+  veilNodes = veilNodes.filter((n) => n.isConnected);
+  veilNodes.forEach((n) =>
+    n.style.setProperty("background", `rgba(0, 0, 0, ${veilAlpha})`, "important"));
+};
+
+// ⚠️ Le calque qui assombrit VRAIMENT l'arrière-plan n'est pas dans notre chaîne
+// d'ancêtres : c'est celui de Steam, `.ModalOverlayBackground`, FRÈRE de notre
+// modale sous `FullModalOverlay`. Mesuré au CDP le 22/09 : on repeignait bien le
+// premier ancêtre plein écran (son style en ligne était là, à noir opaque) — sauf
+// que ce conteneur héberge AUSSI l'interface Steam, qui se dessine par-dessus son
+// fond. Le réglage ne cachait donc rigoureusement rien, retour user à l'appui
+// (« on voit encore tout derrière »). Les noms de classe de Steam sont minifiés,
+// mais ces deux-là ne le sont pas.
+const backdropOf = (marker: HTMLElement): HTMLElement | null => {
+  let p: HTMLElement | null = marker.parentElement;
+  for (let i = 0; p && i < 14; i++, p = p.parentElement) {
+    if (p.classList.contains("ModalOverlayContent") && p.classList.contains("active")) {
+      return p.parentElement?.querySelector<HTMLElement>(".ModalOverlayBackground") || null;
+    }
+  }
+  return null;
+};
+
 const hideDialogChromeFrom = (marker: HTMLElement) => {
   if (!marker.isConnected) return;
+  // Le vrai fond d'abord : c'est lui qui décide de ce qu'on voit derrière.
+  paintVeil(backdropOf(marker));
   const win = marker.ownerDocument?.defaultView;
   if (!win) return;
   let p: HTMLElement | null = marker.parentElement;
@@ -44,9 +86,9 @@ const hideDialogChromeFrom = (marker: HTMLElement) => {
     if (!painted) continue;
     if (p.getBoundingClientRect().width >= win.innerWidth * 0.98) {
       // Premier ancêtre plein écran peint = le voile : fond sombre net, stop.
-      // (0.94 : à 0.88 les visuels clairs du magasin BPM transparaissaient
-      // encore — vu sur capture.)
-      p.style.setProperty("background", "rgba(0, 0, 0, 0.94)", "important");
+      // (0.94 par défaut : à 0.88 les visuels clairs du magasin BPM
+      // transparaissaient encore — vu sur capture.)
+      paintVeil(p);
       break;
     }
     p.style.setProperty("background", "transparent", "important");

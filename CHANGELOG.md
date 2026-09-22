@@ -16,6 +16,50 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.37.0 — unreleased
+
+### The update button now finishes the job
+
+Pressing **Install** wrote the new version to disk and then stopped there, with
+no progress, no message and no new version until the next reboot — reported in
+[#52](https://github.com/Necrosiak/Steamcord/issues/52).
+
+Installing an update has always ended with a plugin reload, and that reload
+could never happen. Two separate reasons, both measured: Decky's loader is a
+PyInstaller bundle, so every plugin backend inherits its library path and
+`systemctl` cannot even start from one; and even with that cleaned up, restarting
+a system service is refused to a plugin that does not run as root. Nothing
+checked the result, so nothing was ever said about it.
+
+Steamcord now asks the loader — which does run as root — to reload this plugin
+alone, and the panel shows the new version when it is done. Decky itself is left
+running, and the other plugins are not bounced. If the loader is too old to offer
+that, the button says so plainly instead of sitting on *Installing…* forever.
+
+Automatic updates no longer claim to be reloading either: they say the update
+takes effect the next time Steam starts, which is what actually happens.
+
+### How dark the background is, behind the expanded view
+
+The expanded view let the Steam UI show through more than some people wanted,
+also raised in [#52](https://github.com/Necrosiak/Steamcord/issues/52). There is
+now a **Background dimming** slider in Settings, from 60% to 100%; at 100% the
+background disappears entirely. It applies to the expanded view, the fullscreen
+POV grid and the media viewer, and the background repaints as you move it.
+
+### Updates moved to the bottom of Settings
+
+The **Updates** section now sits at the end of the settings tab, just above the
+GitHub link.
+
+### Reloading the plugin no longer takes five seconds
+
+Every reload ended with Decky killing the backend after a five-second timeout.
+Stopping a helper process waited on that process, and during an unload that wait
+never returns — which also meant that everything after it had never run, the
+shutdown of the internal web server included. The unload now does its work
+without waiting on anything: it takes about a tenth of a second.
+
 ## 1.36.0 — 2026-09-22
 
 ### The screen saver no longer lands on top of a stream

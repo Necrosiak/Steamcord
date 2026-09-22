@@ -367,9 +367,51 @@ async def apply(url: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def restart_loader() -> None:
-    """Restart Decky so the new code loads. This kills our own process."""
+def restart_loader() -> bool:
+    """Restart Decky so the new code loads. True only if systemd accepted it.
+
+    Two independent reasons make this fail from inside a plugin, both measured
+    on 2026-09-22 (Steamcord #52 — « I click update and nothing happens »):
+
+    1. Decky's loader is a PyInstaller bundle, so it exports its extraction dir
+       on LD_LIBRARY_PATH and every plugin backend inherits it. `systemctl` then
+       resolves the BUNDLED libcrypto and cannot even start:
+           systemctl: /tmp/_MEIxxxxxx/libcrypto.so.3: version `OPENSSL_3.4.0'
+           not found (required by …/libsystemd-shared-259.9-1.fc44.so)
+       This one hits every plugin, root or not. PyInstaller keeps the caller's
+       own value in LD_LIBRARY_PATH_ORIG, so restoring it hands `systemctl` a
+       sane environment again.
+    2. `plugin_loader` is a SYSTEM unit, so polkit answers `auth_admin` to an
+       unprivileged caller — only a plugin whose `flags` contain "root" gets
+       past this:
+           Failed to restart plugin_loader.service: Access denied as the
+           requested operation requires interactive authentication.
+
+    `Popen` hid both: nothing waited on the child, nothing read its status,
+    nothing logged. The update was written to disk and then simply never
+    loaded — no progress, no message, and the new version only appeared after
+    the next boot. Returning a real answer lets the caller hand the reload to
+    the frontend, which can ask the loader — root — to reload this plugin alone.
+    """
+    env = dict(os.environ)
+    orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if orig:
+        env["LD_LIBRARY_PATH"] = orig
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
     try:
-        subprocess.Popen(["systemctl", "restart", "plugin_loader"])
+        proc = subprocess.run(
+            ["systemctl", "restart", "plugin_loader"],
+            capture_output=True, text=True, timeout=30, env=env,
+        )
     except Exception as e:
         logger.error(f"[updater] restart failed: {e}")
+        return False
+    # Only reached when the restart was REFUSED: an accepted one kills this very
+    # process long before subprocess.run() can return.
+    msg = (proc.stderr or proc.stdout or "").strip().splitlines()
+    logger.warning(
+        f"[updater] loader restart refused (exit {proc.returncode}): "
+        f"{msg[0] if msg else 'no output'}"
+    )
+    return proc.returncode == 0

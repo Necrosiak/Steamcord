@@ -976,9 +976,23 @@ class Plugin:
             # redémarrait le loader pour rien.
             res = await updater.apply(info["url"])
             if res.get("ok"):
-                await cls._toast("Steamcord", "Update installed — reloading…")
-                await sleep(2)
-                updater.restart_loader()
+                if updater.restart_loader():
+                    await cls._toast("Steamcord", "Update installed — reloading…")
+                    await sleep(2)
+                    return
+                # Le redémarrage est REFUSÉ à tout plugin non root (mesuré le
+                # 22/09). L'ancien toast annonçait un rechargement qui n'arrivait
+                # jamais ; la mise à jour est bien posée sur le disque, mais elle
+                # ne prendra effet qu'au prochain démarrage de Steam. On le dit.
+                logger.info(
+                    f"[updater] {info['latest']} written to disk; loader restart "
+                    "refused (plugin is not root) — active at next Steam start"
+                )
+                await cls._toast(
+                    "Steamcord",
+                    f"Update {info['latest']} installed — it becomes active the "
+                    "next time Steam starts.",
+                )
                 return
             # Les DEUX chemins ont échoué. Le toast disait « Update failed: <errno> »
             # et s'arrêtait là : l'utilisateur n'avait aucun moyen de savoir que la
@@ -1009,10 +1023,12 @@ class Plugin:
     @classmethod
     async def apply_update(cls, url):
         res = await updater.apply(url)
-        if res.get("ok"):
-            await cls._toast("Steamcord", "Update installed — reloading…")
-            await sleep(1)
-            updater.restart_loader()
+        # Écrire les fichiers ne suffit pas, encore faut-il RECHARGER — et on ne
+        # redémarre plus plugin_loader d'ici. D'abord parce que ce backend n'en a
+        # pas le droit (voir restart_loader : bibliothèques du bundle PyInstaller
+        # puis polkit), ensuite parce que ce serait démesuré : ça relance TOUS les
+        # plugins. Le frontend, lui, peut demander au loader de recharger CE
+        # plugin seul. On ne toaste donc plus « reloading… », ce qui était faux.
         return res
 
     @classmethod
@@ -1186,6 +1202,9 @@ class Plugin:
     _VIEW_SRCS = ("servers", "dms")
     # Ce que l'icône Steamcord ouvre : le panneau, ou la vue agrandie (20/09).
     _VIEW_BIGS = ("qam", "big")
+    # Plancher de l'opacité du voile (#52) : en dessous, l'UI Steam et le jeu
+    # transparaissent au point de rendre la vue illisible.
+    _VEIL_MIN = 60
 
     @classmethod
     async def get_open_view(cls):
@@ -1197,14 +1216,18 @@ class Plugin:
                 cfg = {}
         except Exception:
             cfg = {}
+        veil = cfg.get("veil")
         return {
             "top": cfg.get("top") if cfg.get("top") in cls._VIEW_TOPS else None,
             "src": cfg.get("src") if cfg.get("src") in cls._VIEW_SRCS else None,
             "big": cfg.get("big") if cfg.get("big") in cls._VIEW_BIGS else None,
+            # Opacité du voile en pourcent (#52). Bornée ici aussi : ce fichier
+            # est éditable à la main, et un 0 y ferait disparaître le fond.
+            "veil": veil if isinstance(veil, int) and cls._VEIL_MIN <= veil <= 100 else None,
         }
 
     @classmethod
-    async def set_open_view(cls, top=None, src=None, big=None):
+    async def set_open_view(cls, top=None, src=None, big=None, veil=None):
         """Chaque valeur se pose seule : le front envoie celle qui change."""
         from json import dump as _dump
         cfg = {k: v for k, v in (await cls.get_open_view()).items() if v is not None}
@@ -1215,6 +1238,14 @@ class Plugin:
             if val not in allowed:
                 return {"ok": False, "error": f"valeur inconnue: {val}"}
             cfg[key] = val
+        if veil is not None:
+            try:
+                veil = int(veil)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": f"valeur inconnue: {veil}"}
+            if not cls._VEIL_MIN <= veil <= 100:
+                return {"ok": False, "error": f"opacité hors bornes: {veil}"}
+            cfg["veil"] = veil
         tmp = cls._VIEW_CFG + ".tmp"
         try:
             os.makedirs(os.path.dirname(cls._VIEW_CFG), exist_ok=True)
@@ -5059,6 +5090,38 @@ class Plugin:
 
     @classmethod
     async def _unload(cls):
+        # ⏱️ Le loader SIGKILL le plugin 5 s après la demande d'arrêt, à CHAQUE
+        # rechargement. Instrumenté étape par étape le 22/09 : on arrivait toujours
+        # à 0,00 s jusqu'à `await webrtc_server.wait()`, et plus rien ensuite.
+        #
+        # Ce n'est pas une attente « longue » : un `wait_for(sleep(10), 0.2)` posé
+        # là ne se déclenche pas non plus, alors que la boucle se dit bien vivante
+        # (`running=True closed=False`). Autrement dit, pendant le déchargement,
+        # la première suspension RÉELLE ne reprend jamais la main. Borner ne sert
+        # donc à rien : il faut ne pas se suspendre du tout.
+        #
+        # Conséquence, bien pire que les 5 s : tout ce qui suivait était mort
+        # depuis toujours — arrêt du serveur HTTP et surtout
+        # `DISCORD_TAB.Destroy()`, la destruction de la vue Discord.
+        # → le nettoyage qui compte est fait ICI, sans await ; la fin, qui exige
+        #   un aller-retour (HTTP, CEF), part en tâche de fond au cas où la boucle
+        #   se libère, et on rend la main immédiatement.
+        from time import monotonic as _mono
+        _t0 = _mono()
+
+        # ⚠️ Budget TOTAL : le loader SIGKILL à 5 s. Des garde-fous mis bout à
+        # bout (1+1+1+2+2+2) le dépassaient — mesuré : toujours 5,1 s. D'où des
+        # délais courts, et les trois processus fils arrêtés EN PARALLÈLE.
+        def _kill(proc, name):
+            """SIGKILL, sans l'attendre : `await proc.wait()` est précisément ce
+            qui fige le déchargement, et le fils meurt de toute façon."""
+            if proc is None:
+                return
+            try:
+                proc.kill()
+            except Exception as e:
+                logger.debug(f"[unload] {name}: {e!r}")
+
         # Copies mp4 faites pour Discord : rien d'autre ne les effacerait, et
         # elles vivent dans /tmp avec la taille d'un clip.
         for f in list(getattr(cls, "_clip_tmp", ())):
@@ -5067,6 +5130,16 @@ class Plugin:
             except OSError:
                 pass
         cls._clip_tmp = set()
+        # Les fils meurent AVANT tout `await` : ceux qui suivent se terminent
+        # aujourd'hui sans se suspendre, mais si l'un d'eux s'y mettait un jour,
+        # tout ce qui est en dessous cesserait de s'exécuter (cf. en-tête). Un
+        # SIGKILL ne coûte rien et ne peut pas attendre.
+        _kill(getattr(cls, "webrtc_server", None), "webrtc_server")
+        _kill(getattr(cls, "portal_shim", None), "portal_shim")
+        proc = getattr(cls, "golive_preview", None)
+        if proc is not None and proc.returncode is None:
+            _kill(proc, "golive_preview")
+
         # Fermer les fd /dev/input AVANT tout le reste : un rechargement de plugin
         # détruit les objets Python sans tuer le processus, donc rien ne les
         # refermerait tout seul (fuite de fd + lecteur fantôme).
@@ -5099,30 +5172,17 @@ class Plugin:
             await cls._maybe_stop_overlay_window()
         except Exception:
             pass
-        if hasattr(cls, "webrtc_server"):
-            cls.webrtc_server.kill()
-            await cls.webrtc_server.wait()
+        # ⛔ Ce qui manque ici, et qu'on ne PEUT pas faire : l'arrêt propre du
+        # serveur aiohttp et `DISCORD_TAB.Destroy()`. Les deux exigent un
+        # aller-retour (handlers, websocket CEF), donc une suspension — celle-là
+        # même qui ne revient jamais. Les lancer en tâche de fond ne change rien
+        # (la boucle ne les exécute pas) et laisse un « Task pending » dans le
+        # journal. Sans conséquence pratique : le processus meurt juste après,
+        # donc le port est rendu ; seule la BrowserView Discord survit côté Steam,
+        # et le prochain chargement la réutilise — c'est déjà ce qui se passait,
+        # silencieusement, avant qu'on mesure tout ça.
 
-        if hasattr(cls, "portal_shim"):
-            cls.portal_shim.kill()
-            await cls.portal_shim.wait()
-
-        proc = getattr(cls, "golive_preview", None)
-        if proc is not None and proc.returncode is None:
-            proc.kill()
-            await proc.wait()
-
-        if hasattr(cls, "runner"):
-            await cls.runner.shutdown()
-            await cls.runner.cleanup()
-
-        if hasattr(cls, "shared_js_tab"):
-            await cls.shared_js_tab.ensure_open()
-            await cls.shared_js_tab.evaluate(
-                """
-                window.DISCORD_TAB.m_browserView.SetVisible(false);
-                window.DISCORD_TAB.Destroy();
-                window.DISCORD_TAB = undefined;
-            """
-            )
-            await cls.shared_js_tab.close_websocket()
+        _dt = _mono() - _t0
+        # Au-delà, le loader nous SIGKILL et la fin du nettoyage saute : il vaut
+        # mieux que ça se voie dans le journal.
+        (logger.warning if _dt > 3 else logger.info)(f"[unload] terminé en {_dt:.2f}s")

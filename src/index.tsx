@@ -42,7 +42,11 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 
 import { patchMenu } from "./patches/menuPatch";
 import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
-import { ACCENT, DANGER, focusHalo } from "./components/Styled";
+import { ACCENT, DANGER, focusHalo, setVeilAlpha } from "./components/Styled";
+
+// Même contournement que dans VoiceChatViews : les types publiés par @decky/ui
+// pour SliderField ne décrivent pas `bottomSeparator`.
+const SliderFieldAny = SliderField as any;
 import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
 import { initVideoRelay } from "./videoRelay";
@@ -293,6 +297,29 @@ const setOpenBig = (v: OpenBig) => {
   try { localStorage.setItem(OPEN_BIG_KEY, v); } catch { }
   call("set_open_view", null, null, v).catch(() => {});
 };
+// Opacité du voile derrière les vues plein écran (#52). Même schéma que les
+// réglages ci-dessus : localStorage pour la lecture immédiate, copie backend au
+// cas où Steam vide son stockage web. En POURCENT (60 à 100) : c'est ce que le
+// curseur manipule, et un entier se relit sans surprise de virgule flottante.
+const VEIL_KEY = "steamcord_veil";
+const VEIL_DEFAULT = 94;
+const clampVeil = (n: number) => Math.min(100, Math.max(60, Math.round(n)));
+const getVeil = (): number => {
+  try {
+    const v = parseInt(localStorage.getItem(VEIL_KEY) || "", 10);
+    return Number.isFinite(v) ? clampVeil(v) : VEIL_DEFAULT;
+  } catch { return VEIL_DEFAULT; }
+};
+const setVeil = (v: number) => {
+  const n = clampVeil(v);
+  try { localStorage.setItem(VEIL_KEY, String(n)); } catch { }
+  setVeilAlpha(n / 100);
+  call("set_open_view", null, null, null, n).catch(() => {});
+};
+// Au chargement du module : le voile doit déjà être au bon réglage la PREMIÈRE
+// fois qu'une vue s'ouvre, sans attendre que le panneau soit monté.
+setVeilAlpha(getVeil() / 100);
+
 // Ouverture automatique : l'état ne peut PAS vivre dans le composant du
 // panneau. Ouvrir la vue agrandie masque le QAM, donc le panneau se cache (et
 // peut se démonter) — au retour il repartait à zéro et rouvrait la vue :
@@ -309,9 +336,17 @@ const readStored = (key: string): string | null => {
 // a été vidé, on reprend la copie (et on la remet en local). Clé locale présente
 // mais pas de copie (install venant de 1.32/1.33) → on remplit la copie.
 const syncOpenView = (apply: (top?: OpenTop, src?: OpenSrc) => void) => {
-  call<[], { top?: OpenTop | null; src?: OpenSrc | null; big?: OpenBig | null }>("get_open_view")
+  call<[], { top?: OpenTop | null; src?: OpenSrc | null; big?: OpenBig | null; veil?: number | null }>("get_open_view")
     .then((b) => {
       if (!b) return;
+      if (readStored(VEIL_KEY) === null) {
+        if (typeof b.veil === "number") {
+          try { localStorage.setItem(VEIL_KEY, String(b.veil)); } catch { }
+          setVeilAlpha(clampVeil(b.veil) / 100);
+        }
+      } else if (typeof b.veil !== "number") {
+        call("set_open_view", null, null, null, getVeil()).catch(() => {});
+      }
       let top: OpenTop | undefined;
       let src: OpenSrc | undefined;
       if (readStored(OPEN_BIG_KEY) === null) {
@@ -913,7 +948,7 @@ const UpdaterSection = () => {
   // confirmation de Decky, on ne la fait pas surgir sans que l'user l'ait voulu.
   const [auto, setAuto] = useState(false);
   const [status, setStatus] = useState<
-    "idle" | "checking" | "available" | "uptodate" | "installing" | "confirm" | "checkfailed" | "failed"
+    "idle" | "checking" | "available" | "uptodate" | "installing" | "confirm" | "checkfailed" | "failed" | "needsrestart"
   >("idle");
   const [updErr, setUpdErr] = useState("");
   const [latest, setLatest] = useState("");
@@ -1039,7 +1074,45 @@ const UpdaterSection = () => {
     let applyErr = "";
     try {
       const r: any = await call<[string], any>("apply_update", url);
-      if (r === true || r?.ok) return;   // le backend redémarre le loader
+      if (r === true || r?.ok) {
+        // Les fichiers sont écrits — mais RIEN n'est chargé pour autant, et
+        // c'est tout le sujet de #52 : « je clique, il ne se passe rien », puis
+        // la bonne version apparaît après un redémarrage du Deck.
+        //
+        // Le backend ne peut pas recharger. Mesuré le 22/09, deux causes
+        // empilées : le loader est un bundle PyInstaller et lègue son
+        // LD_LIBRARY_PATH à nos backends, si bien que `systemctl` ne démarre
+        // même pas (libcrypto du bundle) ; et une fois cet environnement
+        // nettoyé, polkit refuse l'unité SYSTÈME à un plugin non root.
+        // Personne ne lisait ce code de retour, d'où le silence complet.
+        //
+        // Le loader, LUI, tourne en root : sa route interne loader/reload_plugin
+        // arrête notre backend, le réimporte depuis les fichiers neufs, puis
+        // fait recharger dist/index.js au frontend. Rien à voir avec
+        // utilities/install_plugin, la route du Store, qui se perd sur un 404
+        // deckbrew et laisse une modale figée (13/09).
+        const backend: any = (window as any).DeckyBackend;
+        if (backend?.call) {
+          try {
+            await backend.call("loader/reload_plugin", "Steamcord");
+            // Le panneau à l'écran n'est PAS remonté par le rechargement : Steam
+            // garde l'arbre React déjà monté, et il restait donc figé sur
+            // « Installation… » — vu à l'écran le 22/09, alors même que le
+            // plugin venait d'être réimporté des deux côtés. C'est très
+            // exactement le « je clique et il ne se passe rien » de #52, donc on
+            // finit le parcours nous-mêmes. Le nouveau code sert dès la
+            // prochaine ouverture du menu.
+            setCurrent(latest);
+            setStatus("uptodate");
+            return;
+          } catch {
+            // Decky trop ancien pour cette route : on le dit, au lieu de laisser
+            // le bouton figé sur « Installation… » pour toujours.
+          }
+        }
+        setStatus("needsrestart");
+        return;
+      }
       applyErr = r?.error || "";
     } catch {
       applyErr = "";
@@ -1082,6 +1155,7 @@ const UpdaterSection = () => {
     : status === "uptodate" ? t("update_up_to_date", { v: current })
     : status === "checkfailed" ? t("update_check_failed")
     : status === "failed" ? t("update_failed")
+    : status === "needsrestart" ? t("update_needs_restart")
     : t("update_check");
 
   return (
@@ -1813,6 +1887,7 @@ const OpenViewConfig = () => {
   const [top, setTop] = useState<OpenTop>(getOpenTop());
   const [src, setSrc] = useState<OpenSrc>(getOpenSrc());
   const [big, setBig] = useState<OpenBig>(getOpenBig());
+  const [veil, setVeilState] = useState<number>(getVeil());
   const bigOpts = [
     { data: "qam" as OpenBig, label: t("config_open_qam") },
     { data: "big" as OpenBig, label: t("config_open_xv") },
@@ -1856,6 +1931,20 @@ const OpenViewConfig = () => {
       <SR>
         <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>
           {t("config_open_xv_desc")}
+        </div>
+      </SR>
+      <SR>
+        <SliderFieldAny
+          label={t("config_veil", { v: veil })}
+          value={veil}
+          min={60} max={100} step={2}
+          onChange={(v: number) => { setVeil(v); setVeilState(clampVeil(v)); }}
+          bottomSeparator="none"
+        />
+      </SR>
+      <SR>
+        <div style={{ fontSize: 11, opacity: 0.6, margin: "2px 0 4px" }}>
+          {t("config_veil_desc")}
         </div>
       </SR>
     </>
@@ -1971,11 +2060,6 @@ const ConfigPanel = () => {
       <MicProcessingConfig />
       <hr />
       <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcRefresh /> {t("config_updates")}</div>
-      </SR>
-      <UpdaterSection />
-      <hr />
-      <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcBell /> {t("config_notifs")}</div>
       </SR>
       <NotifStyleToggle />
@@ -1985,6 +2069,11 @@ const ConfigPanel = () => {
       <StreamerModeSetting />
       <StreamQualitySetting />
       <KeepAwakeSetting />
+      <hr />
+      <SR>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcRefresh /> {t("config_updates")}</div>
+      </SR>
+      <UpdaterSection />
       <hr />
       <AboutSection />
       <LogoutSection />
