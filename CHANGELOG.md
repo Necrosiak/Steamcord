@@ -16,6 +16,48 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.36.0 — 2026-09-22
+
+### The screen saver no longer lands on top of a stream
+
+Watching someone's stream is the one thing you do with the controller in your
+lap, so after a few minutes without input SteamOS' screen saver comes up over
+the video. **While a stream is playing — in the panel, in the expanded view or
+in the fullscreen POV grid — the screen saver is switched off, and put back
+exactly as it was the moment you stop watching.**
+
+There is no inhibit API to call for this. The screen saver service only lets
+the UI *read* its state, `SteamClient` exposes nothing about idle, gamescope
+does not implement `zwp_idle_inhibit_manager_v1`, and a Game Mode session has
+no `org.freedesktop.ScreenSaver` on the bus. So the plugin does the one thing
+that does work: it sets Steam's own screen saver delay to *Disabled* for the
+duration, then writes your value back. Both the mains and the battery delay are
+held, since the power source can change in the middle of a stream, and a delay
+you had already set to *Disabled* is left alone.
+
+Two things keep that from turning into a setting stuck at *Disabled*. Every
+write is **read back** before the plugin treats the screen saver as held; if
+Steam reports anything else, nothing is held and your value is put back rather
+than left in an unknown state. And the original delays are **written to
+`~/.config/steamcord-keepawake.json` before anything is changed**, so a session
+that dies mid-stream — Steam killed, plugin reloaded, machine crashed —
+restores them the next time the plugin loads. That restore only happens if the
+delay is *still* at *Disabled*: a value you changed yourself always wins.
+
+**Settings → "Keep the screen awake while watching"** turns the whole thing
+off. Screen dimming and auto-sleep are deliberately left alone — the machine
+can still dim its panel and still suspend on its own.
+
+Asked for by [@PaulDGillis](https://github.com/PaulDGillis) in
+[#51](https://github.com/Necrosiak/Steamcord/issues/51).
+
+### Also
+
+- The licences of the vendored `libnice` GStreamer plugin ship next to it:
+  `COPYING`, `COPYING.LGPL` and `COPYING.MPL`, taken byte for byte from libnice
+  0.1.22. A `DiscordTab` component that had been unreachable since the first
+  commit, and the one translation key only it used, are gone.
+
 ## 1.35.1 — 2026-09-20
 
 Same-day follow-up to v1.35.0, from a maintainer report.

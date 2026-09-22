@@ -133,6 +133,10 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 ---
 
+### [@PaulDGillis](https://github.com/PaulDGillis)
+
+- The screen saver landing on top of a stream you are watching, and the detail that made it worth doing rather than guessing at: the exact SteamOS build it happens on ([#51](https://github.com/Necrosiak/Steamcord/issues/51), addressed in v1.36.0)
+
 # Code contributions
 
 ### [@jezonek](https://github.com/jezonek)
