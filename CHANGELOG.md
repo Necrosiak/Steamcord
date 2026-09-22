@@ -16,7 +16,7 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
-## 1.37.0 — unreleased
+## 1.37.0 — 2026-09-22
 
 ### The update button now finishes the job
 
