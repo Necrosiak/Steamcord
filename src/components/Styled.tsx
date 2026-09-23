@@ -40,19 +40,47 @@ export const FULL_BLEED = {
 // on garde donc le nœud peint pour le repeindre pendant que l'utilisateur règle,
 // sinon il faudrait fermer et rouvrir la vue pour voir ce qu'on change.
 let veilAlpha = 0.94;
-let veilNodes: HTMLElement[] = [];
 
-const paintVeil = (el: HTMLElement | null | undefined) => {
-  if (!el) return;
-  el.style.setProperty("background", `rgba(0, 0, 0, ${veilAlpha})`, "important");
-  if (!veilNodes.includes(el)) veilNodes.push(el);
+// ⚠️ #52 (retour du 23/09) : les nœuds qu'on repeint NE SONT PAS à nous. Le fond
+// `.ModalOverlayBackground` et le premier ancêtre plein écran (le fond dégradé de
+// tout Big Picture) survivent à la fermeture de la modale — Steam les réutilise.
+// Mesuré au CDP : après Close(), le style en ligne restait, et en jeu le QAM ou une
+// notification ressortait ce noir par-dessus la partie. On note donc chaque
+// propriété touchée avec sa valeur d'origine, et on la rend dès que plus aucune de
+// nos modales ouvertes ne se sert du nœud.
+type Touched = { markers: Set<HTMLElement>; saved: Map<string, [string, string]>; veil: boolean };
+const touched = new Map<HTMLElement, Touched>();
+
+const setOwned = (el: HTMLElement, marker: HTMLElement, prop: string, value: string, veil = false) => {
+  let t = touched.get(el);
+  if (!t) { t = { markers: new Set(), saved: new Map(), veil: false }; touched.set(el, t); }
+  t.markers.add(marker);
+  if (veil) t.veil = true;
+  if (!t.saved.has(prop)) t.saved.set(prop, [el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)]);
+  el.style.setProperty(prop, value, "important");
+};
+
+const releaseClosed = () => {
+  touched.forEach((t, el) => {
+    t.markers.forEach((m) => { if (!m.isConnected) t.markers.delete(m); });
+    if (t.markers.size) return;
+    t.saved.forEach(([v, prio], prop) => {
+      if (v) el.style.setProperty(prop, v, prio); else el.style.removeProperty(prop);
+    });
+    touched.delete(el);
+  });
+};
+
+const paintVeil = (el: HTMLElement | null | undefined, marker: HTMLElement) => {
+  if (el) setOwned(el, marker, "background", `rgba(0, 0, 0, ${veilAlpha})`, true);
 };
 
 export const setVeilAlpha = (a: number) => {
   veilAlpha = Math.min(1, Math.max(0.6, a));
-  veilNodes = veilNodes.filter((n) => n.isConnected);
-  veilNodes.forEach((n) =>
-    n.style.setProperty("background", `rgba(0, 0, 0, ${veilAlpha})`, "important"));
+  releaseClosed();
+  touched.forEach((t, el) => {
+    if (t.veil) el.style.setProperty("background", `rgba(0, 0, 0, ${veilAlpha})`, "important");
+  });
 };
 
 // ⚠️ Le calque qui assombrit VRAIMENT l'arrière-plan n'est pas dans notre chaîne
@@ -76,7 +104,7 @@ const backdropOf = (marker: HTMLElement): HTMLElement | null => {
 const hideDialogChromeFrom = (marker: HTMLElement) => {
   if (!marker.isConnected) return;
   // Le vrai fond d'abord : c'est lui qui décide de ce qu'on voit derrière.
-  paintVeil(backdropOf(marker));
+  paintVeil(backdropOf(marker), marker);
   const win = marker.ownerDocument?.defaultView;
   if (!win) return;
   let p: HTMLElement | null = marker.parentElement;
@@ -88,12 +116,12 @@ const hideDialogChromeFrom = (marker: HTMLElement) => {
       // Premier ancêtre plein écran peint = le voile : fond sombre net, stop.
       // (0.94 par défaut : à 0.88 les visuels clairs du magasin BPM
       // transparaissaient encore — vu sur capture.)
-      paintVeil(p);
+      paintVeil(p, marker);
       break;
     }
-    p.style.setProperty("background", "transparent", "important");
-    p.style.setProperty("box-shadow", "none", "important");
-    p.style.setProperty("border", "none", "important");
+    setOwned(p, marker, "background", "transparent");
+    setOwned(p, marker, "box-shadow", "none");
+    setOwned(p, marker, "border", "none");
   }
 };
 
@@ -101,9 +129,11 @@ const hideDialogChromeFrom = (marker: HTMLElement) => {
 // "none"}} />` dans le contenu de la modale : plusieurs passes, l'animation
 // d'ouverture bouge encore les mesures au montage (même motif que
 // useFillHeight) ; les passes sur une modale déjà fermée se voient à
-// isConnected et ne font rien.
+// isConnected et ne font rien. Au démontage (ref appelé avec null), le marqueur
+// est encore dans le DOM et l'animation de fermeture peut le garder un instant →
+// on rend les styles en plusieurs passes elles aussi.
 export const chromeHideMarkerRef = (el: HTMLDivElement | null) => {
-  if (!el) return;
+  if (!el) { [0, 400, 1200].forEach((ms) => setTimeout(releaseClosed, ms)); return; }
   [0, 300, 800].forEach((ms) => setTimeout(() => hideDialogChromeFrom(el), ms));
 };
 
