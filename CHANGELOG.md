@@ -16,6 +16,28 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.37.1 — 2026-09-23
+
+### The background dimming no longer leaks into your game
+
+Since 1.37.0, opening the Quick Access menu or getting a Steam notification
+while playing could darken the game, all the way to black at 100% — reported in
+[#52](https://github.com/Necrosiak/Steamcord/issues/52).
+
+The **Background dimming** slider paints two layers that belong to Steam, not
+to Steamcord: the backdrop behind modals and Big Picture's full-screen
+background. Steam does not throw them away when a window closes, it reuses them
+for the Quick Access menu and for notifications — and Steamcord's paint stayed
+on them after the expanded view was closed. Every style Steamcord puts on those
+layers is now recorded with its original value and handed back as soon as the
+view closes.
+
+Checked in a running game, with the old behaviour put back as a control (the
+game went black behind the Quick Access menu and behind a notification) and
+then with the fix: the Quick Access menu, a Steamcord notification and eight
+kinds of Steam notifications, with no dimming at all. The slider itself works
+as before while the expanded view is open.
+
 ## 1.37.0 — 2026-09-22
 
 ### The update button now finishes the job
