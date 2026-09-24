@@ -138,6 +138,15 @@ const NATIVE_TOASTS_KEY = "steamcord_native_toasts";
 export const getNativeToasts = (): boolean => {
   try { return localStorage.getItem(NATIVE_TOASTS_KEY) === "1"; } catch { return false; } // défaut OFF
 };
+// #53 : en mode bureau, la fenêtre Steam plante sur TOUT toast Decky natif.
+// Reproduit le 23/09 sur le build de fuzi0nz (chunk 7e9d063cfb819cd56045) : le toast
+// (eType 31) atterrit dans `Xt`, qui lit data.item.notification_type → écran d'erreur
+// Decky dans la fenêtre bureau. Le mode sûr, lui, passe (toast + cloche testés). On
+// n'honore donc le réglage qu'en mode jeu (UI mode 4) ; en bureau c'est 7.
+const inGamepadUi = (): boolean => {
+  try { return (window as any).SteamUIStore?.MainInstanceUIMode === 4; } catch { return false; }
+};
+const useNativeToasts = (): boolean => getNativeToasts() && inGamepadUi();
 export const setNativeToasts = (v: boolean) => {
   try { localStorage.setItem(NATIVE_TOASTS_KEY, v ? "1" : "0"); } catch {}
   if (!v) sweepDeckyTrayGroups(); // purge immédiate des entrées natives restantes
@@ -327,7 +336,7 @@ export function notify(payload: ChatNotif) {
     // ⚠️ Mode « notifications natives » (opt-in) : le toast part par le toaster
     // Decky, sans notre persona factice — le réglage du son ne peut donc pas le
     // reconnaître et ne s'applique pas à ce chemin-là.
-    if (getNativeToasts() && typeof dpl?.toaster?.toast === "function") {
+    if (useNativeToasts() && typeof dpl?.toaster?.toast === "function") {
       dpl.toaster.toast({ title: payload.sender || payload.title, body: payload.body, onClick: payload.onClick });
       return;
     }
@@ -358,7 +367,7 @@ export function patchDeckyToaster(_tries = 0) {
     dpl.toaster.__steamcordSafe = 2;
     dpl.toaster.toast = (toast: any) => {
       if (streamerActive()) { holdForStream(() => dpl.toaster.toast(toast)); return; }
-      if (getNativeToasts()) {
+      if (useNativeToasts()) {
         return orig.call(dpl.toaster, toast);
       }
       try {
