@@ -16,6 +16,26 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.37.2 — 2026-09-24
+
+### No more error screen in the desktop Steam window
+
+In Desktop Mode, the Steam window could switch to Decky's "An error occurred
+while rendering this content" screen a few minutes after opening — reported in
+[#53](https://github.com/Necrosiak/Steamcord/issues/53).
+
+Reproduced on the same Steam build as the report: a notification sent through
+Decky's **native** toaster makes the desktop Steam client crash while drawing
+it, with the exact same stack trace. Steamcord only uses that toaster when the
+**Native Decky notifications** setting is on; the default, chat-style
+notifications never triggered it.
+
+That setting is now only honoured in Game Mode. On the desktop, every
+notification — Steamcord's and other Decky plugins' — goes through the safe
+path, whatever the setting says. Checked with the setting on: the previous
+version brought up the error screen, this one shows the notification and the
+bell entry with no error.
+
 ## 1.37.1 — 2026-09-23
 
 ### The background dimming no longer leaks into your game

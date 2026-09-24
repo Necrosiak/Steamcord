@@ -140,6 +140,10 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - The screen saver landing on top of a stream you are watching, and the detail that made it worth doing rather than guessing at: the exact SteamOS build it happens on ([#51](https://github.com/Necrosiak/Steamcord/issues/51), addressed in v1.36.0)
 
+### [@fuzi0nz](https://github.com/fuzi0nz)
+
+- An error screen in the desktop Steam window that only appeared with Steamcord enabled ([#53](https://github.com/Necrosiak/Steamcord/issues/53), fixed in v1.37.2). It could not be reproduced at first, and it was their follow-up that made it possible: the error only showed in the desktop window, a few minutes after opening Steam, and their screenshots carried the stack trace. That trace matched a notification drawn by Decky's native toaster, which the desktop client cannot render.
+
 # Code contributions
 
 ### [@jezonek](https://github.com/jezonek)
