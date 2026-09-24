@@ -254,7 +254,7 @@ function FileRow({ file, passive }: { file: MsgFile; passive?: boolean }) {
   );
   if (passive) return <div style={{ opacity: 0.7, marginTop: 2 }}>{body}</div>;
   return (
-    <Focusable
+    <Focusable noFocusRing
       onActivate={save}
       onClick={save}
       onFocus={() => setFocused(true)}
@@ -679,7 +679,7 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   }
 
   return (
-    <Btn
+    <Btn noFocusRing
       preferredFocus={preferred}
       onClick={firstMedia ? () => openMediaLightbox(firstMedia) : undefined}
       onFocus={() => setFocused(true)}
@@ -714,7 +714,7 @@ const CHIP_SIZING = { flex: "0 0 auto", width: "auto", minWidth: 0 } as const;
 function ReactionPill({ r, disabled, onClick }: { r: MsgReaction; disabled?: boolean; onClick: () => void }) {
   const [focused, setFocused] = useState(false);
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       onFocus={() => setFocused(true)}
@@ -742,7 +742,7 @@ export function ChipBtn({ disabled, onClick, color, children }: { disabled?: boo
   const [focused, setFocused] = useState(false);
   const c = color || ACCENT;
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       onFocus={() => setFocused(true)}

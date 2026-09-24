@@ -178,7 +178,7 @@ const TabBtn = ({ active, focused, onClick, onFocus, onBlur, fontSize, children 
     focused ? `0 0 0 2px #fff, 0 0 8px 1px ${ACCENT}` : "",
   ].filter(Boolean).join(", ") || "none";
   return (
-  <BtnTab
+  <BtnTab noFocusRing
     onClick={onClick}
     onFocus={onFocus}
     onBlur={onBlur}
@@ -224,7 +224,7 @@ const TabRow = ({ children }: any) => (
 const WideBtn = ({ onClick, focused, onFocus, onBlur, children }: any) => {
   const { px } = useQamUi();
   return (
-  <BtnTab
+  <BtnTab noFocusRing
     onClick={onClick}
     onFocus={onFocus}
     onBlur={onBlur}
@@ -446,7 +446,7 @@ const ExpandDiscordBtn = ({ onClick }: { onClick: () => void }) => {
   const [focused, setFocused] = useState(false);
   const s = px(48);
   return (
-    <BtnTab
+    <BtnTab noFocusRing
       onClick={onClick}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -491,7 +491,7 @@ const UserStatusButton = ({ me, onExpand }: { me: any; onExpand?: () => void }) 
     <div>
       {/* Pseudo à gauche, icône de la vue agrandie tout à droite (D-pad →). */}
       <Focusable flow-children="row" style={{ display: "flex", alignItems: "stretch", gap: px(6) }}>
-      <BtnTab
+      <BtnTab noFocusRing
         onClick={() => setOpen((o) => !o)}
         onFocus={() => setFocused("name")}
         onBlur={() => setFocused((f) => (f === "name" ? null : f))}
@@ -534,7 +534,7 @@ const UserStatusButton = ({ me, onExpand }: { me: any; onExpand?: () => void }) 
             const selected = current === s.id;
             const isF = focused === s.id;
             return (
-              <BtnTab
+              <BtnTab noFocusRing
                 key={s.id}
                 onClick={() => pick(s.id)}
                 onFocus={() => setFocused(s.id)}
@@ -1640,6 +1640,8 @@ const AboutSection = () => {
   const [version, setVersion] = useState<string>("");
   useEffect(() => { call<[], string>("get_version").then((v) => setVersion(v || "")).catch(() => {}); }, []);
   const open = (url: string) => { try { (window as any).SteamClient?.URL?.ExecuteSteamURL?.("steam://openurl/" + url); } catch {} };
+  // #43 : sans état de focus, le bouton ne s'allumait pas sous la manette.
+  const [ghFocused, setGhFocused] = useState(false);
   return (
     <>
       <SR>
@@ -1652,7 +1654,8 @@ const AboutSection = () => {
         </div>
       </SR>
       <SR>
-        <WideBtn onClick={() => open("https://github.com/Necrosiak/Steamcord")}><IcGithub /> GitHub</WideBtn>
+        <div style={{ height: 8 }} />
+        <WideBtn focused={ghFocused} onFocus={() => setGhFocused(true)} onBlur={() => setGhFocused(false)} onClick={() => open("https://github.com/Necrosiak/Steamcord")}><IcGithub /> GitHub</WideBtn>
       </SR>
     </>
   );
@@ -1665,6 +1668,7 @@ const LogoutSection = () => {
   // Texte TOUJOURS blanc + halo blanc au focus (le fond ne change pas → jamais de
   // texte illisible sur le surlignage clair de Steam).
   const btn = (key: string, bg: string, extra: any = {}) => ({
+    noFocusRing: true,
     onFocus: () => setFocused(key),
     onBlur: () => setFocused((f: string | null) => (f === key ? null : f)),
     style: {

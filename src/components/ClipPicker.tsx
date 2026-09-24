@@ -58,7 +58,7 @@ function ClipTile({ clip, busy, onClick }: { clip: Clip; busy: boolean; onClick:
   }, [clip.token]);
 
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={dead}
       onClick={onClick}
       onFocus={() => setFocused(true)}
@@ -101,7 +101,7 @@ function PagerBtn({ label, title, disabled, onClick }: {
 }) {
   const [focused, setFocused] = useState(false);
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       title={title}
       onClick={onClick}

@@ -33,7 +33,7 @@ export function buildForwardText({ author, content, urls }: ForwardPayload): str
 function TargetRow({ target, busy, onPick }: { target: Target; busy: boolean; onPick: (t: Target) => void }) {
   const [focused, setFocused] = useState(false);
   return (
-    <Focusable
+    <Focusable noFocusRing
       onActivate={() => onPick(target)}
       onClick={() => onPick(target)}
       onFocus={() => setFocused(true)}

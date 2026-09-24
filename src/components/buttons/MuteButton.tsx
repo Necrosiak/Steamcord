@@ -33,7 +33,7 @@ export function MuteButton() {
     );
   }
   return (
-    <DialogButton onClick={() => call("toggle_mute")} style={style} {...fh}>
+    <DialogButton noFocusRing onClick={() => call("toggle_mute")} style={style} {...fh}>
       {icon}
     </DialogButton>
   );

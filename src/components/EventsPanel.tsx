@@ -75,7 +75,7 @@ export function EventDetail({ ev, closeModal }: { ev: SCEvent; closeModal?: () =
   };
 
   const btn = (key: string, label: string, onClick: () => void) => (
-    <Focusable
+    <Focusable noFocusRing
       onActivate={onClick} onClick={onClick}
       onFocus={() => setFocused(key)} onBlur={() => setFocused((f) => (f === key ? null : f))}
       onGamepadFocus={() => setFocused(key)} onGamepadBlur={() => setFocused((f) => (f === key ? null : f))}
@@ -172,7 +172,7 @@ function EventRow({ ev }: { ev: SCEvent }) {
   };
 
   const focusable = (key: string, onClick: () => void, style: any, children: any) => (
-    <Focusable
+    <Focusable noFocusRing
       onActivate={onClick} onClick={onClick}
       onFocus={() => setFocused(key)} onBlur={() => setFocused((f) => (f === key ? null : f))}
       onGamepadFocus={() => setFocused(key)} onGamepadBlur={() => setFocused((f) => (f === key ? null : f))}
@@ -233,7 +233,7 @@ export function EventsPanel() {
   const live = events.filter((e) => e.status === ACTIVE).length;
   return (
     <div style={{ marginBottom: 6 }}>
-      <Focusable
+      <Focusable noFocusRing
         onActivate={() => setOpen((v) => !v)}
         onClick={() => setOpen((v) => !v)}
         onFocus={() => setFocused(true)}

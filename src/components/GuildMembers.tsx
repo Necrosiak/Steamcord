@@ -6,7 +6,6 @@ import { call } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { useOpenChat } from "./ExpandedNav";
 import { Avatar, Btn, activityLine, Presence } from "./FriendsHub";
-import { ONLINE } from "./Styled";
 import { IcChat, IcRefresh } from "./Icons";
 import { t, errText } from "../i18n";
 import { openPersonMenu } from "./PersonMenu";
@@ -60,7 +59,7 @@ function Member({ m }: { m: MemberRow }) {
         : m.relationship === REL_FRIEND ? label(t("member_friend"))
         : (m.relationship === REL_OUTGOING || sent) ? label(t("member_sent"))
         : m.bot ? null
-        : <Btn tint={ONLINE} onClick={addFriend}>{t("member_add")}</Btn>}
+        : <Btn onClick={addFriend}>{t("member_add")}</Btn>}
     </Focusable>
     {error && <div style={{ color: "#ff7474", fontSize: 12, margin: "3px 4px 0" }}>{error}</div>}
   </div>;
@@ -106,7 +105,7 @@ export function GuildMembers({ guildId }: { guildId: string }) {
       <Btn onClick={() => load(0)}><IcRefresh /></Btn>
     </Focusable>
     {/* Seule la liste défile (même règle que le reste de la vue). */}
-    <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 8 }}>
+    <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 8px 3px 3px" }}>
       {rows.map((row, i) => row.type === "group"
         ? <div key={`g${row.id}-${i}`} style={{ fontSize: 11, fontWeight: 800, letterSpacing: .7, opacity: .5, margin: `${i ? 12 : 2}px 0 6px` }}>{row.title.toUpperCase()} — {row.count}</div>
         : <Member key={row.id} m={row} />)}

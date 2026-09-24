@@ -40,7 +40,7 @@ export function GoLiveButton() {
   const { px } = useQamUi();
 
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={coolingDown}
       onClick={() => {
         if (coolingDown) return;

@@ -19,7 +19,7 @@ const ModalRootAny = ModalRoot as any;
 export function SendBtn({ disabled, onClick, children }: { disabled?: boolean; onClick: () => void; children: any }) {
   const [focused, setFocused] = useState(false);
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       onFocus={() => setFocused(true)}

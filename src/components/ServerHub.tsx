@@ -7,7 +7,7 @@ import { call } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { useOpenChat, useOpenMembers } from "./ExpandedNav";
 import { FaUsers } from "react-icons/fa";
-import { ACCENT, DANGER, ONLINE, focusHalo } from "./Styled";
+import { DANGER, ONLINE, listHalo } from "./Styled";
 import { IcChat, IcChevronDown, IcChevronUp, IcEye, IcEyeSlash, IcRefresh, IcReorder, IcSpeaker } from "./Icons";
 import { MemberAvatars } from "./ChannelBrowser";
 import { EVENT_ACTIVE, EventDetail, SCEvent, whenLabel } from "./EventsPanel";
@@ -30,13 +30,13 @@ function ServerIcon({ guild, open }: { guild: Guild; open: boolean }) {
 
 function Row({ children, onClick, active, flex }: { children: any; onClick: () => void; active?: boolean; flex?: boolean }) {
   const [focused, setFocused] = useState(false);
-  return <Focusable onClick={onClick} onActivate={onClick} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(flex ? { flex: 1, minWidth: 0 } : {}), display: "flex", alignItems: "center", gap: 10, minHeight: 48, padding: "8px 11px", borderRadius: 9, marginBottom: 4, background: active ? "rgba(88,101,242,.45)" : focused ? "rgba(88,101,242,.24)" : "rgba(255,255,255,.045)", ...focusHalo(ACCENT, focused, 1.01) }}>{children}</Focusable>;
+  return <Focusable noFocusRing onClick={onClick} onActivate={onClick} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(flex ? { flex: 1, minWidth: 0 } : {}), display: "flex", alignItems: "center", gap: 10, minHeight: 48, padding: "8px 11px", borderRadius: 9, marginBottom: 4, background: active ? "rgba(88,101,242,.45)" : focused ? "rgba(88,101,242,.24)" : "rgba(255,255,255,.045)", ...listHalo(focused) }}>{children}</Focusable>;
 }
 
 function ToolBtn({ onClick, disabled, on, children }: { onClick: () => void; disabled?: boolean; on?: boolean; children: any }) {
   const [focused, setFocused] = useState(false);
   const act = () => { if (!disabled) onClick(); };
-  return <Focusable onClick={act} onActivate={act} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 44, height: 40, padding: "0 12px", marginBottom: 4, borderRadius: 9, fontSize: 13, fontWeight: 600, flexShrink: 0, opacity: disabled ? .3 : 1, color: on ? "#fff" : undefined, background: on ? "rgba(88,101,242,.75)" : focused ? "rgba(88,101,242,.35)" : "rgba(255,255,255,.06)", ...focusHalo(ACCENT, focused, 1.04) }}>{children}</Focusable>;
+  return <Focusable noFocusRing onClick={act} onActivate={act} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 44, height: 40, padding: "0 12px", marginBottom: 4, borderRadius: 9, fontSize: 13, fontWeight: 600, flexShrink: 0, opacity: disabled ? .3 : 1, color: on ? "#fff" : undefined, background: on ? "rgba(88,101,242,.75)" : focused ? "rgba(88,101,242,.35)" : "rgba(255,255,255,.06)", ...listHalo(focused) }}>{children}</Focusable>;
 }
 
 const sectionTitle = (label: string, first?: boolean) => <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .7, opacity: .5, margin: `${first ? 4 : 12}px 0 7px` }}>{label}</div>;
@@ -136,7 +136,7 @@ export function ServerHub() {
     {error && <div style={{ flexShrink: 0, color: "#ff7474", marginBottom: 6 }}>{error}</div>}
     {/* flex:1 + minHeight:0 : la liste est bornée à sa colonne et défile SEULE ;
         sans borne elle grandissait et c'était la vue entière qui défilait. */}
-    <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 8 }}>
+    <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 8px 3px 3px" }}>
       {shown.map((guild, i) => {
         const isOpen = open === guild.id;
         const inVoice = guild.voice.reduce((n, c) => n + (c.members?.length ?? 0), 0);

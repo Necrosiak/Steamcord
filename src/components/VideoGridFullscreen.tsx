@@ -57,7 +57,7 @@ function VideoTile({ user, kind, track }: { user: any; kind: string; track: Medi
     if (el && el.srcObject !== ms) { el.srcObject = ms; (el as any).play?.().catch(() => {}); }
   };
   return (
-    <Btn
+    <Btn noFocusRing
       onClick={() => showModal(
         <FullscreenVideoModal track={track} label={<>{kindIcon(kind)} {user.username}</>} />
       )}

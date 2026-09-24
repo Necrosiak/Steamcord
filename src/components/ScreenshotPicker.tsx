@@ -28,7 +28,7 @@ function urlContentToDataUri(url: string) {
 function ShotTile({ shot, busy, onClick }: { shot: Shot; busy: boolean; onClick: () => void }) {
   const [focused, setFocused] = useState(false);
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={busy}
       onClick={onClick}
       onFocus={() => setFocused(true)}

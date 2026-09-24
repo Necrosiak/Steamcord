@@ -46,7 +46,7 @@ export function TinyIconBtn({ onClick, disabled, title, children }: { onClick: (
   const [focused, setFocused] = useState(false);
   const s = px(28);
   return (
-    <Btn
+    <Btn noFocusRing
       onClick={(e: any) => { e?.stopPropagation?.(); if (!disabled) onClick(); }}
       disabled={disabled}
       title={title}

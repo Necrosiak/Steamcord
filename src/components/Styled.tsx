@@ -207,13 +207,26 @@ export function focusHalo(color: string, focused: boolean, scale = 1.02) {
   };
 }
 
+// Variante pour les listes de la vue agrandie (#43) : ces tuiles vivent dans une
+// zone qui défile et qui rogne tout ce qui dépasse. Le grossissement (1 % d'une
+// ligne de 1200 px = 6 px de chaque côté) et la lueur colorée y étaient coupés
+// net, ce qui dessinait un second cadre autour du halo. Anneau blanc seul.
+export function listHalo(focused: boolean) {
+  return {
+    boxShadow: focused ? "0 0 0 2px #fff" : "none",
+    transition: "box-shadow .08s ease",
+    position: "relative" as const,
+    zIndex: focused ? 1 : 0,
+  };
+}
+
 // Clickable card: colored background when active, white halo + colored glow on
 // gamepad focus. Mirrors SkullKey's CardBtn.
 export function CardBtn({ active, focused, color, disabled, center, big, onClick, onFocus, onBlur, onGamepadFocus, onGamepadBlur, children }: any) {
   const { px } = useQamUi();
   const c = color || ACCENT;
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       onFocus={onFocus}
@@ -275,7 +288,7 @@ export function IconBtn({ color, active, disabled, title, onClick, children }: a
   const { px } = useQamUi();
   const c = color || ACCENT;
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -428,7 +441,7 @@ export function RowBtn({
   const { px } = useQamUi();
   const c = color || ACCENT;
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -467,7 +480,7 @@ export function InlineBtn({ on, color, tone, big, disabled, onClick, title, chil
   const c = color || ACCENT;
   const rest = tone === "accent" ? hexA(ACCENT, 0.45) : "rgba(255,255,255,0.08)";
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -497,7 +510,7 @@ export function MiniBtn({ onClick, disabled, title, children }: any) {
   const [focused, setFocused] = useState(false);
   const { px } = useQamUi();
   return (
-    <Btn
+    <Btn noFocusRing
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -556,7 +569,7 @@ export function CollapseHeader({ open, icon, right, onClick, children }: any) {
   const [focused, setFocused] = useState(false);
   const { px } = useQamUi();
   return (
-    <Btn
+    <Btn noFocusRing
       onClick={onClick}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}

@@ -29,7 +29,7 @@ export function DisconnectButton() {
     );
   }
   return (
-    <DialogButton onClick={() => call("disconnect_vc")} style={style} {...fh}>
+    <DialogButton noFocusRing onClick={() => call("disconnect_vc")} style={style} {...fh}>
       <FaPlug size={px(20)} />
     </DialogButton>
   );

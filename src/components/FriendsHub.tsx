@@ -4,7 +4,7 @@ import { Focusable, TextField } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { useOpenChat } from "./ExpandedNav";
-import { ACCENT, DANGER, ONLINE, focusHalo } from "./Styled";
+import { DANGER, ONLINE, listHalo } from "./Styled";
 import { IcChat, IcPhone, IcRefresh } from "./Icons";
 import { t, errText } from "../i18n";
 import { openPersonMenu } from "./PersonMenu";
@@ -45,9 +45,9 @@ export function Avatar({ person }: { person: Presence & { id: string; avatar?: s
 
 // `onSecondary` = bouton Y (menu de la personne), posé sur la rangée elle-même :
 // sur un conteneur de liste, ces props cassent la navigation (cf. ChatFullscreen).
-export function Btn({ onClick, children, tint = ACCENT, on, grow, onSecondary }: { onClick: () => void; children: any; tint?: string; on?: boolean; grow?: boolean; onSecondary?: () => void }) {
+export function Btn({ onClick, children, on, grow, onSecondary }: { onClick: () => void; children: any; on?: boolean; grow?: boolean; onSecondary?: () => void }) {
   const [focused, setFocused] = useState(false);
-  return <Focusable onClick={onClick} onActivate={onClick} onSecondaryButton={onSecondary} onSecondaryActionDescription={onSecondary ? t("xv_more") : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(grow ? { flex: 1, minWidth: 0 } : { flexShrink: 0 }), display: "flex", alignItems: "center", justifyContent: grow ? "flex-start" : "center", gap: 8, minHeight: 44, padding: "0 12px", borderRadius: 9, fontWeight: 600, background: on ? "rgba(88,101,242,.75)" : focused ? "rgba(88,101,242,.3)" : "rgba(255,255,255,.05)", ...focusHalo(tint, focused, grow ? 1.01 : 1.04) }}>{children}</Focusable>;
+  return <Focusable noFocusRing onClick={onClick} onActivate={onClick} onSecondaryButton={onSecondary} onSecondaryActionDescription={onSecondary ? t("xv_more") : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(grow ? { flex: 1, minWidth: 0 } : { flexShrink: 0 }), display: "flex", alignItems: "center", justifyContent: grow ? "flex-start" : "center", gap: 8, minHeight: 44, padding: "0 12px", borderRadius: 9, fontWeight: 600, background: on ? "rgba(88,101,242,.75)" : focused ? "rgba(88,101,242,.3)" : "rgba(255,255,255,.05)", ...listHalo(focused) }}>{children}</Focusable>;
 }
 
 function PersonRow({ person, pending, onDone }: { person: Person; pending?: "incoming" | "outgoing"; onDone: () => void }) {
@@ -85,9 +85,9 @@ function PersonRow({ person, pending, onDone }: { person: Person; pending?: "inc
         {!pending && <IcChat />}
       </Btn>
       {busy ? <Btn onClick={() => {}}>…</Btn>
-        : pending === "incoming" ? <><Btn tint={ONLINE} onClick={() => answer("friend_accept")}>{t("friend_accept")}</Btn><Btn tint={DANGER} onClick={() => answer("friend_remove")}>{t("friend_decline")}</Btn></>
-        : pending === "outgoing" ? <Btn tint={DANGER} onClick={() => answer("friend_remove")}>{t("friend_cancel")}</Btn>
-        : <Btn tint={ONLINE} onClick={phone}><IcPhone /> {t("call")}</Btn>}
+        : pending === "incoming" ? <><Btn onClick={() => answer("friend_accept")}>{t("friend_accept")}</Btn><Btn onClick={() => answer("friend_remove")}>{t("friend_decline")}</Btn></>
+        : pending === "outgoing" ? <Btn onClick={() => answer("friend_remove")}>{t("friend_cancel")}</Btn>
+        : <Btn onClick={phone}><IcPhone /> {t("call")}</Btn>}
     </Focusable>
     {error && <div style={{ color: "#ff7474", fontSize: 12, margin: "3px 4px 0" }}>{error}</div>}
   </div>;
@@ -144,13 +144,13 @@ export function FriendsHub() {
       <Btn onClick={refresh}><IcRefresh /></Btn>
     </Focusable>
     {/* Seule la liste défile : barre de filtres et ajout restent en place. */}
-    <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 8 }}>
+    <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 8px 3px 3px" }}>
       {filter === "pending" ? <>
         <Focusable flow-children="row" style={{ display: "flex", gap: 6, alignItems: "flex-end", marginBottom: 6 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <TextField label={t("friend_add_label")} value={newName} onChange={(e: any) => setNewName(String(e?.target?.value ?? "").slice(0, 64))} />
           </div>
-          <Btn tint={ONLINE} onClick={sendRequest}>{adding ? "…" : t("friend_add_send")}</Btn>
+          <Btn onClick={sendRequest}>{adding ? "…" : t("friend_add_send")}</Btn>
         </Focusable>
         {addMsg && <div style={{ fontSize: 12, opacity: .85, margin: "0 4px 10px" }}>{addMsg}</div>}
         {data.incoming.map((p) => <PersonRow key={p.id} person={p} pending="incoming" onDone={refresh} />)}

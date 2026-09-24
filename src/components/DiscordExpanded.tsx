@@ -6,7 +6,7 @@ import { ChatView } from "./ChatFullscreen";
 import { ExpandedNavContext } from "./ExpandedNav";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { EVENT_ACTIVE, EventDetail, SCEvent, whenLabel } from "./EventsPanel";
-import { ACCENT, DANGER, FULL_BLEED, ONLINE, chromeHideMarkerRef, focusHalo } from "./Styled";
+import { DANGER, FULL_BLEED, ONLINE, chromeHideMarkerRef, focusHalo, listHalo } from "./Styled";
 import { IcBell, IcChat, IcGear, IcPanel, IcPhone, IcUser, SteamcordLogo } from "./Icons";
 import { t } from "../i18n";
 import { FaUserFriends } from "react-icons/fa";
@@ -39,6 +39,16 @@ const samePage = (a: Page, b: PageKind) => {
 // navigateur fait défiler TOUS les ancêtres, overflow:hidden compris : la carte
 // entière montait et la barre latérale sortait de l'écran (retour user 15/09).
 // Seule la colonne de droite a le droit de défiler ; les autres sont ramenées.
+// #43 (moi952) : les réglages sont ceux du QAM, dont les rangées n'ont aucune
+// marge propre — dans la vue agrandie deux contrôles se touchaient (menus
+// déroulants à 1 px, interrupteurs collés au champ de texte). On espace deux
+// rangées interactives qui se suivent ; une note sous son contrôle reste collée.
+// Même écart après la note d'un contrôle (contrôle, note en 11 px, contrôle
+// suivant) ; un libellé posé au-dessus de son menu (12 px) ne bouge pas.
+const CTL = ":has(button, input, .Focusable)";
+const NOTE = `:not(${CTL}):has(> div[style*="font-size: 11px"])`;
+const SETTINGS_GAPS = `.sc-xv-settings > div > *${CTL} + *${CTL},
+.sc-xv-settings > div > *${CTL} + *${NOTE} + *${CTL} { margin-top: 8px; }`;
 const pinTop = (e: any) => { if (e.currentTarget.scrollTop) e.currentTarget.scrollTop = 0; };
 
 function Avatar({ dm }: { dm: Dm }) {
@@ -51,12 +61,12 @@ function Avatar({ dm }: { dm: Dm }) {
 
 function SidebarItem({ active, icon, label, badge, onPick }: { active: boolean; icon: any; label: string; badge?: any; onPick: () => void }) {
   const [focused, setFocused] = useState(false);
-  return <Focusable onClick={onPick} onActivate={onPick} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: 8, marginBottom: 5, background: active ? "rgba(88,101,242,.82)" : focused ? "rgba(255,255,255,.13)" : "transparent", fontWeight: active ? 700 : 500, ...focusHalo("#fff", focused, 1.02) }}>{icon}<span style={{ flex: 1 }}>{label}</span>{badge}</Focusable>;
+  return <Focusable noFocusRing onClick={onPick} onActivate={onPick} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: 8, marginBottom: 5, background: active ? "rgba(88,101,242,.82)" : focused ? "rgba(255,255,255,.13)" : "transparent", fontWeight: active ? 700 : 500, ...focusHalo("#fff", focused, 1.02) }}>{icon}<span style={{ flex: 1 }}>{label}</span>{badge}</Focusable>;
 }
 
-function Tile({ children, onClick, flex, active, tint = ACCENT, onSecondary }: { children: any; onClick: () => void; flex?: boolean; active?: boolean; tint?: string; onSecondary?: () => void }) {
+function Tile({ children, onClick, flex, active, onSecondary }: { children: any; onClick: () => void; flex?: boolean; active?: boolean; onSecondary?: () => void }) {
   const [focused, setFocused] = useState(false);
-  return <Focusable onClick={onClick} onActivate={onClick} onSecondaryButton={onSecondary} onSecondaryActionDescription={onSecondary ? t("xv_more") : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(flex ? { flex: 1, minWidth: 0 } : { flexShrink: 0 }), display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 9, background: active ? "rgba(35,165,90,.38)" : focused ? "rgba(88,101,242,.28)" : "rgba(255,255,255,.045)", ...focusHalo(tint, focused, flex ? 1.01 : 1.03) }}>{children}</Focusable>;
+  return <Focusable noFocusRing onClick={onClick} onActivate={onClick} onSecondaryButton={onSecondary} onSecondaryActionDescription={onSecondary ? t("xv_more") : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(flex ? { flex: 1, minWidth: 0 } : { flexShrink: 0 }), display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 9, background: active ? "rgba(35,165,90,.38)" : focused ? "rgba(88,101,242,.28)" : "rgba(255,255,255,.045)", ...listHalo(focused) }}>{children}</Focusable>;
 }
 
 // Une conversation privée = son chat ET son appel, sur la même ligne (comme
@@ -84,7 +94,7 @@ function DmRow({ dm, onOpen }: { dm: Dm; onOpen: () => void }) {
       </span>
       <IcChat />
     </Tile>
-    <Tile onClick={onCall} active={dm.active_call} tint={ONLINE}>
+    <Tile onClick={onCall} active={dm.active_call}>
       <span style={{ width: 104, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, fontWeight: 650 }}>{busy ? "…" : <><IcPhone /> {dm.active_call ? t("join") : t("call")}</>}</span>
     </Tile>
   </Focusable>;
@@ -240,7 +250,8 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
     call: [t("xv_call"), t("xv_call_sub")],
     settings: [t("xv_settings"), t("xv_settings_sub")],
   };
-  const scroller = { flex: 1, minHeight: 0, overflowY: "auto" as const, paddingRight: 8 };
+  // Marge de 4 px : une tuile focalisée grossit un peu et son halo était rogné à gauche.
+  const scroller = { flex: 1, minHeight: 0, overflowY: "auto" as const, padding: "4px 8px 4px 4px" };
   const eventsBadge = events && events.length > 0
     ? <span style={{ fontSize: 12, fontWeight: 700, color: liveEvents ? DANGER : undefined, opacity: liveEvents ? 1 : .6 }}>{liveEvents ? `● ${liveEvents}` : events.length}</span>
     : undefined;
@@ -251,10 +262,12 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
   const canBack = nav.index > 0, canForward = nav.index < nav.pages.length - 1;
   return <ExpandedNavContext.Provider value={{ openChat, openMembers }}><ModalRootAny closeModal={closeModal} onCancel={() => { if (!navOnce(up)) closeModal?.(); }} bAllowFullSize>
     <div ref={attachNav} style={{ display: "contents" }}>
+    {/* #43 : le marqueur HORS du panneau — dedans, l'effacement du cadre Steam
+        remontait jusqu'à notre propre fond et rendait la vue transparente. */}
+    <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
     <Focusable flow-children="row" onScroll={pinTop}
       // L1 = 5, R1 = 6 (GamepadButton de @decky/ui) ; même mécanisme que B dans backNav.
       onButtonDown={(e: any) => { const b = e?.detail?.button; if (b === 5) navOnce(back); else if (b === 6) navOnce(forward); }} style={{ ...FULL_BLEED, height: "80vh", display: "flex", overflow: "hidden", borderRadius: 12, background: "#11151d", boxShadow: "0 22px 60px rgba(0,0,0,.55)" }}>
-      <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
       <Focusable flow-children="column" onScroll={pinTop} style={{ width: 268, flexShrink: 0, padding: 14, overflow: "hidden", display: "flex", flexDirection: "column", background: "#20252f", borderRight: "1px solid rgba(255,255,255,.08)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px 17px", fontSize: 18, fontWeight: 800 }}><SteamcordLogo size={32} /> Steamcord</div>
         <div style={{ fontSize: 11, letterSpacing: .8, fontWeight: 700, opacity: .48, padding: "0 10px 7px" }}>{t("xv_navigation")}</div>
@@ -285,7 +298,7 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
               {[...events].sort((a, b) => (b.status === EVENT_ACTIVE ? 1 : 0) - (a.status === EVENT_ACTIVE ? 1 : 0) || String(a.start || "").localeCompare(String(b.start || ""))).map((ev) => <EventRow key={ev.id} ev={ev} />)}
             </Focusable>)
           : mode === "call" ? <div style={scroller}>{callContent}</div>
-          : mode === "settings" ? <div style={scroller}>{settingsContent || <div style={{ opacity: .6 }}>{t("xv_loading_settings")}</div>}</div>
+          : mode === "settings" ? <div className="sc-xv-settings" style={scroller}><style>{SETTINGS_GAPS}</style>{settingsContent || <div style={{ opacity: .6 }}>{t("xv_loading_settings")}</div>}</div>
           : error ? <div style={{ color: "#ff7474" }}>{error}</div>
           : dms === null ? <div style={{ opacity: .65 }}>{t("loading")}</div>
           : <Focusable flow-children="column" style={scroller}>

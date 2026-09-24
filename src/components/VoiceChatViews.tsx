@@ -376,7 +376,7 @@ function SoundTile({ sound, playing, onClick }: { sound: SoundboardSound; playin
   const [focused, setFocused] = useState(false);
   const { px } = useQamUi();
   return (
-    <Btn
+    <Btn noFocusRing
       // PAS de `disabled` : un DialogButton désactivé sort de la navigation
       // manette, donc le focus doit sauter ailleurs dès qu'on joue un son —
       // visible et désagréable. On bloque juste le double-déclenchement dans

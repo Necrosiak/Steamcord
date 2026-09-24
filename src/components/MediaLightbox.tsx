@@ -57,7 +57,7 @@ function SaveButton({ item }: { item: MediaItem }) {
     : t("media_save");
   return (
     <Focusable style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-      <Btn
+      <Btn noFocusRing
         onClick={save}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}

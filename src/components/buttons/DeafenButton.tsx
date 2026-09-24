@@ -33,7 +33,7 @@ export function DeafenButton() {
     );
   }
   return (
-    <DialogButton onClick={() => call("toggle_deafen")} style={style} {...fh}>
+    <DialogButton noFocusRing onClick={() => call("toggle_deafen")} style={style} {...fh}>
       {icon}
     </DialogButton>
   );
