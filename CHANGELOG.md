@@ -16,6 +16,31 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Translations** for the newest labels (overlays, POV grid, quick-reply);
   they currently fall back to English outside EN/FR.
 
+## 1.37.3 — 2026-09-24
+
+### The expanded view gets a real background, and one focus ring
+
+Four details reported in [#43](https://github.com/Necrosiak/Steamcord/issues/43),
+one of which was a bug.
+
+- **The expanded view is no longer see-through.** To hide the frame of Steam's
+  window around the view, Steamcord clears the background of what surrounds
+  it — and the marker it starts from sat *inside* the view, so it cleared the
+  view's own background too. Only the left column stayed opaque. The view now
+  has its solid dark background back; how much of the game shows *behind* it
+  is still up to the **Background dimming** slider (Settings → Opens on).
+- **One focus ring instead of two.** Steam drew its own focus ring on top of
+  Steamcord's, and in the lists (DMs, friends, servers, members) the selected
+  card grew slightly and glowed, and the edge of the list cut that glow flat
+  into a second frame. Steam's ring is turned off wherever Steamcord draws its
+  own, and list cards now show a single, complete white ring.
+- **Spacing in the settings.** In the expanded view, two controls in a row —
+  the two "Opens on" menus, the toggles and the title field — sat against
+  each other. They are now spaced out, as is a control that follows a note.
+  Labels stay attached to the menu they describe.
+- **The GitHub button** in the About section now lights up when the controller
+  is on it.
+
 ## 1.37.2 — 2026-09-24
 
 ### No more error screen in the desktop Steam window

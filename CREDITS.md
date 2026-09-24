@@ -124,6 +124,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - And the question nobody had asked: whether not being able to download an attachment was a limitation. It was not — it had simply never been written, and saving one to the Downloads folder now exists because he asked.
 - And the annoyance nobody had put into words: the panel always opened on Voice and Servers, so anyone who mainly reads text DMs redid the same two controller moves every single time they opened it ([#43](https://github.com/Necrosiak/Steamcord/issues/43)). The opening view is a setting now.
 - And the bigger idea behind it ([#43](https://github.com/Necrosiak/Steamcord/issues/43)): a real full-screen Discord rather than a narrow side panel, pointing at how Deck-Shelves lays one out. It became the expanded view in v1.34.0 — DMs, friends, servers with their members and events, the current call, all navigable with the controller.
+- And the first look at that view once it existed ([#43](https://github.com/Necrosiak/Steamcord/issues/43), fixed in v1.37.3): that its background was see-through, that focus drew two borders, that some settings sat against each other and that the GitHub button showed no focus. The first one was a real bug — the view was clearing its own background — and the second had two causes, not one.
 
 ### [@cymbatpd23](https://github.com/cymbatpd23)
 
