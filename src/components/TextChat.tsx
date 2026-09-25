@@ -1151,7 +1151,10 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         {dms === null && <Notice>{t("loading")}</Notice>}
         {dms && dms.length === 0 && <Notice>{t("no_dms")}</Notice>}
         {dms && dms.length > 0 && (
-          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", marginTop: 4, WebkitOverflowScrolling: "touch" } as any}>
+          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll",
+            // 3 px intérieurs pour l'anneau de focus des rangées (sinon rogné par le
+            // défilement), rendus par la marge négative : la liste reste alignée.
+            margin: "4px -3px 0", padding: 3, boxSizing: "border-box", WebkitOverflowScrolling: "touch" } as any}>
             {dms.map((ch) => (
               <div key={ch.id} style={{ marginBottom: px(4) }}>
                 <RowBtn onClick={() => openChannel(ch.id, ch.name, true)}>
@@ -1196,7 +1199,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
               <span style={{ color: editMode ? "#5865f2" : undefined }}><IcReorder /></span>
             </TinyIconBtn>
           </Focusable>
-          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", marginTop: 4, WebkitOverflowScrolling: "touch" } as any}>
+          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", margin: "4px -3px 0", padding: 3, boxSizing: "border-box", WebkitOverflowScrolling: "touch" } as any}>
             {visibleGuilds.map((guild, i) => {
               // Exactement la rangée de l'onglet vocal (RowBtn + GuildIcon) :
               // c'était la MÊME liste, dessinée de deux façons différentes

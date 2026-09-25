@@ -42,7 +42,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 
 import { patchMenu } from "./patches/menuPatch";
 import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
-import { ACCENT, DANGER, focusHalo, setVeilAlpha } from "./components/Styled";
+import { ACCENT, DANGER, ONLINE, focusHalo, setVeilAlpha } from "./components/Styled";
 
 // Même contournement que dans VoiceChatViews : les types publiés par @decky/ui
 // pour SliderField ne décrivent pas `bottomSeparator`.
@@ -948,7 +948,7 @@ const UpdaterSection = () => {
   // confirmation de Decky, on ne la fait pas surgir sans que l'user l'ait voulu.
   const [auto, setAuto] = useState(false);
   const [status, setStatus] = useState<
-    "idle" | "checking" | "available" | "uptodate" | "installing" | "confirm" | "checkfailed" | "failed" | "needsrestart"
+    "idle" | "checking" | "available" | "uptodate" | "updated" | "installing" | "confirm" | "checkfailed" | "failed" | "needsrestart"
   >("idle");
   const [updErr, setUpdErr] = useState("");
   const [latest, setLatest] = useState("");
@@ -1015,7 +1015,7 @@ const UpdaterSection = () => {
       // Decky recharge le plugin dans la foulée ; on remet quand même l'état au
       // propre au cas où le panneau resterait monté.
       setCurrent((c) => latestRef.current || c);
-      setStatus("uptodate");
+      setStatus("updated");
     };
     backend.addEventListener("loader/plugin_download_start", onStart);
     backend.addEventListener("loader/plugin_download_finish", onFinish);
@@ -1102,8 +1102,11 @@ const UpdaterSection = () => {
             // exactement le « je clique et il ne se passe rien » de #52, donc on
             // finit le parcours nous-mêmes. Le nouveau code sert dès la
             // prochaine ouverture du menu.
+            // #52 (bastiHST90, 24/09) : finir sur « À jour (x) » ne se
+            // distinguait pas d'un clic resté sans effet — il a cru que rien
+            // ne s'était passé. Un état à part dit que ça a marché, et quoi faire.
             setCurrent(latest);
-            setStatus("uptodate");
+            setStatus("updated");
             return;
           } catch {
             // Decky trop ancien pour cette route : on le dit, au lieu de laisser
@@ -1153,6 +1156,7 @@ const UpdaterSection = () => {
     : status === "confirm" ? t("update_confirm_prompt")
     : status === "available" ? t("update_install", { v: latest })
     : status === "uptodate" ? t("update_up_to_date", { v: current })
+    : status === "updated" ? t("update_done", { v: current })
     : status === "checkfailed" ? t("update_check_failed")
     : status === "failed" ? t("update_failed")
     : status === "needsrestart" ? t("update_needs_restart")
@@ -1178,6 +1182,13 @@ const UpdaterSection = () => {
           {status === "failed" ? <IcWarn /> : <IcRefresh />} {label}
         </WideBtn>
       </SR>
+      {status === "updated" ? (
+        <SR>
+          <div style={{ fontSize: "11px", color: ONLINE, padding: "2px 4px", lineHeight: 1.35 }}>
+            {t("update_done_note", { v: current })}
+          </div>
+        </SR>
+      ) : null}
       {(status === "failed" || status === "checkfailed") && updErr ? (
         <SR>
           <div style={{ fontSize: "11px", opacity: 0.8, padding: "2px 4px", wordBreak: "break-word" }}>
@@ -2027,9 +2038,22 @@ const KeepAwakeSetting = () => {
   );
 };
 
+// #43 (moi952) : les rangées de réglages n'ont aucune marge propre — deux
+// contrôles se touchaient (menus déroulants à 1 px, interrupteurs collés au
+// champ de texte). On espace deux rangées interactives qui se suivent ; une note
+// sous son contrôle reste collée. Même écart après la note d'un contrôle
+// (contrôle, note en 11 px, contrôle suivant) ; un libellé posé au-dessus de son
+// menu (12 px) ne bouge pas. Posé ici et plus dans la vue agrandie seule : le
+// QAM montre les mêmes réglages et avait le même défaut (retour moi952 24/09).
+const CTL = ":has(button, input, .Focusable)";
+const NOTE = `:not(${CTL}):has(> div[style*="font-size: 11px"])`;
+const SETTINGS_GAPS = `.sc-settings > *${CTL} + *${CTL},
+.sc-settings > *${CTL} + *${NOTE} + *${CTL} { margin-top: 8px; }`;
+
 const ConfigPanel = () => {
   return (
-    <div>
+    <div className="sc-settings">
+      <style>{SETTINGS_GAPS}</style>
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcController /> {t("config_status")}</div>
       </SR>

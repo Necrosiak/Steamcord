@@ -605,7 +605,7 @@ export function ChatView({ channelId, channelName, isDm, onClosed, embedded }:
         <div
           id={FS_MSG_LIST_ID}
           ref={attachShortcutList}
-          style={{ flex: 1, overflowY: "auto", paddingRight: 4, display: "flex", flexDirection: "column-reverse", overflowAnchor: "none" }}
+          style={{ flex: 1, overflowY: "auto", /* #43 : 3 px à gauche, sinon l'anneau du message focalisé est rogné */ padding: "0 4px 0 3px", display: "flex", flexDirection: "column-reverse", overflowAnchor: "none" }}
           onScroll={(e: any) => {
             // Un scroll qui n'est PAS le nôtre (stick manette, gâchette) veut
             // dire que l'utilisateur reprend la main : l'ancre posée sur ce

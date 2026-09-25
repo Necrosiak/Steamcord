@@ -254,7 +254,7 @@ export function ChannelBrowser() {
         </TinyIconBtn>
         <TinyIconBtn onClick={refresh}><IcRefresh /></TinyIconBtn>
       </Focusable>
-      <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
+      <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto", margin: "0 -3px", padding: 3, boxSizing: "border-box" }}>
         {visibleGuilds.map((guild, i) => {
           const totalActive = guild.channels.reduce((n, c) => n + (c.members?.length ?? 0), 0);
           return (

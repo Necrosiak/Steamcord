@@ -38,18 +38,21 @@ const samePage = (a: Page, b: PageKind) => {
 // La navigation manette appelle scrollIntoView sur l'élément focalisé, et le
 // navigateur fait défiler TOUS les ancêtres, overflow:hidden compris : la carte
 // entière montait et la barre latérale sortait de l'écran (retour user 15/09).
-// Seule la colonne de droite a le droit de défiler ; les autres sont ramenées.
-// #43 (moi952) : les réglages sont ceux du QAM, dont les rangées n'ont aucune
-// marge propre — dans la vue agrandie deux contrôles se touchaient (menus
-// déroulants à 1 px, interrupteurs collés au champ de texte). On espace deux
-// rangées interactives qui se suivent ; une note sous son contrôle reste collée.
-// Même écart après la note d'un contrôle (contrôle, note en 11 px, contrôle
-// suivant) ; un libellé posé au-dessus de son menu (12 px) ne bouge pas.
-const CTL = ":has(button, input, .Focusable)";
-const NOTE = `:not(${CTL}):has(> div[style*="font-size: 11px"])`;
-const SETTINGS_GAPS = `.sc-xv-settings > div > *${CTL} + *${CTL},
-.sc-xv-settings > div > *${CTL} + *${NOTE} + *${CTL} { margin-top: 8px; }`;
+// Seule la colonne de droite a le droit de défiler (plus la barre latérale quand
+// elle ne tient pas en hauteur, voir SIDEBAR_FIT) ; les autres sont ramenées.
 const pinTop = (e: any) => { if (e.currentTarget.scrollTop) e.currentTarget.scrollTop = 0; };
+// #52 (bastiHST90, 24/09) : sur un Steam Deck la fenêtre Big Picture ne fait
+// que 853×533 px CSS, la vue (80vh) ~427 px, et les sept entrées de la barre
+// latérale en demandaient ~460 — « Retour au panneau » sortait par le bas, coupé.
+// Sous 640 px de haut on resserre ; et si ça ne suffit toujours pas, la barre
+// défile (sans barre visible) au lieu de rogner.
+const SIDEBAR_FIT = `.sc-xv-side::-webkit-scrollbar { display: none; }
+@media (max-height: 640px) {
+  .sc-xv-side { padding-top: 8px !important; padding-bottom: 8px !important; }
+  .sc-xv-brand { padding: 2px 8px 8px !important; }
+  .sc-xv-item { padding-top: 7px !important; padding-bottom: 7px !important; margin-bottom: 3px !important; }
+  .sc-xv-foot { padding-top: 6px !important; }
+}`;
 
 function Avatar({ dm }: { dm: Dm }) {
   const name = dm.name || "?";
@@ -61,7 +64,7 @@ function Avatar({ dm }: { dm: Dm }) {
 
 function SidebarItem({ active, icon, label, badge, onPick }: { active: boolean; icon: any; label: string; badge?: any; onPick: () => void }) {
   const [focused, setFocused] = useState(false);
-  return <Focusable noFocusRing onClick={onPick} onActivate={onPick} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: 8, marginBottom: 5, background: active ? "rgba(88,101,242,.82)" : focused ? "rgba(255,255,255,.13)" : "transparent", fontWeight: active ? 700 : 500, ...focusHalo("#fff", focused, 1.02) }}>{icon}<span style={{ flex: 1 }}>{label}</span>{badge}</Focusable>;
+  return <Focusable noFocusRing onClick={onPick} onActivate={onPick} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} className="sc-xv-item" style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: 8, marginBottom: 5, background: active ? "rgba(88,101,242,.82)" : focused ? "rgba(255,255,255,.13)" : "transparent", fontWeight: active ? 700 : 500, ...focusHalo("#fff", focused, 1.02) }}>{icon}<span style={{ flex: 1 }}>{label}</span>{badge}</Focusable>;
 }
 
 function Tile({ children, onClick, flex, active, onSecondary }: { children: any; onClick: () => void; flex?: boolean; active?: boolean; onSecondary?: () => void }) {
@@ -268,8 +271,9 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
     <Focusable flow-children="row" onScroll={pinTop}
       // L1 = 5, R1 = 6 (GamepadButton de @decky/ui) ; même mécanisme que B dans backNav.
       onButtonDown={(e: any) => { const b = e?.detail?.button; if (b === 5) navOnce(back); else if (b === 6) navOnce(forward); }} style={{ ...FULL_BLEED, height: "80vh", display: "flex", overflow: "hidden", borderRadius: 12, background: "#11151d", boxShadow: "0 22px 60px rgba(0,0,0,.55)" }}>
-      <Focusable flow-children="column" onScroll={pinTop} style={{ width: 268, flexShrink: 0, padding: 14, overflow: "hidden", display: "flex", flexDirection: "column", background: "#20252f", borderRight: "1px solid rgba(255,255,255,.08)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px 17px", fontSize: 18, fontWeight: 800 }}><SteamcordLogo size={32} /> Steamcord</div>
+      <Focusable flow-children="column" className="sc-xv-side" style={{ width: 268, flexShrink: 0, padding: 14, overflowX: "hidden", overflowY: "auto", scrollbarWidth: "none", display: "flex", flexDirection: "column", background: "#20252f", borderRight: "1px solid rgba(255,255,255,.08)" } as any}>
+        <style>{SIDEBAR_FIT}</style>
+        <div className="sc-xv-brand" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px 17px", fontSize: 18, fontWeight: 800, flexShrink: 0 }}><SteamcordLogo size={32} /> Steamcord</div>
         <div style={{ fontSize: 11, letterSpacing: .8, fontWeight: 700, opacity: .48, padding: "0 10px 7px" }}>{t("xv_navigation")}</div>
         <SidebarItem active={mode === "dms"} icon={<IcUser />} label={t("xv_dms")} onPick={() => go("dms")} />
         <SidebarItem active={mode === "friends"} icon={<FaUserFriends />} label={t("friends")} onPick={() => go("friends")} />
@@ -281,7 +285,7 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
             ouvre cette vue depuis le QAM. Le pense-bête « B · Retour » ne
             suffisait pas — surtout quand la vue s'ouvre toute seule au
             démarrage, où rien ne dit comment revenir au panneau. */}
-        <div style={{ marginTop: "auto", paddingTop: 12 }}>
+        <div className="sc-xv-foot" style={{ marginTop: "auto", paddingTop: 12 }}>
           <SidebarItem active={false} icon={<IcPanel />} label={t("xv_to_panel")} badge={page.from === null ? <span style={{ fontSize: 11, opacity: .5 }}>B</span> : undefined} onPick={() => closeModal?.()} />
         </div>
       </Focusable>
@@ -298,7 +302,7 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
               {[...events].sort((a, b) => (b.status === EVENT_ACTIVE ? 1 : 0) - (a.status === EVENT_ACTIVE ? 1 : 0) || String(a.start || "").localeCompare(String(b.start || ""))).map((ev) => <EventRow key={ev.id} ev={ev} />)}
             </Focusable>)
           : mode === "call" ? <div style={scroller}>{callContent}</div>
-          : mode === "settings" ? <div className="sc-xv-settings" style={scroller}><style>{SETTINGS_GAPS}</style>{settingsContent || <div style={{ opacity: .6 }}>{t("xv_loading_settings")}</div>}</div>
+          : mode === "settings" ? <div style={scroller}>{settingsContent || <div style={{ opacity: .6 }}>{t("xv_loading_settings")}</div>}</div>
           : error ? <div style={{ color: "#ff7474" }}>{error}</div>
           : dms === null ? <div style={{ opacity: .65 }}>{t("loading")}</div>
           : <Focusable flow-children="column" style={scroller}>

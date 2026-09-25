@@ -463,7 +463,11 @@ export function RowBtn({
         background: active
           ? c
           : focused ? (sub ? hexA(c, 0.7) : hexA(c, 0.85)) : "rgba(255,255,255,0.05)",
-        ...focusHalo(c, focused, sub ? 1.01 : 1.02),
+        // Anneau blanc seul, sans agrandissement ni lueur : ces rangées vivent
+        // dans des listes qui défilent, où tout ce qui dépasse est coupé net et
+        // dessinait un 2e cadre — même correctif que les listes de la vue
+        // agrandie (#43, moi952).
+        ...listHalo(focused),
       }}
     >
       {children}
