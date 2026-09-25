@@ -91,6 +91,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - The update button that appeared to do nothing, and the edit that turned the report into a diagnosis: after a reboot he *was* on the latest build ([#52](https://github.com/Necrosiak/Steamcord/issues/52), fixed in v1.37.0). That single detail said the files were being written and never loaded, which is exactly what was happening — and had been for every plugin here, silently, for months. The same report asked for a way to dim the background behind the expanded view
 - Coming back after the release to say the new dimming slider darkened his game every time the Quick Access menu or a notification appeared, and that he would rather lose the slider than live with it ([#52](https://github.com/Necrosiak/Steamcord/issues/52), fixed in v1.37.1). The slider stays; what it left behind does not
+- The first look at the expanded view on an actual Steam Deck ([#52](https://github.com/Necrosiak/Steamcord/issues/52)), with a screenshot: the last entry of the sidebar cut off at the bottom, one setting still in English in the German interface, and an update that worked but said nothing about it. The screenshot was what mattered — at the Deck's 853×533 the view is about 427 px tall and the sidebar needed 466, which no bigger screen shows. The untranslated line turned out to be one of 80, missing in seven languages
 
 ### [@zomars](https://github.com/zomars)
 
@@ -125,6 +126,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - And the annoyance nobody had put into words: the panel always opened on Voice and Servers, so anyone who mainly reads text DMs redid the same two controller moves every single time they opened it ([#43](https://github.com/Necrosiak/Steamcord/issues/43)). The opening view is a setting now.
 - And the bigger idea behind it ([#43](https://github.com/Necrosiak/Steamcord/issues/43)): a real full-screen Discord rather than a narrow side panel, pointing at how Deck-Shelves lays one out. It became the expanded view in v1.34.0 — DMs, friends, servers with their members and events, the current call, all navigable with the controller.
 - And the first look at that view once it existed ([#43](https://github.com/Necrosiak/Steamcord/issues/43), fixed in v1.37.3): that its background was see-through, that focus drew two borders, that some settings sat against each other and that the GitHub button showed no focus. The first one was a real bug — the view was clearing its own background — and the second had two causes, not one.
+- And the second look, the same morning ([#43](https://github.com/Necrosiak/Steamcord/issues/43)): that the spacing and border fixes had reached the expanded view but not the Quick Access panel, and that a selected message in the expanded chat had its left border cut off.
 
 ### [@cymbatpd23](https://github.com/cymbatpd23)
 
@@ -156,3 +158,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - Five fixes carried over from his [GameModeCord](https://github.com/Memberoffoxhound/GameModeCord) fork, all of them things nobody had reported because they look like the plugin working as intended. The QAM was sized in Deck-absolute pixels, so on a 1440p or 4K Game Mode session everything rendered tiny and `DialogButton`'s `minHeight: 0` clipped the icons — he measured the panel instead, through the element's `ownerDocument`, having found the same 1×1 px window trap that `useFillHeight` documents. B closed the whole panel from wherever you stood rather than walking back one menu, and he bound the handler on the real DOM node in capture phase after hitting the `FooterLegend` problem the fullscreen chat already had. Chat images opened in the Steam browser, dropping you out of the game to look at one picture, and video attachments were counted as plain files and never shown at all.
 - The one that was a real bug for everyone on Bazzite: the Game Mode screen share was hardcoded to `/dev/video42` and the "Steamcord Screen" label, while Bazzite loads v4l2loopback as "OBS Virtual Camera" on `/dev/video0`. Every check failed and the button did nothing, silently, with nothing in the log — he replaced all three with a sysfs lookup, and made the feeder exiting immediately report itself instead of being announced as a success.
 - And the smallest one with the widest reach: both share buttons were gated on `vc.channel_name`, which a DM call does not have, so screen sharing was simply absent from every private call.
+
+### [@bookcasey](https://github.com/bookcasey)
+
+- The hang-up button’s icon, from the [Steamcord fork](https://github.com/bookcasey/Steamcord): a phone with a line through it instead of a plug, which read as "unplug something" rather than "leave the call".

@@ -13,8 +13,34 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
-- **Translations** for the newest labels (overlays, POV grid, quick-reply);
-  they currently fall back to English outside EN/FR.
+
+## 1.38.0 — 2026-09-25
+
+### The expanded view fits a Steam Deck, and Steamcord speaks seven more languages properly
+
+Reported in [#52](https://github.com/Necrosiak/Steamcord/issues/52) and
+[#43](https://github.com/Necrosiak/Steamcord/issues/43).
+
+- **The sidebar of the expanded view no longer gets cut off on a Steam Deck.**
+  At the Deck's resolution the view is about 427 px tall, and the sidebar
+  needed 466: *Back to panel* slid off the bottom. On short screens the sidebar
+  now tightens its spacing, and if that is still not enough it scrolls instead
+  of clipping. Larger screens are unchanged.
+- **80 labels were missing in German, Spanish, Italian, Portuguese, Dutch,
+  Polish and Russian.** "Show current game on Discord" was the one that got
+  noticed; the rest — overlays, microphone processing, video, logout, server
+  reordering, reply and typing indicators — were quietly falling back to
+  English too. All of them are translated now.
+- **A successful update now says so.** After installing, the button used to
+  read "Up to date", exactly like a click that did nothing. It now reads
+  "Updated to x ✓", with a note to close and reopen the Quick Access menu.
+- **The Quick Access panel gets the fixes from 1.37.3.** Settings that sat
+  against each other are spaced there too, and the server, channel and DM
+  lists draw one clean focus ring instead of a glow clipped into a second
+  frame.
+- **A selected message in the chat no longer has its left border cut off.**
+- **The hang-up button shows a phone, not a plug** — contributed by
+  [@bookcasey](https://github.com/bookcasey).
 
 ## 1.37.3 — 2026-09-24
 
