@@ -1,7 +1,7 @@
 import { call } from "@decky/api";
 import { DialogButton } from "@decky/ui";
 import { useState } from "react";
-import { FaPlug } from "react-icons/fa";
+import { FaPhoneSlash } from "react-icons/fa";
 import { focusHalo, DANGER, toolbarBtnStyle } from "../Styled";
 import { useQamUi } from "../../qamUi";
 
@@ -24,13 +24,13 @@ export function DisconnectButton() {
     return (
       <button onClick={() => call("disconnect_vc")} {...fh}
         style={{ ...style, border: "none", cursor: "pointer" }}>
-        <FaPlug size={px(20)} />
+        <FaPhoneSlash size={px(20)} />
       </button>
     );
   }
   return (
     <DialogButton noFocusRing onClick={() => call("disconnect_vc")} style={style} {...fh}>
-      <FaPlug size={px(20)} />
+      <FaPhoneSlash size={px(20)} />
     </DialogButton>
   );
 }
