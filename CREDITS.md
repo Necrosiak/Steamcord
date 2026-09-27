@@ -154,6 +154,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@silverxlotus](https://github.com/silverxlotus)
 
 - Go Live working once and then failing silently until Steamcord restarted Vesktop ([#57](https://github.com/Necrosiak/Steamcord/issues/57), fixed in v1.39.0). The report came with exact steps and a complete log, and the log held the answer: every Go Live opened three screen captures, the second attempt landed while two of them were still open, and it was the timing of their two failures — 16 and 17 seconds after the previous share — that pointed at the captures Vesktop's picker opens and keeps for 30 seconds.
+- Game audio heard in the microphone instead of the stream when sharing game audio during a Go Live ([#58](https://github.com/Necrosiak/Steamcord/issues/58), fixed in v1.39.1). The log showed Go Live and game-audio sharing turned on one after the other, which pointed at the two routings fighting over the same game streams.
 
 # Code contributions
 

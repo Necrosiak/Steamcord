@@ -35,6 +35,11 @@ export function GameAudioShare() {
 
   // L'état vit au backend (survit au démontage du QAM) → resync au montage.
   useEffect(() => { refresh(); }, []);
+  // Arrêté ailleurs (question posée à l'arrêt du Go Live) → resync.
+  useEffect(() => {
+    window.addEventListener("steamcord-game-audio-changed", refresh);
+    return () => window.removeEventListener("steamcord-game-audio-changed", refresh);
+  }, []);
 
   if (!state?.vc?.channel_name) return null;
 

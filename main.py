@@ -166,15 +166,39 @@ _REHANDSHAKE_JS = """
 """
 
 
+# Client absent du document ALORS QUE la page a fini de charger. Vécu 27/09 19:29
+# (et probable #56) : Vesktop fraîchement relancé, sa navigation initiale vers
+# /app démarre ~100 ms AVANT notre addScriptToEvaluateOnNewDocument → ce document-là
+# n'a jamais le script, et le Page.reload envoyé derrière est avalé par la
+# navigation en cours → page sans STEAMCORD_WS pour toujours, QAM figé sur
+# « Initialisation… ». STEAMCORD_IS_VESKTOP est posé en tête du script injecté :
+# son absence = document jamais injecté (pas de risque de double exécution).
+_CLIENT_MISSING_JS = """
+(() => (document.readyState === "complete" && !window.STEAMCORD_IS_VESKTOP) ? "missing" : "ok")()
+"""
+
+
 async def _ensure_handshake(tab: Tab):
     # Poll for up to ~30s: as soon as the backend is loaded we're done; otherwise
     # nudge the client to re-emit the handshake. Idempotent (LOADED just re-sets the
     # flag, CONNECTION_OPEN refreshes the current user). Bounded so the QR/login flow
     # (never "loaded" until the user scans) doesn't loop forever.
-    for _ in range(30):
+    reloads = 0
+    tries = 30
+    while tries > 0:
+        tries -= 1
         if Plugin.evt_handler.loaded:
             return
         try:
+            res = await tab.evaluate(_CLIENT_MISSING_JS, wait=True)
+            val = (((res or {}).get("result") or {}).get("result") or {}).get("value")
+            if val == "missing" and reloads < 2:
+                reloads += 1
+                tries = 30
+                logger.warning(f"[launchdiag] client absent du document chargé → rechargement ({reloads}/2)")
+                await tab._send_devtools_cmd({"method": "Page.reload", "params": {}}, False)
+                await sleep(3)
+                continue
             await tab.evaluate(_REHANDSHAKE_JS)
         except Exception:
             pass
@@ -2702,6 +2726,23 @@ class Plugin:
     # consommateur fantôme doit persister avant qu'on redémarre Vesktop.
     GHOST_TICKS_BEFORE_RECOVERY = 3
 
+    @staticmethod
+    def _release_shim_sessions():
+        """SIGUSR1 → portal_shim.close_all(), même règle que gst_webrtc : PID lu
+        dans le pidfile et revérifié dans /proc (SIGUSR1 tue par défaut)."""
+        import os, signal as _sig
+        import vesktop as _v
+        rt = _v._user_env().get("XDG_RUNTIME_DIR") or "/run/user/1000"
+        try:
+            with open(os.path.join(rt, "steamcord-portal-shim.pid")) as f:
+                pid = int(f.read().strip())
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                if b"portal_shim.py" not in f.read():
+                    return
+            os.kill(pid, _sig.SIGUSR1)
+        except Exception as e:
+            logger.info(f"[screendiag] sessions portail non relâchées: {e!r}")
+
     @classmethod
     async def _watch_ghost_capture(cls, objs, nodes):
         """Détecte un flux de capture Vesktop ORPHELIN sur le node gamescope.
@@ -2773,6 +2814,17 @@ class Plugin:
             cls._ghost_ticks = 0
             return
         cls._ghost_ticks = 0
+        # EN APPEL : ne jamais tuer Vesktop — ça éjecte l'utilisateur du vocal
+        # (vécu 27/09 20:02, ~30 s après l'arrêt d'un Go Live). Avec la capture
+        # directe (#57), Chromium garde parfois le capteur 15 à 30 s de plus puis
+        # le lâche seul, et un Go Live relancé entre-temps RÉUTILISE ce capteur
+        # (mesuré 20:00:20) : « plus aucun Go Live possible » n'est plus vrai.
+        # On se contente de fermer les sessions portail, sans rien couper.
+        if getattr(cls.evt_handler, "vc_channel_id", None) is not None:
+            cls._release_shim_sessions()
+            logger.warning("[screendiag] capture orpheline mais appel en cours → "
+                           "sessions portail fermées, Vesktop PAS redémarré")
+            return
         logger.warning("[screendiag] redémarrage de Vesktop pour libérer la capture "
                        "orpheline (sinon plus aucun Go Live n'est possible)")
         import vesktop as _v
@@ -2970,17 +3022,26 @@ class Plugin:
             # CAPTURE le mix micro+jeu à la place du micro.
             out_target = out_target or cls._ga_real_sink
             in_target = "steamcord_mic"
+        # #58 : pendant un Go Live, le jeu appartient au sink du partage. Le
+        # renvoyer dans `steamcord_game` vidait le stream et ne laissait le jeu
+        # que dans le micro — le spectateur l'entendait même stream coupé. Le
+        # mix du micro lit alors le monitor du partage (_ga_sync_game_branch).
+        on_share = cls._ga_active and cls._golive_game_on_share()
+        game_target = "steamcord_share_sink" if on_share else "steamcord_game"
+        own = set(cls._ga_modules) | set(cls._golive_bridge_mods)
         try:
             if out_target or cls._ga_active:
                 for si in loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(si):
                         if out_target:
                             await cls._pactl("move-sink-input", str(si.get("index")), out_target)
-                    elif cls._ga_active and str(si.get("owner_module", "")) not in cls._ga_modules:
+                    elif cls._ga_active and str(si.get("owner_module", "")) not in own:
                         # Tout le reste (jeu, système) joue dans le sink jeu — les
                         # nouveaux flux y vont déjà (default sink), ceci rattrape les
                         # apps qui ciblent un sink explicite. Move idempotent.
-                        await cls._pactl("move-sink-input", str(si.get("index")), "steamcord_game")
+                        await cls._pactl("move-sink-input", str(si.get("index")), game_target)
+            if cls._ga_active:
+                await cls._ga_sync_game_branch(on_share)
             if in_target:
                 for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
                     if cls._is_vesktop_stream(so):
@@ -2993,6 +3054,43 @@ class Plugin:
             logger.warning(f"audio routing failed: {e!r}")
 
     @classmethod
+    def _golive_game_on_share(cls):
+        """Le pont du Go Live est monté ET isole le jeu (sortie réelle connue)."""
+        return bool(cls._golive_bridge_mods) and bool(cls._golive_bridge_real_sink)
+
+    @classmethod
+    async def _ga_sync_game_branch(cls, on_share):
+        """Branche 🎮 du mix micro : elle lit le jeu là où il joue.
+
+        Hors Go Live, le jeu est dans `steamcord_game` ; pendant, il est dans
+        `steamcord_share_sink` (#58). On déplace la capture du loopback plutôt
+        que de le recréer : sa jauge (volume du sink-input) reste intacte.
+        """
+        from json import loads
+        mid = cls._ga_loop_mod.get("game")
+        if not mid:
+            return
+        src = "steamcord_share_sink.monitor" if on_share else "steamcord_game.monitor"
+        try:
+            # Le JSON de pactl donne `source` en index, jamais en nom.
+            src_idx = None
+            for line in (await cls._pactl("list", "sources", "short")).splitlines():
+                parts = line.split("\t")
+                if len(parts) > 1 and parts[1] == src:
+                    src_idx = parts[0]
+            if src_idx is None:
+                return
+            for so in loads(await cls._pactl("list", "source-outputs", want_json=True) or "[]"):
+                if str(so.get("owner_module")) != str(mid):
+                    continue
+                if str(so.get("source")) == src_idx:
+                    return
+                out = await cls._pactl("move-source-output", str(so.get("index")), src)
+                logger.info("[gameaudio] branche jeu du micro → %s (%s)", src, out.strip() or "ok")
+        except Exception as e:
+            logger.warning(f"[gameaudio] branche jeu → {src}: {e!r}")
+
+    @classmethod
     async def _audio_routing_watcher(cls):
         # Les flux Vesktop apparaissent/disparaissent (à chaque appel) → on ré-applique
         # le routage périodiquement pour qu'un nouveau flux suive le choix de l'user.
@@ -3000,6 +3098,13 @@ class Plugin:
             try:
                 if cls._audio_out or cls._audio_in or cls._ga_active:
                     await cls._apply_audio_routing()
+                # Go Live sans partage du son du jeu : le jeu n'était routé qu'au
+                # montage du pont → un jeu lancé APRÈS le début du stream restait
+                # sur le casque, absent du stream (mesuré 27/09 : flux OpenAL
+                # « steam » → HDMI, share sink vide). Avec le partage actif,
+                # _apply_audio_routing s'en charge déjà.
+                elif cls._golive_bridge_mods:
+                    await cls._golive_route_game(True)
             except Exception:
                 pass
             await sleep(4)
@@ -3626,6 +3731,10 @@ class Plugin:
                 # n'entre jamais dans ce sink — la boucle est impossible par
                 # construction, pas par filtrage.
                 real = cls._audio_out or (await cls._pactl("get-default-sink")).strip()
+                # #58 : « partager le son du jeu » actif = la sortie par défaut est
+                # `steamcord_game` ; sans ce repli le jeu n'était pas isolé.
+                if cls._ga_active and cls._ga_real_sink and "steamcord_" in real:
+                    real = cls._ga_real_sink
                 if real and "steamcord_" not in real:
                     cls._golive_bridge_real_sink = real
                     # ⚠️ ROUTER LE JEU D'ABORD, les loopbacks ensuite. Dans l'autre
@@ -3669,6 +3778,11 @@ class Plugin:
         # Rendre les flux à la vraie sortie AVANT de démonter le sink, sinon ils
         # se retrouvent orphelins et PipeWire les recase où il veut.
         await cls._golive_route_game(False)
+        # #58 : la branche jeu du micro lisait le monitor du partage ; la
+        # rebrancher AVANT de décharger le sink, sinon PipeWire la recase sur
+        # la source par défaut — `steamcord_mic`, c'est-à-dire le mix lui-même.
+        if cls._ga_active:
+            await cls._ga_sync_game_branch(False)
         mods, cls._golive_bridge_mods = cls._golive_bridge_mods, []
         # Dans l'ordre inverse du montage : le loopback et le remap tiennent le
         # sink, qui refuserait de partir en premier.
@@ -3770,11 +3884,22 @@ class Plugin:
         """
         from json import loads
         target = "steamcord_share_sink" if into_share else cls._golive_bridge_real_sink
+        if not into_share and cls._ga_active:
+            target = "steamcord_game"   # #58 : le partage du son du jeu reprend la main
         if not target:
             return
+        own = set(cls._ga_modules) | set(cls._golive_bridge_mods)
         try:
+            # Appelé aussi toutes les 4 s pendant un Go Live → ne pas re-déplacer
+            # ce qui est déjà en place (pactl rend `sink` en INDEX, pas en nom).
+            target_idx = None
+            for sk in loads(await cls._pactl("list", "sinks", want_json=True) or "[]"):
+                if sk.get("name") == target:
+                    target_idx = str(sk.get("index"))
             for si in loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]"):
-                if cls._is_vesktop_stream(si):
+                if cls._is_vesktop_stream(si) or str(si.get("owner_module", "")) in own:
+                    continue
+                if target_idx is not None and str(si.get("sink")) == target_idx:
                     continue
                 props = si.get("properties", {}) or {}
                 # Nos propres flux ne doivent JAMAIS être déplacés : le retour
@@ -4748,9 +4873,17 @@ class Plugin:
                         break
             if real and "steamcord_" not in real:
                 await cls._pactl("set-default-sink", real)
+                own = set(cls._ga_modules) | set(cls._golive_bridge_mods)
+                # #58 : Go Live en cours → le jeu retourne dans le sink du partage,
+                # pas sur la vraie sortie (le stream perdrait son son).
+                share = cls._golive_game_on_share()
                 for si in loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]"):
-                    if str(si.get("owner_module", "")) not in cls._ga_modules:
-                        await cls._pactl("move-sink-input", str(si.get("index")), real)
+                    if str(si.get("owner_module", "")) in own:
+                        continue
+                    dest = real
+                    if share and not cls._is_vesktop_stream(si):
+                        dest = "steamcord_share_sink"
+                    await cls._pactl("move-sink-input", str(si.get("index")), dest)
             # Restaurer la source par défaut (le micro virtuel va être déchargé).
             src = cls._ga_real_source
             if not src or "steamcord_" in src:

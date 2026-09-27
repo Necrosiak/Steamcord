@@ -1,4 +1,4 @@
-import { DialogButton } from "@decky/ui";
+import { ConfirmModal, DialogButton, showModal } from "@decky/ui";
 import { useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaDesktop, FaStop } from "react-icons/fa";
@@ -8,6 +8,27 @@ import { focusHalo, ACCENT, DANGER } from "../Styled";
 import { useQamUi } from "../../qamUi";
 
 const Btn = DialogButton as any;
+
+// Le partage du son du jeu est un bouton À PART (il sert aussi sans Go Live) :
+// l'arrêt du stream ne le coupe pas d'office, il DEMANDE. B / Annuler = garder,
+// le choix qui ne change rien ; OK = arrêter le partage du son.
+async function askKeepGameAudio() {
+  try {
+    const r = await call<[], { active: boolean }>("get_game_audio");
+    if (!r?.active) return;
+  } catch { return; }
+  showModal(<ConfirmModal
+    strTitle={t("golive_ga_title")}
+    strDescription={t("golive_ga_text")}
+    strOKButtonText={t("game_audio_stop")}
+    strCancelButtonText={t("golive_ga_keep")}
+    onOK={() => {
+      call("stop_game_audio")
+        .then(() => window.dispatchEvent(new Event("steamcord-game-audio-changed")))
+        .catch(() => {});
+    }}
+  />);
+}
 
 export function GoLiveButton() {
   const state = useSteamcordState();
@@ -47,7 +68,8 @@ export function GoLiveButton() {
         setCoolingDown(true);
         setTimeout(() => setCoolingDown(false),
                    live ? STOP_COOLDOWN_MS : START_COOLDOWN_MS);
-        call(live ? "stop_go_live" : "go_live");
+        if (live) call("stop_go_live").then(askKeepGameAudio).catch(() => {});
+        else call("go_live");
       }}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}

@@ -14,6 +14,36 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.39.1 — 2026-09-27
+
+### Game audio stays in the stream, and stopping a Go Live no longer drops the call
+
+Reported in [#58](https://github.com/Necrosiak/Steamcord/issues/58).
+
+- **Sharing game audio during a Go Live no longer steals the game from the
+  stream.** Turning on *Share game audio* while live moved every game sound,
+  and the Go Live's own audio link with it, into the voice mix: viewers got a
+  silent stream and the call heard the game through the microphone. The game
+  now goes to both, the stream and the call, and stopping either one leaves
+  the other untouched.
+- **Sounds that start after the Go Live are now in the stream.** Game audio
+  was only routed when the share started, so a game launched mid-stream, or
+  anything else that began playing afterwards, stayed on your headset and
+  viewers never heard it. New sounds now join the stream within seconds.
+- **Stopping a Go Live asks whether to keep game audio in the call.** *Share
+  game audio* is its own button and works without a stream, so stopping the
+  stream no longer decides for you: keep it (B) or stop sharing it.
+- **Stopping a Go Live no longer kicks you out of the call.** After a Go Live,
+  the screen capture can stay open for up to about 30 seconds, and a
+  safeguard meant for stuck captures restarted Vesktop, which dropped the
+  call. During a call it now only closes the capture session and leaves
+  Vesktop running.
+- **Steamcord no longer gets stuck on "Initializing…" when Vesktop starts at
+  the same moment as the plugin.** The Discord page could finish loading a
+  fraction of a second before Steamcord hooked into it, and the reload meant
+  to fix that was swallowed by the page load in progress. Steamcord now
+  checks the page and reloads it again if its client is missing.
+
 ## 1.39.0 — 2026-09-27
 
 ### Go Live works again after a quick restart, and voice can stay in Gaming Mode
