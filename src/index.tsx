@@ -75,6 +75,7 @@ import {
 } from "./components/VoiceChatViews";
 import { GoLiveButton } from "./components/buttons/GoLiveButton";
 import { ScreenCameraButton } from "./components/buttons/ScreenCameraButton";
+import { isScreenCamOn, subscribeScreenCam } from "./screenCam";
 import { GameAudioShare } from "./components/buttons/GameAudioShare";
 import { ChannelBrowser } from "./components/ChannelBrowser";
 import { DMBrowser } from "./components/DMBrowser";
@@ -320,6 +321,44 @@ const setVeil = (v: number) => {
 // fois qu'une vue s'ouvre, sans attendre que le panneau soit monté.
 setVeilAlpha(getVeil() / 100);
 
+// #55 — en mode Bureau, le plugin reste utilisable pour les messages sans
+// encombrer la session avec l'interface vocal. Défaut volontairement prudent :
+// vocal en Gamescope uniquement. Une détection inconnue laisse le vocal
+// accessible, pour ne jamais masquer une fonction sur un OS non reconnu.
+const VOICE_GAMESCOPE_ONLY_KEY = "steamcord_voice_gamescope_only";
+let voiceGamescopeOnly = (() => {
+  try { return localStorage.getItem(VOICE_GAMESCOPE_ONLY_KEY) !== "0"; } catch { return true; }
+})();
+const voiceEnvListeners = new Set<(v: boolean) => void>();
+const setVoiceGamescopeOnly = (v: boolean) => {
+  voiceGamescopeOnly = !!v;
+  try { localStorage.setItem(VOICE_GAMESCOPE_ONLY_KEY, v ? "1" : "0"); } catch { }
+  for (const listener of voiceEnvListeners) listener(voiceGamescopeOnly);
+  call("set_voice_gamescope_only", voiceGamescopeOnly).catch(() => {});
+};
+const useVoiceGamescopeOnly = () => {
+  const [enabled, setEnabled] = useState(voiceGamescopeOnly);
+  useEffect(() => {
+    const listener = (v: boolean) => setEnabled(v);
+    voiceEnvListeners.add(listener);
+    call<[], { gamescope_only?: boolean }>("get_voice_gamescope_only")
+      .then((r) => {
+        if (typeof r?.gamescope_only !== "boolean") return;
+        const localMissing = readStored(VOICE_GAMESCOPE_ONLY_KEY) === null;
+        if (localMissing) {
+          voiceGamescopeOnly = r.gamescope_only;
+          try { localStorage.setItem(VOICE_GAMESCOPE_ONLY_KEY, r.gamescope_only ? "1" : "0"); } catch { }
+          for (const fn of voiceEnvListeners) fn(voiceGamescopeOnly);
+        } else if (r.gamescope_only !== voiceGamescopeOnly) {
+          call("set_voice_gamescope_only", voiceGamescopeOnly).catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return () => { voiceEnvListeners.delete(listener); };
+  }, []);
+  return enabled;
+};
+
 // Ouverture automatique : l'état ne peut PAS vivre dans le composant du
 // panneau. Ouvrir la vue agrandie masque le QAM, donc le panneau se cache (et
 // peut se démonter) — au retour il repartait à zéro et rouvrait la vue :
@@ -328,6 +367,33 @@ setVeilAlpha(getVeil() / 100);
 // s'ouvre » de « le QAM se ferme pour de bon », ce que seul `bigOpen` sait.
 let bigOpen = false;      // notre vue agrandie est affichée
 let bigSuppress = false;  // elle vient d'être refermée → ne pas la rouvrir
+// Caméra virtuelle (27/09) : le bouton date d'avant le Go Live natif, quand
+// gamescope n'avait pas de portail. Go Live fait mieux (vrai stream, son du jeu)
+// et la caméra exige v4l2loopback, absent de SteamOS — elle ne dépanne donc pas
+// là où le Go Live pose problème — tout en ajoutant un 2e consommateur sur le
+// node gamescope. Masquée par défaut, activable dans les réglages ; toujours
+// visible tant qu'un partage caméra tourne, pour pouvoir l'arrêter.
+const SCREEN_CAM_KEY = "steamcord_show_screen_cam";
+let showScreenCam = (() => {
+  try { return localStorage.getItem(SCREEN_CAM_KEY) === "1"; } catch { return false; }
+})();
+const screenCamPrefListeners = new Set<(v: boolean) => void>();
+const setShowScreenCam = (v: boolean) => {
+  showScreenCam = !!v;
+  try { localStorage.setItem(SCREEN_CAM_KEY, v ? "1" : "0"); } catch { }
+  for (const listener of screenCamPrefListeners) listener(showScreenCam);
+};
+const useShowScreenCam = () => {
+  const [enabled, setEnabled] = useState(showScreenCam);
+  const [camOn, setCamOn] = useState(isScreenCamOn());
+  useEffect(() => {
+    screenCamPrefListeners.add(setEnabled);
+    const off = subscribeScreenCam(() => setCamOn(isScreenCamOn()));
+    return () => { screenCamPrefListeners.delete(setEnabled); off?.(); };
+  }, []);
+  return { enabled, visible: enabled || camOn };
+};
+
 const readStored = (key: string): string | null => {
   try { return localStorage.getItem(key); } catch { return null; }
 };
@@ -1243,12 +1309,19 @@ const Content = () => (
   <QamUiRoot><BackNavRoot><ContentBody /></BackNavRoot></QamUiRoot>
 );
 
+const VoiceDesktopDisabled = () => (
+  <div style={{ opacity: 0.7, lineHeight: 1.55, padding: "8px 4px" }}>
+    {t("voice_desktop_disabled")}
+  </div>
+);
+
 // Vue agrandie : l'appel en cours est lu dans l'état VIVANT, pas figé à
 // l'ouverture de la modale — il apparaît dès qu'un salon est rejoint depuis
 // Serveurs ou Messages privés. Fermer la vue ne touche pas à l'appel.
 const ExpandedCallPanel = () => {
   const state = useSteamcordState();
   const shareEnv = useShareEnv();
+  const screenCam = useShowScreenCam();
   const openChat = useOpenChat();
   const [chatFocus, setChatFocus] = useState(false);
   if (!state?.vc?.channel_id) {
@@ -1277,7 +1350,7 @@ const ExpandedCallPanel = () => {
     <SoundboardPanel />
     <VoiceChatMembers />
     <div style={{ marginTop: 8 }}><GoLiveButton /></div>
-    {shareEnv !== "desktop" && <div style={{ marginTop: 8 }}><ScreenCameraButton /></div>}
+    {shareEnv !== "desktop" && screenCam.visible && <div style={{ marginTop: 8 }}><ScreenCameraButton /></div>}
     <div style={{ marginTop: 8 }}><GameAudioShare /></div>
   </>;
 };
@@ -1304,9 +1377,20 @@ const ContentBody = () => {
   // bascule browsing=true pour révéler la navigation SANS quitter l'appel.
   const [browsing, setBrowsing] = useState(false);
   const shareEnv = useShareEnv();
+  const screenCam = useShowScreenCam();
+  const gamescopeOnly = useVoiceGamescopeOnly();
   const vesktopBackend = useVesktopBackend(!state?.loaded);
 
   const inCall = !!state?.vc?.channel_id;
+  const voiceAvailable = !gamescopeOnly || shareEnv !== "desktop";
+  // Une préférence « Vocal » mémorisée depuis Gamescope ne doit pas laisser
+  // un écran vide en Bureau. On bascule vers le texte sans raccrocher Discord.
+  useEffect(() => {
+    if (!voiceAvailable && topTab === "voice") {
+      setTopTab("text");
+      setBrowsing(false);
+    }
+  }, [voiceAvailable, topTab]);
   // #43 : vue agrandie native Steam (jamais l'ancienne BrowserView pré-Vesktop).
   const openExpanded = () => {
     bigOpen = true;
@@ -1315,7 +1399,7 @@ const ContentBody = () => {
       <DiscordExpandedModal
         serverContent={<ServerHub />}
         settingsContent={<ConfigPanel />}
-        callContent={<ExpandedCallPanel />}
+        callContent={voiceAvailable ? <ExpandedCallPanel /> : <VoiceDesktopDisabled />}
         // Refermée (B, bouton, ou Steam qui la ferme) : on rend la main au
         // panneau et on ne la rouvre pas d'office.
         onClosed={() => { bigOpen = false; bigSuppress = true; }}
@@ -1376,6 +1460,7 @@ const ContentBody = () => {
   } else {
     return (
       <SP>
+        <DeckyTitleAbove />
         {/* Pseudo TOUJOURS en haut → changement de statut accessible en permanence. */}
         <div style={{ marginBottom: "12px" }}>
           <SR>
@@ -1387,7 +1472,7 @@ const ContentBody = () => {
         {/* Contrôles vocaux SOUS le pseudo : mute micro / casque / déconnexion.
             Focusable + flow-children="row" → D-pad gauche/droite circule
             entre les boutons (sinon nav unidirectionnelle). */}
-        <div style={{ marginBottom: "12px" }}>
+        {voiceAvailable && <div style={{ marginBottom: "12px" }}>
           <SR>
             <Focusable flow-children="row" style={{ display: "flex", justifyContent: "center", gap: 6 }}>
               <MuteButton />
@@ -1395,7 +1480,7 @@ const ContentBody = () => {
               <DisconnectButton />
             </Focusable>
           </SR>
-        </div>
+        </div>}
         {/* Navigation Discord. Deux menus empilés, TOUJOURS visibles (même en
             appel) :
               1. Mode  : Vocal / Textuel  (en haut)
@@ -1407,14 +1492,14 @@ const ContentBody = () => {
           <SR>
             {/* 1. Menu de haut niveau (persistant) : Vocal / Textuel / Config. */}
             <TabRow>
-              <TabBtn
+              {voiceAvailable && <TabBtn
                 active={topTab === "voice"} focused={tabFocus === "top-voice"}
                 onClick={() => setTopTab("voice")}
                 onFocus={() => setTabFocus("top-voice")}
                 onBlur={() => setTabFocus((f) => (f === "top-voice" ? null : f))}
               >
                 {inCall ? <IcPhone /> : <IcHeadphones />} {t("tab_voice")}
-              </TabBtn>
+              </TabBtn>}
               <TabBtn
                 active={topTab === "text"} focused={tabFocus === "top-text"}
                 onClick={() => setTopTab("text")}
@@ -1449,7 +1534,7 @@ const ContentBody = () => {
                 <div style={{ marginTop: 8 }}>
                   <GoLiveButton />
                 </div>
-                {shareEnv !== "desktop" && (
+                {shareEnv !== "desktop" && screenCam.visible && (
                   <div style={{ marginTop: 8 }}>
                     <ScreenCameraButton />
                   </div>
@@ -2038,6 +2123,56 @@ const KeepAwakeSetting = () => {
   );
 };
 
+// Titre Decky recouvert par notre contenu en défilant (capture user 27/09) :
+// la barre-titre du panneau est `position: sticky`, ce qui en fait un contexte
+// d'empilement à part — son z-index interne (5) ne compte plus face au reste,
+// elle peint au niveau 0 dans l'ordre du DOM. Nos contrôles (halo de focus :
+// position relative + zIndex 0/1 + transform) viennent APRÈS elle et passent
+// donc par-dessus. On relève la barre de NOTRE panneau, sans toucher aux autres.
+const DeckyTitleAbove = () => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let n: HTMLElement | null = ref.current;
+    while (n && n.parentElement) {
+      const sticky = Array.from(n.parentElement.children).find((c) =>
+        c !== n && getComputedStyle(c as HTMLElement).position === "sticky") as HTMLElement | undefined;
+      if (sticky) { sticky.style.zIndex = "10"; return; }
+      n = n.parentElement;
+    }
+  }, []);
+  return <div ref={ref} style={{ display: "none" }} />;
+};
+
+const ScreenCamSetting = () => {
+  const { enabled } = useShowScreenCam();
+  return (
+    <SR>
+      <ToggleField
+        label={t("screen_cam_setting")}
+        description={t("screen_cam_setting_desc")}
+        checked={enabled}
+        onChange={(v: boolean) => setShowScreenCam(v)}
+        bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
+const VoiceDesktopModeSetting = () => {
+  const gamescopeOnly = useVoiceGamescopeOnly();
+  return (
+    <SR>
+      <ToggleField
+        label={t("voice_gamescope_only")}
+        description={t("voice_gamescope_only_desc")}
+        checked={gamescopeOnly}
+        onChange={(v: boolean) => setVoiceGamescopeOnly(v)}
+        bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
 // #43 (moi952) : les rangées de réglages n'ont aucune marge propre — deux
 // contrôles se touchaient (menus déroulants à 1 px, interrupteurs collés au
 // champ de texte). On espace deux rangées interactives qui se suivent ; une note
@@ -2080,6 +2215,8 @@ const ConfigPanel = () => {
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcHeadphones /> {t("config_audio")}</div>
       </SR>
+      <VoiceDesktopModeSetting />
+      <ScreenCamSetting />
       <AudioDevicesConfig />
       <hr />
       <SR>

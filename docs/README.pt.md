@@ -36,7 +36,7 @@ Ir para o nativo resolve os problemas difíceis da antiga abordagem de navegador
 - **Status do Discord no seu nome** — Seu **nome de usuário clicável** no topo mostra o status atual; toque nele para mudar. Uma sincronização automática opcional faz o Discord **seguir o seu status do Steam** em segundo plano; escolher um status manualmente volta ao modo manual.
 - **Seleção de dispositivos de áudio** — Nas Configurações, escolha o dispositivo de **saída (som do Discord)** e de **entrada (microfone)** — *Auto (padrão do sistema)* ou um específico, p. ex. mandar o som do Discord só para o **fone** enquanto o jogo continua no HDMI. Um botão **Recarregar dispositivos de áudio** faz o sistema e o Discord relerem os dispositivos — para um microfone que não é captado no modo Jogo.
 - **Mudo / Sem áudio / Desconectar** — Controles de voz com um toque pelo QAM.
-- **Compartilhar tela** — Compartilhe sua tela inteira em um canal de voz (Go Live), de forma nativa no Desktop, Big Picture e Modo Jogo. No Modo Jogo, o Steamcord fornece um pequeno portal ScreenCast (`portal_shim.py`) que entrega ao Chromium o nó PipeWire do gamescope usado pela gravação do Steam. O áudio do jogo passa por uma ponte isolada, para que o áudio das chamadas do Discord nunca volte ao stream. Não requer módulo de kernel nem escrita no rootfs. O relay WebRTC GStreamer e o botão de câmera virtual **«Compartilhar tela (modo jogo)»** (v4l2loopback) continuam como alternativas.
+- **Compartilhar tela** — Compartilhe sua tela inteira em um canal de voz (Go Live), de forma nativa no Desktop, Big Picture e Modo Jogo. No Modo Jogo, o Steamcord fornece um pequeno portal ScreenCast (`portal_shim.py`) que entrega ao Chromium o nó PipeWire do gamescope usado pela gravação do Steam. O áudio do jogo passa por uma ponte isolada, para que o áudio das chamadas do Discord nunca volte ao stream. Não requer módulo de kernel nem escrita no rootfs. O relay WebRTC GStreamer e o botão de câmera virtual **«Compartilhar tela (modo jogo)»** (v4l2loopback) continuam como alternativas; o botão da câmara fica oculto, a menos que ative *Mostrar partilha por câmara virtual* nas Definições.
 - **Ver uma stream mantém o ecrã ligado** — enquanto vês o Go Live de alguém (no painel, na vista ampliada ou na grelha em ecrã inteiro), a proteção de ecrã do SteamOS é desligada e depois reposta tal como estava. Pode ser desativado nas Definições; o escurecimento do ecrã e a suspensão automática nunca são tocados.
 - **Compartilhar o áudio do jogo** — Transmita o som do seu jogo para o canal de voz **junto com a sua voz**. Dois controles de mixagem (🎙️ voz / 🎮 jogo) definem o que os outros ouvem, enquanto você continua ouvindo o jogo normalmente — e funciona até **sem microfone físico** (o plugin cria uma entrada virtual *Steamcord Mic*).
 - **Notificações no jogo** — Chamadas de DM e menções aparecem como **notificações nativas do Steam (popup + som)**, respeitando seu status do Discord (silenciadas em invisível / não perturbe). Uma mensagem toca dos dois lados ao mesmo tempo (o som do Discord e o da Steam): as definições de notificação deixam escolher qual manter — Discord por predefinição.
@@ -120,4 +120,10 @@ Pedidos de funcionalidades e relatos de «funciona!» em configurações incomun
 
 ## Aviso sobre IA
 
-Foi usada IA na criação deste projeto: para engenharia reversa, desenvolvimento e documentação. **Não** foi usada para arte nem escrita criativa. Tudo o que é publicado é revisto por um humano, e o resultado é da minha responsabilidade. Se isso o incomoda, fica avisado.
+Foi usada IA (Claude da Anthropic e Codex da OpenAI) na criação deste projeto: para engenharia reversa, desenvolvimento e documentação. **Não** foi usada para arte nem escrita criativa. Tudo o que é publicado é revisto por um humano, e o resultado é da minha responsabilidade. Se isso o incomoda, fica avisado.
+
+## Apoie o desenvolvimento
+
+Se este projeto é útil para si, pode apoiar o seu desenvolvimento contínuo no [Ko-fi](https://ko-fi.com/nekyron).
+
+[![Apoie-me no Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/nekyron)

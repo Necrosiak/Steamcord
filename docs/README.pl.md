@@ -36,7 +36,7 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
 - **Status Discord na twojej nazwie** — Twoja **klikalna nazwa użytkownika** u góry pokazuje aktualny status; stuknij ją, aby go zmienić. Opcjonalna automatyczna synchronizacja sprawia, że Discord **podąża za twoim statusem Steam** w tle; ręczny wybór statusu przełącza z powrotem na tryb ręczny.
 - **Wybór urządzeń audio** — W Ustawieniach wybierz urządzenie **wyjściowe (dźwięk Discorda)** i **wejściowe (mikrofon)** — *Auto (domyślne systemowe)* lub konkretne, np. dźwięk Discorda tylko na **słuchawki**, podczas gdy gra zostaje na HDMI. Przycisk **Przeładuj urządzenia audio** każe systemowi i Discordowi ponownie odczytać urządzenia — gdy mikrofon nie jest wykrywany w trybie gry.
 - **Wycisz / Ogłusz / Rozłącz** — Sterowanie głosem jednym dotknięciem z QAM.
-- **Udostępnianie ekranu** — Udostępniaj cały ekran na kanale głosowym (Go Live), natywnie w trybie pulpitu, Big Picture i gry. W trybie gry Steamcord udostępnia mały portal ScreenCast (`portal_shim.py`), który przekazuje Chromium węzeł PipeWire gamescope używany przez Steam Game Recording. Dźwięk gry przechodzi przez odizolowany most, więc dźwięk rozmów Discord nigdy nie wraca do streamu. Nie wymaga modułu jądra ani zapisu do rootfs. Przekaźnik GStreamer WebRTC i przycisk wirtualnej kamery **„Udostępnij ekran (tryb gry)”** (v4l2loopback) pozostają ścieżkami awaryjnymi.
+- **Udostępnianie ekranu** — Udostępniaj cały ekran na kanale głosowym (Go Live), natywnie w trybie pulpitu, Big Picture i gry. W trybie gry Steamcord udostępnia mały portal ScreenCast (`portal_shim.py`), który przekazuje Chromium węzeł PipeWire gamescope używany przez Steam Game Recording. Dźwięk gry przechodzi przez odizolowany most, więc dźwięk rozmów Discord nigdy nie wraca do streamu. Nie wymaga modułu jądra ani zapisu do rootfs. Przekaźnik GStreamer WebRTC i przycisk wirtualnej kamery **„Udostępnij ekran (tryb gry)”** (v4l2loopback) pozostają ścieżkami awaryjnymi; przycisk kamery jest ukryty, dopóki w Ustawieniach nie włączysz *Pokaż udostępnianie przez wirtualną kamerę*.
 - **Oglądanie streama nie pozwala wygasić ekranu** — gdy oglądasz czyjś Go Live (w panelu, widoku rozszerzonym lub siatce pełnoekranowej), wygaszacz ekranu SteamOS zostaje wyłączony, a potem przywrócony dokładnie taki, jaki był. Można to wyłączyć w Ustawieniach; przyciemnianie ekranu i automatyczne uśpienie nigdy nie są ruszane.
 - **Udostępnianie dźwięku gry** — Przesyłaj dźwięk swojej gry na kanał głosowy **razem ze swoim głosem**. Dwa suwaki miksu (🎙️ głos / 🎮 gra) decydują, co słyszą inni, podczas gdy ty dalej normalnie słyszysz grę — i działa to nawet **bez fizycznego mikrofonu** (wtyczka tworzy wirtualne wejście *Steamcord Mic*).
 - **Powiadomienia w grze** — Przychodzące połączenia DM i wzmianki pojawiają się jako **natywne powiadomienia Steam (popup + dźwięk)**, respektując twój status Discord (wyciszone przy niewidoczny / nie przeszkadzać). Wiadomość brzmi z obu stron naraz (dźwięk Discorda i Steam): w ustawieniach powiadomień wybierasz, który zostawiasz — domyślnie Discord.
@@ -120,4 +120,10 @@ Prośby o funkcje i zgłoszenia „działa!” na nietypowych konfiguracjach są
 
 ## Informacja o AI
 
-Przy tworzeniu tego projektu korzystano z AI — do inżynierii wstecznej, programowania i dokumentacji. **Nie** do grafiki ani twórczego pisania. Wszystko, co publikowane, przechodzi przez człowieka, a za wynik odpowiadam ja. Jeśli ci to nie odpowiada, teraz już wiesz.
+Przy tworzeniu tego projektu korzystano z AI (Claude od Anthropic i Codex od OpenAI) — do inżynierii wstecznej, programowania i dokumentacji. **Nie** do grafiki ani twórczego pisania. Wszystko, co publikowane, przechodzi przez człowieka, a za wynik odpowiadam ja. Jeśli ci to nie odpowiada, teraz już wiesz.
+
+## Wesprzyj rozwój
+
+Jeśli ten projekt jest dla Ciebie przydatny, możesz wesprzeć jego dalszy rozwój na [Ko-fi](https://ko-fi.com/nekyron).
+
+[![Wesprzyj mnie na Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/nekyron)

@@ -1442,6 +1442,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             // Autorise l'auto-validation de la modale Vesktop (watcher
                                             // en tête de fichier) pour CE partage initié par Steamcord.
                                             window.STEAMCORD_GOLIVE_ACTIVE = true;
+                                            window.STEAMCORD_GOLIVE_DIRECT = !!data.direct;
                                             const startFn = WP.findByCode('"STREAM_START",streamType');
                                             if (!startFn) {
                                                 window.STEAMCORD_GOLIVE_ACTIVE = false;
@@ -1487,12 +1488,33 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     // était perdu. Le bouton du QAM grise déjà 6s après un
                                                     // arrêt ; ce garde-fou couvre les autres chemins
                                                     // (raccourci manette, double appel du backend).
+                                                    //
+                                                    // #57 : chaque acquisition ouvre AUSSI deux captures
+                                                    // temporaires côté Electron, qui vivent ~30 s puis
+                                                    // disparaissent seules (relevé seconde par seconde le
+                                                    // 27/09 : 29 s et 30 s). Relancer un Go Live pendant
+                                                    // qu'elles tiennent encore le node gamescope passe sur
+                                                    // la BC-250 mais échoue sur SteamOS (ROG Ally X : ses
+                                                    // deux échecs tombaient 16-17 s après le Go Live
+                                                    // précédent), et l'acquisition ratée laisse alors une
+                                                    // vraie capture orpheline. On attend donc qu'elles aient
+                                                    // expiré — seulement après un Go Live passé par ce chemin
+                                                    // (la capture directe du mode jeu n'en crée pas, cf.
+                                                    // webrtc_client.js). Les fermer depuis le portail n'est
+                                                    // pas une option : Vesktop ne s'y attend pas.
                                                     const ASS2 = WP.findStore("ApplicationStreamingStore");
                                                     const t0 = Date.now();
-                                                    while (Date.now() - t0 < 9000) {
+                                                    const TRANSIENT_MS = 32000;
+                                                    const sinceAcq0 = Date.now() - (window.STEAMCORD_GOLIVE_LAST_NATIVE || 0);
+                                                    if (sinceAcq0 < TRANSIENT_MS) {
+                                                        scdiag("attente de " + Math.ceil((TRANSIENT_MS - sinceAcq0) / 1000)
+                                                            + " s : captures temporaires du Go Live précédent encore ouvertes");
+                                                    }
+                                                    while (Date.now() - t0 < TRANSIENT_MS + 1000) {
                                                         const busy = ASS2?.getCurrentUserActiveStream?.();
                                                         const sinceStop = Date.now() - (window.STEAMCORD_GOLIVE_LAST_STOP || 0);
-                                                        if (!busy && sinceStop >= 3500) break;
+                                                        const sinceAcq = Date.now() - (window.STEAMCORD_GOLIVE_LAST_NATIVE || 0);
+                                                        if (!busy && sinceStop >= 3500 && sinceAcq >= TRANSIENT_MS) break;
                                                         if (window.STEAMCORD_GOLIVE_STOP_REQUESTED) break;
                                                         await new Promise(r => setTimeout(r, 200));
                                                     }

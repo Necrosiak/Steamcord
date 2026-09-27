@@ -15,6 +15,7 @@ import tempfile
 from subprocess import PIPE, DEVNULL
 
 import sys
+import time
 import os
 
 from decky import logger, DECKY_PLUGIN_DIR, emit  # type: ignore
@@ -791,6 +792,8 @@ class Plugin:
         create_task(cls._autoupdate_check())
         cls._load_audio_cfg()
         cls.evt_handler.on_logged_in = cls._on_logged_in
+        cls.evt_handler.on_own_stream_stop = cls._golive_ended
+        cls.evt_handler.on_golive_wait = cls._golive_wait_toast
         create_task(cls.apply_stream_prefs())
         create_task(cls._audio_routing_watcher())
         create_task(cls._screen_diag())
@@ -3798,9 +3801,12 @@ class Plugin:
             cls._golive_seq_lock = Lock()
         return cls._golive_seq_lock
 
+    _golive_started_at = 0.0
+
     @classmethod
     async def go_live(cls):
         async with cls._golive_lock():
+            cls._golive_started_at = time.monotonic()
             # Le pont AVANT d'ouvrir la modale : Vesktop énumère les
             # périphériques dans la foulée du clic de confirmation, le
             # périphérique doit donc déjà être là.
@@ -3810,7 +3816,11 @@ class Plugin:
             if task is not None and not task.done():
                 task.cancel()
             cls._golive_capture_task = create_task(cls._golive_wait_for_stream_audio())
-            await cls.evt_handler.send_client({"type": "$golive", "stop": False})
+            # #57 : en mode jeu, capture directe (une seule session portail)
+            # au lieu du getDisplayMedia de Vesktop et de ses captures annexes.
+            env = (await cls.get_share_env()).get("env")
+            await cls.evt_handler.send_client({"type": "$golive", "stop": False,
+                                               "direct": env == "gamescope"})
 
     @classmethod
     async def stop_go_live(cls):
@@ -3821,6 +3831,51 @@ class Plugin:
                 task.cancel()
             await cls._golive_mic_silence(False)
             await cls._golive_share_bridge(False)
+
+    @classmethod
+    async def _golive_ended(cls):
+        """Le partage s'est arrêté SANS passer par stop_go_live.
+
+        Quitter le salon (ou un stream coupé par Discord) émet STREAM_STOP mais
+        n'appelle jamais stop_go_live : le pont audio, le routage du jeu dans
+        `steamcord_share_sink` et le silence micro restaient en place jusqu'au
+        déchargement du plugin, et le Go Live suivant réutilisait un pont
+        raccordé à une sortie peut-être périmée (mesuré le 27/09 : quitter le
+        salon à 09:49:36 → aucun « pont audio démonté », 3e Go Live sans
+        « monté »). Après un clic sur Arrêter, tout est déjà démonté : les
+        appels ci-dessous ne font alors rien.
+        """
+        async with cls._golive_lock():
+            # Discord émet deux STREAM_STOP à ~5 s d'écart : le second peut
+            # tomber pendant un Go Live relancé aussitôt. Ne pas lui démonter
+            # son pont.
+            if time.monotonic() - cls._golive_started_at < 10:
+                return
+            try:
+                if cls.evt_handler.me.is_live:
+                    return
+            except Exception:
+                return
+            if not cls._golive_bridge_mods and cls._golive_capture_task is None:
+                return
+            logger.info("[golive] partage terminé hors bouton Arrêter — nettoyage")
+            task, cls._golive_capture_task = cls._golive_capture_task, None
+            if task is not None and not task.done():
+                task.cancel()
+            await cls._golive_mic_silence(False)
+            await cls._golive_share_bridge(False)
+
+    @classmethod
+    async def _golive_wait_toast(cls, msg):
+        """Le client attend l'expiration des captures temporaires du Go Live
+        précédent (#57) : sans ce toast, le bouton se dégrise au bout de 2,5 s
+        et rien ne se passe pendant jusqu'à 30 s."""
+        import re
+        m = re.search(r"attente de (\d+) s", msg)
+        secs = m.group(1) if m else "a few"
+        await cls._toast("Steamcord",
+                         f"Go Live starts in {secs} s — the previous share is still "
+                         "being released.")
 
     # ── Partage d'écran via CAMÉRA virtuelle (contournement gamescope) ──────────
     # gamescope n'a pas de portail → Go Live (getDisplayMedia) = écran noir. À la
@@ -4473,6 +4528,41 @@ class Plugin:
         except Exception as e:
             logger.warning(f"[shareenv] {e!r}")
         return {"env": "unknown"}
+
+    # ── Vocal : mode Gaming uniquement (#55) ─────────────────────────────────
+    # Préférence séparée du fichier de vue : elle décide seulement si le QAM
+    # expose les commandes vocales sous KWin. Le backend Discord reste connecté
+    # afin de ne jamais raccrocher une conversation lors d'un changement de
+    # session. Valeur par défaut = console Gamescope uniquement.
+    _VOICE_ENV_CFG = os.path.expanduser("~/.config/steamcord-voice-env.json")
+
+    @classmethod
+    async def get_voice_gamescope_only(cls):
+        from json import load as _load
+        try:
+            with open(cls._VOICE_ENV_CFG) as f:
+                cfg = _load(f)
+            if isinstance(cfg, dict) and isinstance(cfg.get("gamescope_only"), bool):
+                return {"gamescope_only": cfg["gamescope_only"]}
+        except Exception:
+            pass
+        return {"gamescope_only": True}
+
+    @classmethod
+    async def set_voice_gamescope_only(cls, gamescope_only=True):
+        if not isinstance(gamescope_only, bool):
+            return {"ok": False, "error": "expected boolean"}
+        from json import dump as _dump
+        tmp = cls._VOICE_ENV_CFG + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(cls._VOICE_ENV_CFG), exist_ok=True)
+            with open(tmp, "w") as f:
+                _dump({"gamescope_only": gamescope_only}, f)
+            os.replace(tmp, cls._VOICE_ENV_CFG)
+        except Exception as e:
+            logger.warning(f"save {cls._VOICE_ENV_CFG} failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "gamescope_only": gamescope_only}
 
     # ── Partage AUDIO du jeu (son du jeu → micro Discord, jauges voix/jeu) ───────
     # Deux sinks virtuels : `steamcord_game` devient la sortie PAR DÉFAUT (les jeux

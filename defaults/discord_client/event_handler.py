@@ -75,6 +75,11 @@ class EventHandler:
         # Posé par Plugin : ré-assertion de réglages (ex. prefs micro) à chaque
         # login du client — la persistance Discord seule ne suffit pas (#14).
         self.on_logged_in = None
+        # Posé par Plugin : fin de NOTRE partage, quelle qu'en soit la cause
+        # (bouton, salon quitté, Discord qui coupe le stream).
+        self.on_own_stream_stop = None
+        # Posé par Plugin : le client retarde un Go Live relancé trop tôt (#57).
+        self.on_golive_wait = None
 
     def build_state_dict(self):
         return {
@@ -195,6 +200,9 @@ class EventHandler:
             return
         if data["type"] == "$diag":
             logger.info(f"[clientdiag] {data.get('m')}")
+            m = str(data.get("m") or "")
+            if m.startswith("[golive] attente de ") and self.on_golive_wait:
+                create_task(self.on_golive_wait(m))
             return
         if data["type"] == "$steamcord_request" and "increment" in data:
             self.api._set_result(data["increment"], data["result"])
@@ -601,6 +609,8 @@ class EventHandler:
             self.streaming_users.discard(owner_id)
         if (self.me.id and self.me.id in stream_key) or not stream_key:
             self.me.is_live = False
+            if self.on_own_stream_stop:
+                create_task(self.on_own_stream_stop())
             # ⚠️ NE PAS relâcher les sessions portail ici (essayé le 01/09,
             # retiré le jour même). Ça FONCTIONNE — les 3 sessions se ferment
             # enfin au lieu de fuir — mais `close_all` est un mécanisme de

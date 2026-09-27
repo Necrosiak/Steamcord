@@ -14,6 +14,41 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.39.0 — 2026-09-27
+
+### Go Live works again after a quick restart, and voice can stay in Gaming Mode
+
+Reported in [#57](https://github.com/Necrosiak/Steamcord/issues/57) and
+requested in [#55](https://github.com/Necrosiak/Steamcord/issues/55).
+
+- **Starting Go Live again right after stopping it no longer fails.** Every
+  Go Live went through Vesktop's screen picker, which opens a full capture of
+  the screen just to draw a 1920×1080 thumbnail, plus one more beside the real
+  one: three captures on the Gaming Mode screen each time, two of which stayed
+  open for about 30 seconds. Starting a new share within those 30 seconds
+  failed on SteamOS, and the failed attempt then left a capture behind that
+  blocked every Go Live until Vesktop restarted. In Gaming Mode, Steamcord now
+  captures the screen directly: one capture, ready in a fraction of a second,
+  with the same quality setting and game audio as before. If the direct
+  capture fails, the previous path is still there as a fallback, and Steamcord
+  waits for its extra captures to close before starting another share.
+- **Leaving the call during a Go Live now cleans up after it.** Only the
+  *Stop* button used to tear down the audio routing of the share; ending it
+  any other way — leaving the channel, or Discord ending the stream — left it
+  in place until the plugin reloaded, and the next Go Live reused it.
+- **Voice only in Gaming Mode is on by default.** Steamcord hides its voice
+  controls in Desktop and Big Picture while keeping messages available. Turn
+  the setting off in Settings to use voice in every Steam interface. Desktop
+  detection is deliberate: KWin wins over Gamescope, because a leftover
+  Gamescope process must not make a desktop session look like Gaming Mode. If
+  Steamcord cannot identify the session, voice stays available. Changing modes
+  never hangs up a Discord call.
+- **The virtual-camera share is hidden by default.** It predates Go Live in
+  Gaming Mode, needs v4l2loopback (which SteamOS does not ship), and Go Live
+  does better everywhere. *Show virtual camera sharing* in Settings brings the
+  button back.
+- **The panel title no longer slides under the controls when scrolling.**
+
 ## 1.38.0 — 2026-09-25
 
 ### The expanded view fits a Steam Deck, and Steamcord speaks seven more languages properly

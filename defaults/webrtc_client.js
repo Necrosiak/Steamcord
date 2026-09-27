@@ -24,6 +24,9 @@
     // (gst_webrtc.py, l'ancien chemin mode jeu). Le relais ne re-tente JAMAIS le natif
     // (le natif a déjà échoué) — sinon boucle.
     const nativeFirst = (constraints) => new Promise((resolve, reject) => {
+        // Ce chemin ouvre deux captures annexes de ~30 s (cf. steamcord_client.js,
+        // attente avant le Go Live suivant).
+        window.STEAMCORD_GOLIVE_LAST_NATIVE = Date.now();
         let done = false;
         // 8s, et plus 25. Le budget d'origine additionnait les pires cas
         // (auto-validation ~1s + venmic + Start ≤5s + établissement PipeWire),
@@ -187,6 +190,63 @@
         return btoa(bin);
     };
 
+    // ── Capture DIRECTE du mode jeu (#57) ─────────────────────────────────────
+    // Le getDisplayMedia de Vesktop passe par son setDisplayMediaRequestHandler,
+    // qui appelle d'abord desktopCapturer.getSources() pour une vignette en
+    // 1920×1080 : Chromium ouvre pour ça une session portail et une capture,
+    // puis une autre en plus de la vraie. Mesuré le 27/09 : 3 sessions et 3
+    // flux PipeWire sur le node gamescope par Go Live, dont 2 qui survivent
+    // ~30 s. Relancer un Go Live pendant ce temps échouait sur SteamOS (#57), et
+    // ce sont trois démarrages de capture simultanés sur le même node à chaque
+    // fois. La route getUserMedia `chromeMediaSource: "desktop"` d'Electron
+    // contourne le handler : UNE session, UN flux (mesuré le même jour :
+    // 1920×1080 à 60 i/s, image réelle). En mode jeu il n'y a qu'une source,
+    // servie par portal_shim.py : le sélecteur n'a rien à choisir.
+    //
+    // Ce que la patch screenShareFixes de Vesktop faisait sur SON chemin, et
+    // qu'on refait donc ici : la qualité réglée (VesktopState, cf. le réglage
+    // du QAM) et la piste audio du périphérique « vencord-screen-share » (le
+    // pont audio du backend), avec les mêmes contraintes que Vesktop.
+    const readStreamQuality = () => {
+        let q = null;
+        const f = document.createElement("iframe");
+        try {
+            document.body.append(f);
+            q = JSON.parse(f.contentWindow.localStorage.getItem("VesktopState") || "{}").screenshareQuality || null;
+        } catch (_) {
+        } finally { f.remove(); }
+        return q;
+    };
+    const directDesktop = async () => {
+        const q = readStreamQuality();
+        const mandatory = { chromeMediaSource: "desktop", chromeMediaSourceId: "screen:0:0" };
+        const res = Number(q && q.resolution);
+        const fps = Number(q && q.frameRate);
+        if (res > 0) { mandatory.maxHeight = res; mandatory.maxWidth = Math.round(res * 16 / 9); }
+        if (fps > 0) mandatory.maxFrameRate = fps;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory } });
+        const video = stream.getVideoTracks()[0];
+        if (!video) throw new Error("capture directe sans piste vidéo");
+        try { video.contentHint = "motion"; } catch (_) {}
+        try {
+            const dev = (await navigator.mediaDevices.enumerateDevices())
+                .find((d) => d.kind === "audioinput" && d.label === "vencord-screen-share");
+            if (dev) {
+                const a = await navigator.mediaDevices.getUserMedia({ audio: {
+                    deviceId: { exact: dev.deviceId }, autoGainControl: false,
+                    echoCancellation: false, noiseSuppression: false,
+                    channelCount: 2, sampleRate: 48000, sampleSize: 16 } });
+                const at = a.getAudioTracks()[0];
+                if (at) stream.addTrack(at);
+            }
+        } catch (e) {
+            // Un partage sans son vaut mieux que pas de partage.
+            try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                m: "[golive] capture directe : son du partage indisponible (" + ((e && e.message) || e) + ")" })); } catch (_) {}
+        }
+        return stream;
+    };
+
     // Le portail natif a-t-il déjà échoué dans CETTE session ? Sur une machine
     // où il ne répond pas, le réessayer à chaque Go Live coûte les 8 s du budget
     // à chaque fois — mesuré ce jour : 8 s sur 9 s de latence totale, pour un
@@ -197,6 +257,20 @@
 
     const steamcordGDM = async (constraints) => {
         /* STEAMCORD_RTC 65124 — marqueur pour looksLikeOurs (anti re-wrap) */
+        // Un seul usage : posé par le $golive du QAM pour CE partage.
+        const direct = !!window.STEAMCORD_GOLIVE_DIRECT;
+        window.STEAMCORD_GOLIVE_DIRECT = false;
+        if (direct) {
+            try {
+                const stream = await directDesktop();
+                try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                    m: "[golive] capture directe OK (" + stream.getTracks().map((t) => t.kind).join("+") + ")" })); } catch (_) {}
+                return keepShareStream(stream);
+            } catch (e) {
+                try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                    m: "[golive] capture directe KO (" + ((e && e.message) || e) + ") → getDisplayMedia de Vesktop" })); } catch (_) {}
+            }
+        }
         if (nativeGetDisplayMedia && !nativePortalDead) {
             try {
                 const stream = await nativeFirst(constraints);

@@ -147,6 +147,14 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - An error screen in the desktop Steam window that only appeared with Steamcord enabled ([#53](https://github.com/Necrosiak/Steamcord/issues/53), fixed in v1.37.2). It could not be reproduced at first, and it was their follow-up that made it possible: the error only showed in the desktop window, a few minutes after opening Steam, and their screenshots carried the stack trace. That trace matched a notification drawn by Decky's native toaster, which the desktop client cannot render.
 
+### [@BrotherO4](https://github.com/BrotherO4)
+
+- Asking for a way to keep voice chat out of Desktop mode ([#55](https://github.com/Necrosiak/Steamcord/issues/55), added in v1.39.0 as *Voice only in Gaming Mode*).
+
+### [@silverxlotus](https://github.com/silverxlotus)
+
+- Go Live working once and then failing silently until Steamcord restarted Vesktop ([#57](https://github.com/Necrosiak/Steamcord/issues/57), fixed in v1.39.0). The report came with exact steps and a complete log, and the log held the answer: every Go Live opened three screen captures, the second attempt landed while two of them were still open, and it was the timing of their two failures — 16 and 17 seconds after the previous share — that pointed at the captures Vesktop's picker opens and keeps for 30 seconds.
+
 # Code contributions
 
 ### [@jezonek](https://github.com/jezonek)

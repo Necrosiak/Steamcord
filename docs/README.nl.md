@@ -36,7 +36,7 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
 - **Discord-status op je naam** — Je **klikbare gebruikersnaam** bovenaan toont je huidige status; tik erop om hem te wijzigen. Een optionele automatische synchronisatie laat Discord je **Steam-status volgen** op de achtergrond; een status met de hand kiezen schakelt terug naar handmatig.
 - **Audioapparaten kiezen** — Kies in de Instellingen het **uitvoerapparaat (Discord-geluid)** en het **invoerapparaat (microfoon)** — *Auto (systeemstandaard)* of een specifiek apparaat, bv. Discord-geluid alleen naar je **headset** terwijl het spel op HDMI blijft. Een knop **Audioapparaten herladen** laat systeem en Discord de apparaten opnieuw inlezen — voor een microfoon die in de Gamemodus niet wordt opgepikt.
 - **Mute / Doof / Verbinding verbreken** — Spraakbediening met één tik vanuit het QAM.
-- **Scherm delen** — Deel je hele scherm in een spraakkanaal (Go Live), native in Desktop, Big Picture en Spelmodus. In Spelmodus levert Steamcord een klein ScreenCast-portaal (`portal_shim.py`) dat Chromium de gamescope-PipeWire-node geeft die Steam Game Recording gebruikt. Spelgeluid loopt via een geïsoleerde brug, zodat Discord-gespreksgeluid nooit terug de stream in gaat. Geen kernelmodule of rootfs-schrijfactie nodig. De GStreamer-WebRTC-relay en de virtuele-cameraknop **„Scherm delen (spelmodus)"** (v4l2loopback) blijven beschikbaar als fallback.
+- **Scherm delen** — Deel je hele scherm in een spraakkanaal (Go Live), native in Desktop, Big Picture en Spelmodus. In Spelmodus levert Steamcord een klein ScreenCast-portaal (`portal_shim.py`) dat Chromium de gamescope-PipeWire-node geeft die Steam Game Recording gebruikt. Spelgeluid loopt via een geïsoleerde brug, zodat Discord-gespreksgeluid nooit terug de stream in gaat. Geen kernelmodule of rootfs-schrijfactie nodig. De GStreamer-WebRTC-relay en de virtuele-cameraknop **„Scherm delen (spelmodus)"** (v4l2loopback) blijven beschikbaar als fallback; de cameraknop is verborgen tenzij *Delen via virtuele camera tonen* in Instellingen aanstaat.
 - **Kijken houdt het scherm wakker** — zolang je iemands Go Live kijkt (in het paneel, de uitgeklapte weergave of het volledige raster), wordt de schermbeveiliging van SteamOS uitgeschakeld en daarna precies zo teruggezet. Uit te schakelen in de instellingen; schermdimmen en automatische slaapstand blijven altijd ongemoeid.
 - **Spelgeluid delen** — Stuur het geluid van je spel **samen met je stem** het spraakkanaal in. Twee mixschuiven (🎙️ stem / 🎮 spel) bepalen wat de anderen horen, terwijl jij het spel gewoon blijft horen — en het werkt zelfs **zonder fysieke microfoon** (de plugin maakt een virtuele ingang *Steamcord Mic*).
 - **Meldingen in het spel** — Inkomende DM-oproepen en pings verschijnen als **native Steam-meldingen (popup + geluid)**, met respect voor je Discord-status (gedempt bij onzichtbaar / niet storen). Een bericht klinkt aan beide kanten tegelijk (het geluid van Discord en dat van Steam); in de meldingsinstellingen kies je welke je houdt — standaard Discord.
@@ -120,4 +120,10 @@ Featureverzoeken en "het werkt!"-meldingen op ongewone setups zijn net zo waarde
 
 ## AI-vermelding
 
-Bij het maken van dit project is AI gebruikt — voor reverse engineering, ontwikkeling en documentatie. **Niet** voor beeld of creatief schrijven. Alles wat wordt gepubliceerd is door een mens nagekeken, en het resultaat blijft mijn verantwoordelijkheid. Als je daar moeite mee hebt, weet je het nu.
+Bij het maken van dit project is AI (Claude van Anthropic en Codex van OpenAI) gebruikt — voor reverse engineering, ontwikkeling en documentatie. **Niet** voor beeld of creatief schrijven. Alles wat wordt gepubliceerd is door een mens nagekeken, en het resultaat blijft mijn verantwoordelijkheid. Als je daar moeite mee hebt, weet je het nu.
+
+## Steun de ontwikkeling
+
+Als dit project nuttig voor je is, kun je de verdere ontwikkeling steunen via [Ko-fi](https://ko-fi.com/nekyron).
+
+[![Steun mij op Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/nekyron)
