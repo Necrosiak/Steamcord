@@ -14,6 +14,28 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.39.2 — 2026-09-28
+
+### Controller push-to-talk works in-game
+
+Reported in [#60](https://github.com/Necrosiak/Steamcord/issues/60).
+
+- **The controller voice shortcut now works while a game has focus.** Steam
+  stops passing controller buttons to its own UI as soon as a game is in
+  front, so push-to-talk and mute toggle on a controller button only worked
+  with the QAM or the Steam UI open. For the **Steam Controller (2026)**,
+  Steamcord now reads the controller directly, read-only and alongside
+  Steam, so the shortcut keeps working in-game, in both push-to-talk and
+  toggle mode. Supported buttons: A/B/X/Y, D-pad, L4/R4, L5/R5. Other
+  controllers behave as before.
+- **Your own speaking ring lights up again in the call view.** Discord saw
+  you talking, but the ring around your own avatar stayed off.
+- **D-pad buttons show their name** in the shortcut settings instead of
+  `BTN20`–`BTN23`.
+- **README:** the controller shortcut section no longer claims it works
+  in-game with every controller, and explains why remapping a button to a
+  keyboard key in Steam Input cannot be picked up in Game Mode.
+
 ## 1.39.1 — 2026-09-27
 
 ### Game audio stays in the stream, and stopping a Go Live no longer drops the call

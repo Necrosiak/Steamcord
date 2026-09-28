@@ -510,9 +510,14 @@ class EventHandler:
     async def _speaking(self, data):
         user_id = data.get("userId") or data.get("user_id")
         speaking = data.get("speakingFlags", 0) > 0
+        # Pas de `elif` : _voice_channel_select range AUSSI notre propre entrée
+        # dans vc_members (get_voice_states nous inclut), et c'est CETTE copie que
+        # build_state_dict affiche dans la liste du vocal. Ne mettre à jour que
+        # self.me laissait notre anneau « parle » éteint alors que Discord nous
+        # voyait bien parler (mesuré le 28/09 : me=true, ligne du vocal=false).
         if user_id == self.me.id:
             self.me.is_speaking = speaking
-        elif user_id in self.vc_members:
+        if user_id in self.vc_members:
             self.vc_members[user_id].is_speaking = speaking
 
     async def _remote_auth_fingerprint(self, data):

@@ -41,7 +41,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 - **Watching a stream keeps the screen awake** — while you are watching someone's Go Live (in the panel, the expanded view or the fullscreen grid), the SteamOS screen saver is switched off, then put back exactly as it was. It can be turned off in Settings, and screen dimming and auto-sleep are never touched.
 - **Share game audio** — Stream your game's sound into the voice channel **along with your voice**. Two mix sliders (🎙️ voice / 🎮 game) control what the others hear, while you keep hearing the game normally — and it works even **without a physical microphone** (the plugin creates a virtual *Steamcord Mic* input).
 - **In-game notifications** — Incoming DM calls and pings appear as **native Steam notifications (popup + sound)**, respecting your Discord status (silenced when invisible / do-not-disturb). A message rings on both sides at once (Discord's own sound and Steam's), so the notification settings let you pick which one you keep — Discord by default.
-- **🕹️ Controller voice shortcut** — Capture **any button combo on your controller** and bind it to **mute toggle** or **push-to-talk**. It works globally in-game, even with the QAM closed (set it up in the Settings tab).
+- **🕹️ Controller voice shortcut** — Capture **any button combo on your controller** and bind it to **mute toggle** or **push-to-talk**. With a **Steam Controller (2026)** it also works in-game with the QAM closed; with other controllers, Steam only passes the buttons on while its own UI has focus ([details](#controller-voice-shortcut-in-game)). Set it up in the Settings tab.
 - **Share screenshots** — Send a Steam screenshot straight into the conversation you have open.
 - **[Vencord](https://vencord.dev/)** is built into Vesktop, giving access to its plugin ecosystem.
 - **Save attachments** — Any file posted in a conversation can be saved to your Downloads folder: images, videos, and everything else (PDFs, archives, logs) that used to show up as a bare count. Images and videos open fullscreen in the panel rather than in the Steam browser.
@@ -90,6 +90,11 @@ Nothing else is required: the Python dependencies are vendored, and the handful 
 
 ### Screen share
 Screen sharing works out of the box — the plugin auto-installs its Python dependency (aiohttp) for the system Python on first run. GStreamer is provided by the system.
+
+### Controller voice shortcut in-game
+While a game has focus, Steam stops delivering controller buttons to its own UI, so a plugin cannot see them through Steam's API. For the **Steam Controller (2026)** (tested through its USB dongle; wired and Bluetooth connections use the same report format), Steamcord therefore reads the controller directly, in read-only mode and alongside Steam, and the shortcut keeps working in-game. Supported buttons: A/B/X/Y, D-pad, L4/R4, L5/R5. With any other controller, the controller shortcut only works while the Steam UI or the QAM has focus.
+
+Remapping a controller button to a keyboard key in the game's Steam Input layout, then binding that key in Steamcord, does **not** work in Game Mode: Steam Input's keyboard output goes through gamescope and never shows up as a `/dev/input` device. Bind a real keyboard key or mouse button instead, or use voice activity.
 
 ### Keyboard / mouse push-to-talk outside SteamOS
 Binding the voice shortcut to a **controller** button works everywhere. Binding it to a **keyboard key or mouse button** requires the plugin to read `/dev/input/event*`, which needs a `uaccess` ACL — and systemd grants that to **joysticks only** (`70-uaccess.rules`: `ENV{ID_INPUT_JOYSTICK}`). SteamOS ships an extra rule covering input devices; most other distributions do not.

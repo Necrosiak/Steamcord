@@ -534,3 +534,194 @@ class Watcher:
                 self._on_capture(info["kind"], ev.code, info["node"], info)
             return
         self._on_edge(info["kind"], ev.code, info["node"], down)
+
+
+# ── Manette Valve lue en hidraw (issue #60) ─────────────────────────────────
+#
+# Pourquoi : SteamClient.Input (frontend) ne livre AUCUN bouton tant qu'un jeu a
+# le focus — mesuré le 28/09/26 : 0 événement de RegisterForControllerInput-
+# Messages (ni des messages analogiques) pendant qu'un jeu Proton est au premier
+# plan, alors que tout arrive dès que l'interface Steam reprend la main. Le
+# push-to-talk manette était donc muet précisément là où il sert. Les nœuds
+# hidraw des manettes Valve, eux, sont lisibles par l'utilisateur de session
+# (règles udev de Steam) et le noyau livre chaque rapport à TOUS les lecteurs :
+# on lit en PASSIF, en parallèle de Steam, sans rien lui retirer.
+#
+# Ne gère QUE le Steam Controller (2026) et ses dongles. Format des rapports
+# d'après le pilote SDL (src/joystick/hidapi/SDL_hidapi_steam_triton.c, zlib) :
+# octet 0 = id du rapport, octet 1 = numéro de séquence, octets 2-5 = masque des
+# boutons en petit-boutiste — vérifié sur l'appareil pour A/B/croix/L4/L5.
+#
+# Aucun bouton n'est journalisé (même règle que pour le clavier) : seul le
+# nombre de nœuds ouverts l'est, et seulement quand il change.
+
+HID_VENDOR_VALVE = 0x28DE
+# 0x1302 filaire, 0x1303 BLE, 0x1304/0x1305 dongles (Proteus / Nereid).
+HID_TRITON_PRODUCTS = {0x1302, 0x1303, 0x1304, 0x1305}
+# 0x42 état, 0x45 état BLE, 0x47 état horodaté : même en-tête dans les trois.
+HID_TRITON_STATE_REPORTS = {0x42, 0x45, 0x47}
+HID_TRITON_WIRELESS = 0x79        # octet 1 : 1 = déconnexion, 2 = connexion
+HID_TRITON_DISCONNECT = 1
+
+# Bit du masque Triton -> identifiant de bouton Steam (celui que la capture du
+# frontend enregistre dans la liaison). Mesurés en croisant hidraw et
+# RegisterForControllerInputMessages : A, B, la croix, L4, L5. X, Y, R4, R5
+# suivent la même énumération Steam (32/33 = L5/R5, 44/45 = L4/R4).
+HID_TRITON_TO_STEAM = {
+    0x00000001: 0,    # A
+    0x00000002: 1,    # B
+    0x00000004: 2,    # X
+    0x00000008: 3,    # Y
+    0x00002000: 20,   # croix haut
+    0x00000400: 21,   # croix bas
+    0x00001000: 22,   # croix gauche
+    0x00000800: 23,   # croix droite
+    0x00040000: 32,   # L5
+    0x00000100: 33,   # R5
+    0x00020000: 44,   # L4
+    0x00000080: 45,   # R4
+}
+HID_SUPPORTED_BUTTONS = frozenset(HID_TRITON_TO_STEAM.values())
+
+
+def list_hid_controllers():
+    """Nœuds hidraw des manettes prises en charge qui s'ouvrent RÉELLEMENT."""
+    out = []
+    for dev in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        try:
+            with open(os.path.join(dev, "device", "uevent")) as f:
+                uevent = f.read()
+        except OSError:
+            continue
+        m = re.search(r"^HID_ID=[0-9A-Fa-f]+:([0-9A-Fa-f]+):([0-9A-Fa-f]+)$", uevent, re.M)
+        if not m:
+            continue
+        if int(m.group(1), 16) != HID_VENDOR_VALVE:
+            continue
+        if int(m.group(2), 16) not in HID_TRITON_PRODUCTS:
+            continue
+        node = os.path.basename(dev)
+        # Même règle que pour /dev/input : on NE DEVINE PAS la lisibilité.
+        try:
+            os.close(os.open("/dev/" + node, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC))
+        except OSError:
+            continue
+        out.append(node)
+    return out
+
+
+class HidControllerWatcher:
+    """Suit les boutons tenus des manettes Valve et signale chaque changement.
+
+    `on_change(held)` reçoit l'ensemble des identifiants de boutons Steam tenus,
+    toutes manettes confondues. Piloté par loop.add_reader, comme Watcher.
+    """
+
+    def __init__(self, loop, on_change, log=None):
+        self._loop = loop
+        self._on_change = on_change
+        self._log = log
+        self._fds = {}                   # fd -> node
+        self._masks = {}                 # fd -> masque des boutons suivis
+        self._held = frozenset()
+        self._closed = False
+        self._last_count = -1
+
+    @property
+    def device_count(self):
+        return len(self._fds)
+
+    def rescan(self):
+        if self._closed:
+            return
+        wanted = set(list_hid_controllers())
+        for fd, node in list(self._fds.items()):
+            if node not in wanted:
+                self._drop(fd)
+        have = set(self._fds.values())
+        for node in wanted - have:
+            try:
+                fd = os.open("/dev/" + node, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+            except OSError:
+                continue
+            self._fds[fd] = node
+            self._masks[fd] = 0
+            try:
+                self._loop.add_reader(fd, self._readable, fd)
+            except Exception:
+                os.close(fd)
+                self._fds.pop(fd, None)
+                self._masks.pop(fd, None)
+        if self._log and len(self._fds) != self._last_count:
+            self._log("controller_hid: %d readable node(s)" % len(self._fds))
+        self._last_count = len(self._fds)
+        self._publish()
+
+    def _drop(self, fd):
+        try:
+            self._loop.remove_reader(fd)
+        except Exception:
+            pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        self._fds.pop(fd, None)
+        self._masks.pop(fd, None)
+
+    def close(self):
+        self._closed = True
+        for fd in list(self._fds):
+            self._drop(fd)
+        self._publish()
+
+    def _readable(self, fd):
+        if fd not in self._fds:
+            return
+        changed = False
+        while True:
+            try:
+                data = os.read(fd, 64)
+            except BlockingIOError:
+                break
+            except OSError:
+                # Manette/dongle débranché ou réveil de veille : un bouton tenu à
+                # cet instant ne sera jamais relâché sur ce fd → on le lâche (ce
+                # qui retire ses boutons de l'ensemble tenu) et le rescan
+                # périodique rouvrira le nœud s'il revient.
+                self._drop(fd)
+                changed = True
+                break
+            if not data:
+                break
+            if data[0] in HID_TRITON_STATE_REPORTS and len(data) >= 6:
+                raw = int.from_bytes(data[2:6], "little")
+                mask = 0
+                for bit in HID_TRITON_TO_STEAM:
+                    if raw & bit:
+                        mask |= bit
+            elif data[0] == HID_TRITON_WIRELESS and len(data) >= 2 \
+                    and data[1] == HID_TRITON_DISCONNECT:
+                mask = 0                 # manette éteinte : plus rien n'est tenu
+            else:
+                continue
+            if mask != self._masks.get(fd):
+                self._masks[fd] = mask
+                changed = True
+        if changed:
+            self._publish()
+
+    def _publish(self):
+        held = frozenset(
+            HID_TRITON_TO_STEAM[bit]
+            for mask in self._masks.values()
+            for bit in HID_TRITON_TO_STEAM
+            if mask & bit
+        )
+        if held == self._held:
+            return
+        self._held = held
+        try:
+            self._on_change(held)
+        except Exception:
+            pass

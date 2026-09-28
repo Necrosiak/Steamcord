@@ -64,6 +64,9 @@ export const DEFAULT_CFG: ShortcutCfg =
 const BUTTON_NAMES: Record<number, string> = {
   0: "A", 1: "B", 2: "X", 3: "Y",
   4: "D-Up", 5: "D-Right", 6: "D-Down", 7: "D-Left",
+  // Croix telle que la livre RegisterForControllerInputMessages sur les builds
+  // récents (mesuré le 28/09/26 avec un Steam Controller 2026).
+  20: "D-Up", 21: "D-Down", 22: "D-Left", 23: "D-Right",
   8: "Menu", 9: "View",
   28: "LT", 29: "RT", 30: "LB", 31: "RB",
   32: "L5", 33: "R5", 34: "Guide", 35: "Select", 36: "Start",
@@ -149,6 +152,10 @@ function isValidBinding(b: any): b is VoiceBinding {
 
 let cfg: ShortcutCfg = { ...DEFAULT_CFG };
 let comboHeld = false;                    // état précédent (détection de front)
+// Le backend lit aussi la manette en hidraw (#60 : Steam ne livre plus rien ici
+// quand un jeu a le focus). En mode bascule on le laisse seul décider quand il
+// couvre la manette, sinon un appui QAM ouvert basculerait deux fois.
+let hidCovered = false;
 const held = new Set<number>();           // boutons actuellement pressés
 let capturing: ((r: VoiceBinding) => void) | null = null;
 let captureAcc = new Set<number>();
@@ -319,6 +326,7 @@ function onCombo() {
   const active = b.buttons.every((x) => held.has(x));
   if (active && !comboHeld) {
     if (cfg.mode === "toggle") {
+      if (hidCovered) { comboHeld = active; return; }
       call("toggle_mute").catch(() => {});
       // L'état settled arrive par l'écho Discord → petit délai avant lecture.
       setTimeout(() => {
@@ -385,6 +393,8 @@ export function initVoiceShortcut() {
   call<[], any>("get_voice_shortcut")
     .then((c) => { cfg = migrateCfg(c); applyPttMode(); })
     .catch(() => {});
+  call<[], boolean>("get_controller_hid").then((v) => { hidCovered = !!v; }).catch(() => {});
+  addEventListener<[boolean]>("controller_hid", (v) => { hidCovered = !!v; });
   registerControllerListener();
   watchForResume();
 }

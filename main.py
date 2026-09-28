@@ -3244,6 +3244,10 @@ class Plugin:
     @classmethod
     async def _input_refresh(cls):
         """Démarre, arrête ou réévalue le lecteur selon la config et la capture."""
+        try:
+            await cls._hid_refresh()
+        except Exception as e:
+            logger.warning(f"controller_hid refresh failed: {e!r}")
         cfg = cls._voice_cfg()
         wants = bool(cfg["enabled"]) and any(
             b.get("kind") in ("keyboard", "mouse") for b in cfg["bindings"]
@@ -3313,6 +3317,11 @@ class Plugin:
         while True:
             await sleep(20)
             try:
+                # Dongle rebranché / manette rallumée : même filet que ci-dessous.
+                await cls._hid_refresh()
+            except Exception as e:
+                logger.warning(f"controller_hid refresh failed: {e!r}")
+            try:
                 cfg = cls._voice_cfg()
                 wants = bool(cfg["enabled"]) and any(
                     b.get("kind") in ("keyboard", "mouse") for b in cfg["bindings"]
@@ -3322,6 +3331,79 @@ class Plugin:
                 await cls._input_refresh()
             except Exception as e:
                 logger.warning(f"input watchdog failed: {e!r}")
+
+    # ── Manette Valve lue en hidraw (#60) ───────────────────────────────────
+    # SteamClient.Input ne livre plus aucun bouton au frontend dès qu'un jeu a le
+    # focus : le raccourci manette était muet en jeu. Pour les manettes dont on
+    # connaît le format (Steam Controller 2026, voir input_watch), on lit donc
+    # AUSSI le dongle ici. En push-to-talk les deux chemins coexistent sans
+    # risque grâce à l'agrégation par source de set_ptt ; en mode bascule, le
+    # frontend se tait quand ce lecteur couvre la manette (sinon un appui QAM
+    # ouvert basculerait deux fois = aucun effet).
+    _hid_watcher = None
+    _hid_combo = False
+    _hid_key = None
+    _hid_covered = False
+
+    @classmethod
+    def _hid_binding(cls):
+        cfg = cls._voice_cfg()
+        if not cfg["enabled"]:
+            return None
+        try:
+            import input_watch
+        except Exception:
+            return None
+        for b in cfg["bindings"]:
+            if b.get("kind") == "controller" and b.get("buttons") \
+                    and set(b["buttons"]) <= input_watch.HID_SUPPORTED_BUTTONS:
+                return b
+        return None
+
+    @classmethod
+    async def _hid_refresh(cls):
+        b = cls._hid_binding()
+        key = (tuple(b["buttons"]), cls._voice_cfg()["mode"]) if b else None
+        if key != cls._hid_key:
+            # Liaison changée : l'accord « tenu » de l'ancienne ne vaut plus rien.
+            cls._hid_key = key
+            cls._hid_combo = False
+            await cls.set_ptt(False, "controller_hid")
+        if b is None:
+            if cls._hid_watcher is not None:
+                cls._hid_watcher.close()
+                cls._hid_watcher = None
+        else:
+            import input_watch
+            if cls._hid_watcher is None:
+                from asyncio import get_running_loop
+                cls._hid_watcher = input_watch.HidControllerWatcher(
+                    get_running_loop(), cls._on_hid_change, log=logger.info,
+                )
+            cls._hid_watcher.rescan()
+        covered = cls._hid_watcher is not None and cls._hid_watcher.device_count > 0
+        if covered != cls._hid_covered:
+            cls._hid_covered = covered
+            await emit("controller_hid", covered)
+
+    @classmethod
+    async def get_controller_hid(cls):
+        return cls._hid_covered
+
+    @classmethod
+    def _on_hid_change(cls, held):
+        """Appelé SYNCHRONEMENT par le lecteur hidraw : aiguillage seulement."""
+        if cls._input_capture is not None:
+            return                      # capture en cours : c'est elle qui décide
+        b = cls._hid_binding()
+        active = bool(b) and all(x in held for x in b["buttons"])
+        if active == cls._hid_combo:
+            return
+        cls._hid_combo = active
+        if cls._voice_cfg()["mode"] == "ptt":
+            create_task(cls.set_ptt(active, "controller_hid"))
+        elif active:
+            create_task(cls._toggle_mute_notify())
 
     @classmethod
     def _on_input_edge(cls, kind, code, node, down):
@@ -5380,6 +5462,10 @@ class Plugin:
             if cls._input_watcher is not None:
                 cls._input_watcher.close()
                 cls._input_watcher = None
+            if cls._hid_watcher is not None:
+                cls._hid_combo = False   # close() publie « rien de tenu » : sans effet
+                cls._hid_watcher.close()
+                cls._hid_watcher = None
         except Exception:
             pass
         # Restaurer la capture voix si un Go Live sans micro était en cours
