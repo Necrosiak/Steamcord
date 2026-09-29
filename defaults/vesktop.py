@@ -451,6 +451,53 @@ async def _wait_for_display(runtime_dir, timeout=120):
     return _any_display(runtime_dir)
 
 
+def _steam_display_env():
+    """DISPLAY/XAUTHORITY sur lesquels Steam lui-même affiche, lus dans l'environ
+    de son processus (~/.steampid).
+
+    En mode jeu, le rendu de Vesktop est épinglé sur X11 (XWayland de gamescope)
+    et on prenait le DISPLAY exporté au gestionnaire de session utilisateur,
+    avec `:0` en repli. Sur Bazzite ce repli tombe juste par chance : le manager
+    n'exporte rien non plus, mais Steam est sur :0 sans cookie. Sur les sessions
+    gamescope montées autrement (issue #61, arch-deckify), rien n'est exporté
+    et Steam peut être sur un autre écran ou exiger un cookie : Electron n'a
+    alors aucun affichage, le port CDP ne s'ouvre jamais et le QAM reste sur
+    « Initialisation ». L'écran de Steam, lui, est utilisable par définition."""
+    out = {}
+    try:
+        pid = Path(os.path.expanduser("~/.steampid")).read_text().strip()
+        for item in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0"):
+            k, _, v = item.partition(b"=")
+            if k in (b"DISPLAY", b"XAUTHORITY"):
+                out[k.decode()] = v.decode(errors="ignore")
+    except Exception:
+        pass
+    return out
+
+
+def _x11_sockets():
+    try:
+        return sorted(p.name for p in Path("/tmp/.X11-unix").iterdir())
+    except Exception:
+        return []
+
+
+async def _unit_journal_tail(unit, lines=15):
+    """Dernières lignes du journal de l'unité Vesktop : quand le port CDP ne
+    s'ouvre pas, c'est là qu'Electron dit pourquoi (« Missing X server or
+    $DISPLAY », « Authorization required »…) — et les rapports d'issue ne
+    contiennent que le log de Steamcord."""
+    try:
+        proc = await create_subprocess_exec(
+            "journalctl", "--user", "-u", unit, "-n", str(lines), "--no-pager", "-o", "cat",
+            stdout=PIPE, stderr=DEVNULL, env=_user_env(),
+        )
+        out, _ = await proc.communicate()
+        return [l for l in out.decode(errors="ignore").splitlines() if l.strip()]
+    except Exception:
+        return []
+
+
 def _pick_wayland(session_env, runtime_dir, gamescope):
     """Quel WAYLAND_DISPLAY annoncer à Vesktop.
 
@@ -511,6 +558,14 @@ async def launch():
 
     wayland_display = _pick_wayland(session_env, runtime_dir, gamescope)
 
+    # Mode jeu : l'écran X de Steam prime (voir _steam_display_env). Hors mode
+    # jeu on ne touche à rien, le bureau exporte correctement son affichage.
+    steam_env = _steam_display_env() if gamescope else {}
+    if steam_env.get("DISPLAY"):
+        display = steam_env["DISPLAY"]
+        if steam_env.get("XAUTHORITY"):
+            xauth = steam_env["XAUTHORITY"]
+
     # [launchdiag] Gamemode-specific stuck-on-Initializing diagnosis: capture exactly
     # which compositor sockets exist and what graphical env the manager exported. In
     # pure gamemode the root compositor is gamescope (not KWin), so wayland-0 may be
@@ -526,7 +581,10 @@ async def launch():
     logger.info(
         f"[launchdiag] sockets={socks} env.WAYLAND_DISPLAY={session_env.get('WAYLAND_DISPLAY')!r} "
         f"env.DISPLAY={session_env.get('DISPLAY')!r} env.XAUTHORITY={'set' if xauth else 'empty'} "
-        f"targeting WAYLAND_DISPLAY={wayland_display} (gamescope={gamescope})"
+        f"targeting WAYLAND_DISPLAY={wayland_display} (gamescope={gamescope}) "
+        f"x11={_x11_sockets()} steam.DISPLAY={steam_env.get('DISPLAY')!r} "
+        f"steam.XAUTHORITY={'set' if steam_env.get('XAUTHORITY') else 'empty'} "
+        f"→ DISPLAY={display}"
     )
 
     # Multi-sessions: pick the Vesktop profile of the ACTIVE Steam account.
@@ -700,6 +758,8 @@ async def launch():
         "[launchdiag] Vesktop launched but CDP 9223 never opened after 60s "
         "(Electron likely got no usable display) — QAM will stay on 'Initializing'"
     )
+    for line in await _unit_journal_tail(VESKTOP_UNIT):
+        logger.warning(f"[launchdiag] vesktop: {line[:300]}")
     return False
 
 

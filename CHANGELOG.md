@@ -14,6 +14,24 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.39.3 — 2026-09-29
+
+### No more endless "Initializing" in Gaming Mode on setups outside SteamOS
+
+Reported in [#61](https://github.com/Necrosiak/Steamcord/issues/61).
+
+- **Vesktop now opens on the display Steam itself uses.** In Gaming Mode,
+  Steamcord starts Vesktop on gamescope's X display. It took that display from
+  the user session, which on many setups doesn't export one, and fell back to
+  `:0`. On SteamOS and Bazzite, Steam happens to be on `:0`. On a gamescope
+  session set up another way (here arch-deckify), `:0` was a different X
+  server that refused the connection: Vesktop crashed on start, and the panel
+  stayed on *Initializing* forever. Steamcord now reads the display, and its
+  authorization cookie if there is one, from the running Steam process.
+- **Better diagnostics when Vesktop can't start.** The log now lists the X
+  displays present and the one Steam uses, and copies Vesktop's own last error
+  lines into the Steamcord log, so a report shows the cause directly.
+
 ## 1.39.2 — 2026-09-28
 
 ### Controller push-to-talk works in-game

@@ -160,6 +160,10 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - Controller push-to-talk doing nothing while a game has focus ([#60](https://github.com/Necrosiak/Steamcord/issues/60), fixed in v1.39.2). Instead of stopping at "it doesn't work in-game", the report counted the plugin's backend calls against Steam's focus log while holding the button, which showed zero events whenever a game was in front — and its lead, that Steam's controller-message API only feeds its own UI, was exactly right. It also flagged the Steam Input keyboard-remap dead end, now documented in the README.
 
+### [@marco-calautti](https://github.com/marco-calautti)
+
+- Steamcord stuck on "Initializing" in Gaming Mode on an arch-deckify setup ([#61](https://github.com/Necrosiak/Steamcord/issues/61), fixed in v1.39.3). The log showed Vesktop never opening; the three commands he ran from inside Gaming Mode settled it: Steam was on `:1`, while Steamcord was pointing Vesktop at `:0`, a different X server that rejected it with an invalid cookie.
+
 # Code contributions
 
 ### [@jezonek](https://github.com/jezonek)
