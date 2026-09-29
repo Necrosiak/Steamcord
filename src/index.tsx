@@ -1305,6 +1305,27 @@ function useVesktopBackend(active: boolean): string | null | "unknown" {
   return backend;
 }
 
+// #61 : « Initializing » qui s'éternise = presque toujours Discord pas connecté
+// (session perdue) ou Vencord abîmé dans Vesktop — rien que Steamcord puisse
+// voir de l'extérieur. Passé ce délai on dit quoi faire au lieu d'un spinner
+// muet. Horodatage au niveau module : refermer/rouvrir le QAM ne remet pas le
+// compteur à zéro ; il ne repart que quand Discord a fini de charger.
+const SLOW_INIT_MS = 60000;
+let initSince: number | null = null;
+function useSlowInit(active: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!active) { initSince = null; setSlow(false); return; }
+    if (initSince === null) initSince = Date.now();
+    const left = initSince + SLOW_INIT_MS - Date.now();
+    if (left <= 0) { setSlow(true); return; }
+    setSlow(false);
+    const id = setTimeout(() => setSlow(true), left);
+    return () => clearTimeout(id);
+  }, [active]);
+  return slow;
+}
+
 const Content = () => (
   <QamUiRoot><BackNavRoot><ContentBody /></BackNavRoot></QamUiRoot>
 );
@@ -1380,6 +1401,7 @@ const ContentBody = () => {
   const screenCam = useShowScreenCam();
   const gamescopeOnly = useVoiceGamescopeOnly();
   const vesktopBackend = useVesktopBackend(!state?.loaded);
+  const slowInit = useSlowInit(!state?.loaded);
 
   const inCall = !!state?.vc?.channel_id;
   const voiceAvailable = !gamescopeOnly || shareEnv !== "desktop";
@@ -1453,6 +1475,11 @@ const ContentBody = () => {
           <SteamSpinner background="transparent" />
         </div>
         <h2 style={{ margin: "0", fontSize: "15px", opacity: 0.85 }}>{t("initializing")}</h2>
+        {slowInit && (
+          <div style={{ fontSize: "12px", lineHeight: "1.5", opacity: 0.75, padding: "0 12px", textAlign: "center" }}>
+            {t("initializing_slow")}
+          </div>
+        )}
       </div>
     );
   } else if (!state?.logged_in) {

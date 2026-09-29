@@ -179,3 +179,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@bookcasey](https://github.com/bookcasey)
 
 - The hang-up button’s icon, from the [Steamcord fork](https://github.com/bookcasey/Steamcord): a phone with a line through it instead of a plug, which read as "unplug something" rather than "leave the call".
+
+### [@Phoenax77](https://github.com/Phoenax77)
+
+- The second "Initializing" case on [#61](https://github.com/Necrosiak/Steamcord/issues/61), on stock SteamOS, where v1.39.3 was not the answer: Vesktop started fine but Discord never finished loading inside it. Checking Vesktop in Desktop Mode showed the sign-in never survived a restart, and **Repair Vencord** from Vesktop's tray menu fixed it — a damaged Vencord install, invisible from Steamcord's side. That is why the panel now says what to try when *Initializing* lasts more than a minute
