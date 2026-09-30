@@ -381,7 +381,14 @@ export function hexA(hex: string, a: number): string {
 // posée, la règle n'existait nulle part, et rien ne changeait.
 const SLIDER_FIX_CSS =
   ".steamcord-slider *{min-width:0!important}" +
-  ".steamcord-slider .SliderTrack{overflow:visible!important}";
+  ".steamcord-slider .SliderTrack{overflow:visible!important}" +
+  // Curseur Sons Jeu / Discord : côté gauche (rempli, dessiné par ::before avec
+  // --left-track-color) = jeu en bleu Steam ; fond de la piste = Discord en violet.
+  ".steamcord-mix .SliderTrack{background:#5865F2!important;--left-track-color:#1a9fff!important}" +
+  // Graduations : la piste est rentrée de 10 px dans le champ, pas leur rangée
+  // (mesuré au CDP le 30/09 : crans à x=80/312 pour un champ 82→314) → elles
+  // débordaient du halo et ne tombaient plus aux bouts de la piste.
+  ".steamcord-mix .SliderControl+div{padding:0 10px!important;box-sizing:border-box!important}";
 
 export function useSliderClipFix() {
   return useCallback((el: HTMLElement | null) => {
@@ -572,7 +579,16 @@ export function Notice({ tone, children }: any) {
 export function CollapseHeader({ open, icon, right, onClick, children }: any) {
   const [focused, setFocused] = useState(false);
   const { px } = useQamUi();
+  // Vue agrandie (ligne de ~1100 px) : le grossissement de 2 % y fait 11 px de
+  // chaque côté et la lueur sort de la colonne, qui les rogne (30/09 : Soundboard,
+  // Sons Jeu / Discord, Overlays en jeu). Au-delà de 600 px → anneau seul, comme
+  // les listes de cette vue (listHalo). Le QAM (~270 px) garde le halo complet.
+  const [wide, setWide] = useState(false);
+  const measure = useCallback((el: HTMLElement | null) => {
+    if (el) setWide(el.getBoundingClientRect().width > 600);
+  }, []);
   return (
+    <div ref={measure} style={{ width: "100%" }}>
     <Btn noFocusRing
       onClick={onClick}
       onFocus={() => setFocused(true)}
@@ -586,7 +602,7 @@ export function CollapseHeader({ open, icon, right, onClick, children }: any) {
         color: "#fff", fontWeight: open ? 700 : 500, lineHeight: 1.2,
         background: open ? hexA(ACCENT, 0.28) : "rgba(255,255,255,0.05)",
         border: `1px solid ${open ? hexA(ACCENT, 0.4) : "rgba(255,255,255,0.06)"}`,
-        ...focusHalo(ACCENT, focused),
+        ...(wide ? listHalo(focused) : focusHalo(ACCENT, focused)),
       }}
     >
       {icon}
@@ -601,6 +617,7 @@ export function CollapseHeader({ open, icon, right, onClick, children }: any) {
         <IcChevronDown size={px(12)} />
       </span>
     </Btn>
+    </div>
   );
 }
 

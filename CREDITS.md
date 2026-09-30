@@ -183,3 +183,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@Phoenax77](https://github.com/Phoenax77)
 
 - The second "Initializing" case on [#61](https://github.com/Necrosiak/Steamcord/issues/61), on stock SteamOS, where v1.39.3 was not the answer: Vesktop started fine but Discord never finished loading inside it. Checking Vesktop in Desktop Mode showed the sign-in never survived a restart, and **Repair Vencord** from Vesktop's tray menu fixed it — a damaged Vencord install, invisible from Steamcord's side. That is why the panel now says what to try when *Initializing* lasts more than a minute
+
+### [u/iReaddit-KRTORR](https://www.reddit.com/user/iReaddit-KRTORR/) (Reddit)
+
+- The idea behind **Game / Discord sound**: a slider to balance the game against Discord in your headset, like the PlayStation party chat, so you don't have to go into a game's settings mid-match to hear your friends (shipped in v1.40.0)

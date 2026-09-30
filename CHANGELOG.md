@@ -14,6 +14,48 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.40.0 — 2026-09-30
+
+### Game / Discord sound, like on PlayStation
+
+Suggested on Reddit by u/iReaddit-KRTORR, who missed the PlayStation party
+chat balance.
+
+- A new **Game / Discord sound** menu in the call, under the Soundboard, in the
+  Quick Access Menu and in the expanded view. One slider balances the game
+  (Steam blue, left) against Discord (Discord purple, right): in the middle
+  both play at 100 %, and moving it turns the other side down, without going
+  into the game's settings mid-match.
+- It only changes what **you** hear. What goes to the call and to a Go Live is
+  untouched. Games started later and calls joined later follow the setting,
+  and it is remembered.
+- One exception: a [BoneCast](https://github.com/Necrosiak/BoneCast) stream
+  takes the game sound from your output, so while it is live, turning the game
+  down turns it down for viewers too.
+
+### Help when "Initializing" takes too long
+
+Reported in [#61](https://github.com/Necrosiak/Steamcord/issues/61).
+
+- After a minute on *Initializing*, the panel now says what to try: sign in to
+  Discord in Vesktop from Desktop Mode, or use **Repair Vencord** from Vesktop's
+  tray menu if Discord never finishes loading.
+
+### Fix
+
+- **Turning off "screen as camera" could restart Gaming Mode.** gamescope can
+  crash if a screen capture disconnects while it is drawing a frame for it
+  (a bug in gamescope itself, measured in BoneCast, which shares this capture
+  code). The capture now pauses, lets gamescope finish the frame and only then
+  disconnects.
+
+### Expanded view
+
+- The Soundboard, Game / Discord sound and in-game overlay menus now line up
+  with the rest of the call, and their selection ring no longer spills over
+  the column.
+- Mute, deafen and hang up, and the channel name, are centered.
+
 ## 1.39.3 — 2026-09-29
 
 ### No more endless "Initializing" in Gaming Mode on setups outside SteamOS

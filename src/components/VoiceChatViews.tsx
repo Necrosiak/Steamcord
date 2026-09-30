@@ -2,6 +2,7 @@ import { addEventListener, call, removeEventListener } from "@decky/api";
 import { memo, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { t } from "../i18n";
+import { FaDiscord, FaSteam } from "react-icons/fa";
 import {
   IcCameraVideo, IcController, IcFilm, IcMic, IcMicMute, IcMicMuteFill,
   IcMonitor, IcSoundboard, IcSpeaker, IcSpeakerMuteFill,
@@ -476,7 +477,9 @@ export const SoundboardPanel = memo(function SoundboardPanel() {
   const isEmpty = !!data && data.default.length === 0 && !data.guild?.sounds.length && data.everywhere.length === 0;
 
   return (
-    <div style={{ marginBottom: 6 }}>
+    // Même retrait que « Overlays en jeu » : sans lui, le halo de sélection
+    // débordait de la colonne dans la vue agrandie (30/09).
+    <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>
       <CollapseHeader open={open} icon={<IcSoundboard />} onClick={toggle}>
         {t("soundboard_title")}
       </CollapseHeader>
@@ -877,6 +880,62 @@ function OverlayMenu() {
               />
             </>
           )}
+        </CollapseBody>
+      )}
+    </div>
+  );
+}
+
+// Équilibre Jeu ↔ Discord dans le casque (curseur « chat » de la PlayStation).
+// Menu repliable comme la Soundboard (le user : la page d'appel devenait trop
+// chargée) ; replié, l'en-tête montre déjà les deux niveaux. Gauche = Discord
+// plus bas, droite = jeu plus bas, milieu = les deux à 100 %. Le backend ne
+// touche que ce que l'on entend, jamais ce qui part vers l'appel ou le Go Live.
+export function ChatMixPanel() {
+  const sliderFix = useSliderClipFix();
+  const [open, setOpen] = useState(false);
+  // null tant que la valeur enregistrée n'est pas lue : sinon le 50 de départ
+  // partirait au backend et écraserait le réglage de l'utilisateur.
+  const [mix, setMix] = useState<number | null>(null);
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    call<[], any>("get_chat_mix").then((r: any) => setMix(typeof r?.mix === "number" ? r.mix : 50))
+      .catch(() => setMix(50));
+  }, []);
+  useEffect(() => {
+    if (!touched || mix === null) return;
+    const id = setTimeout(() => { call<[number], any>("set_chat_mix", mix).catch(() => {}); }, 150);
+    return () => clearTimeout(id);
+  }, [mix, touched]);
+  if (mix === null) return null;
+  const game = Math.min(100, (100 - mix) * 2);
+  const discord = Math.min(100, mix * 2);
+  // Icônes SVG (manette, Discord) plutôt que des emojis, comme le reste du panneau.
+  const levels = (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+      <span style={{ color: "#1a9fff", display: "inline-flex" }}><FaSteam /></span> {game}%
+      <span style={{ opacity: 0.5 }}>·</span>
+      <span style={{ color: "#5865F2", display: "inline-flex" }}><FaDiscord /></span> {discord}%
+    </span>
+  );
+  return (
+    <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>
+      <CollapseHeader open={open} icon={<IcSpeaker />} onClick={() => setOpen((v) => !v)}
+        right={<span style={{ opacity: 0.7, fontSize: "0.9em" }}>{levels}</span>}>
+        {t("chat_mix_title")}
+      </CollapseHeader>
+      {open && (
+        <CollapseBody>
+          <div ref={sliderFix} className="steamcord-slider steamcord-mix" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
+            <SliderFieldAny
+              label={<div style={{ width: "100%", display: "flex", justifyContent: "center" }}>{levels}</div>}
+              value={mix}
+              min={0} max={100} step={5}
+              notchCount={3} notchTicksVisible
+              onChange={(v: number) => { setTouched(true); setMix(v); }}
+              bottomSeparator="none"
+            />
+          </div>
         </CollapseBody>
       )}
     </div>

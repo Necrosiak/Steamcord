@@ -667,6 +667,10 @@ class Plugin:
     _ga_real_sink = None      # vraie sortie à restaurer au stop
     _ga_real_source = None    # source par défaut à restaurer au stop
     _ga_vol = {"voice": 100, "game": 60}
+    # Équilibre Jeu ↔ Discord de CE QUE L'ON ENTEND (0 = tout jeu, 50 = les deux à
+    # 100 %, 100 = tout Discord). Voir _apply_chat_mix.
+    _chat_mix = 50
+    _mix_touched = set()          # sink-inputs dont on a changé le volume
 
     @classmethod
     async def _main(cls):
@@ -3105,9 +3109,96 @@ class Plugin:
                 # _apply_audio_routing s'en charge déjà.
                 elif cls._golive_bridge_mods:
                     await cls._golive_route_game(True)
+                # Nouveau flux (jeu lancé, appel rejoint) : il arrive à 100 %.
+                if cls._chat_mix != 50 or cls._mix_touched:
+                    await cls._apply_chat_mix()
             except Exception:
                 pass
             await sleep(4)
+
+    # ── Équilibre Jeu ↔ Discord (ce que l'on entend) ─────────────────────────
+    # Suggestion Reddit (r/steammachine, 29/09) : le curseur « chat / jeu » de la
+    # PlayStation. On ne touche QUE les flux qui jouent dans la vraie sortie
+    # (casque/HDMI) : ceux qui partent vers l'appel ou le Go Live (steamcord_mix,
+    # steamcord_share_sink…) ne passent pas par là, donc les autres n'entendent
+    # aucun changement. Selon ce qui est actif, le jeu arrive dans la sortie soit
+    # directement, soit par un loopback (partage du son du jeu, pont du Go Live) ;
+    # Discord soit directement (Vesktop), soit par le loopback du pont BoneCast
+    # (bonecast_discord). Tout ce qui n'est pas Discord compte comme « jeu ».
+    # ⚠️ BoneCast capture le son du jeu sur le monitor de la sortie : pendant un
+    # live BoneCast, baisser le jeu le baisse aussi pour ses spectateurs.
+    @staticmethod
+    def _chat_mix_levels(m):
+        m = max(0, min(100, int(m)))
+        return min(100, m * 2), min(100, (100 - m) * 2)     # (discord, jeu)
+
+    @classmethod
+    async def _real_output_sink(cls):
+        for name in (cls._ga_real_sink, cls._golive_bridge_real_sink, cls._audio_out):
+            if name and "steamcord_" not in name:
+                return name
+        d = (await cls._pactl("get-default-sink")).strip()
+        return d if d and "steamcord_" not in d and "bonecast_" not in d else None
+
+    @classmethod
+    async def _apply_chat_mix(cls):
+        from json import loads
+        m = cls._chat_mix
+        discord_pct, game_pct = cls._chat_mix_levels(m)
+        real = await cls._real_output_sink()
+        if not real:
+            return
+        try:
+            sinks = loads(await cls._pactl("list", "sinks", want_json=True) or "[]")
+            real_idx = next((str(s.get("index")) for s in sinks if s.get("name") == real), None)
+            if real_idx is None:
+                return
+            # Le JSON de pactl ne donne PAS l index des modules (seulement nom et
+            # argument) : la forme courte « index<TAB>nom<TAB>arguments » oui.
+            mods = {}
+            for line in (await cls._pactl("list", "short", "modules")).splitlines():
+                parts = line.split("	")
+                if len(parts) >= 3:
+                    mods[parts[0]] = parts[2]
+            for si in loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]"):
+                if str(si.get("sink")) != real_idx:
+                    continue
+                idx = str(si.get("index"))
+                arg = mods.get(str(si.get("owner_module")), "")
+                is_discord = cls._is_vesktop_stream(si) or "bonecast_discord" in arg
+                target = discord_pct if is_discord else game_pct
+                vols = list((si.get("volume") or {}).values())
+                try:
+                    cur = int(str(vols[0].get("value_percent", "100%")).rstrip("%"))
+                except Exception:
+                    cur = None
+                if m == 50:
+                    if idx in cls._mix_touched and cur != 100:
+                        await cls._pactl("set-sink-input-volume", idx, "100%")
+                    continue
+                if cur != target:
+                    await cls._pactl("set-sink-input-volume", idx, f"{target}%")
+                cls._mix_touched.add(idx)
+            if m == 50:
+                cls._mix_touched.clear()
+        except Exception as e:
+            logger.warning(f"[chatmix] {e!r}")
+
+    @classmethod
+    async def get_chat_mix(cls):
+        d, g = cls._chat_mix_levels(cls._chat_mix)
+        return {"mix": cls._chat_mix, "discord": d, "game": g}
+
+    @classmethod
+    async def set_chat_mix(cls, mix=50):
+        try:
+            cls._chat_mix = max(0, min(100, int(mix)))
+        except (TypeError, ValueError):
+            return {"ok": False}
+        cls._save_audio_cfg()
+        await cls._apply_chat_mix()
+        d, g = cls._chat_mix_levels(cls._chat_mix)
+        return {"ok": True, "mix": cls._chat_mix, "discord": d, "game": g}
 
     @classmethod
     def _load_audio_cfg(cls):
@@ -3122,6 +3213,8 @@ class Plugin:
             if isinstance(cfg.get("ga_vol"), dict):
                 cls._ga_vol.update({k: int(v) for k, v in cfg["ga_vol"].items()
                                     if k in cls._ga_vol})
+            if isinstance(cfg.get("chat_mix"), int):
+                cls._chat_mix = max(0, min(100, cfg["chat_mix"]))
         except Exception:
             pass
 
@@ -3132,7 +3225,8 @@ class Plugin:
             os.makedirs(os.path.dirname(cls._AUDIO_CFG), exist_ok=True)
             with open(cls._AUDIO_CFG, "w") as f:
                 dump({"output": cls._audio_out, "input": cls._audio_in,
-                      "mic": cls._mic_prefs, "ga_vol": cls._ga_vol}, f)
+                      "mic": cls._mic_prefs, "ga_vol": cls._ga_vol,
+                      "chat_mix": cls._chat_mix}, f)
         except Exception as e:
             logger.warning(f"save audio cfg failed: {e!r}")
 
@@ -4389,6 +4483,13 @@ class Plugin:
         except Exception:
             pass
         if hasattr(cls, "camera_feeder") and cls.camera_feeder:
+            # Laisser le feeder se déconnecter proprement de gamescope (voir
+            # gst_camera.py, on_term) avant le kill de secours.
+            try:
+                from asyncio import wait_for
+                await wait_for(cls.camera_feeder.wait(), timeout=3)
+            except Exception:
+                pass
             try:
                 cls.camera_feeder.kill()
                 await cls.camera_feeder.wait()

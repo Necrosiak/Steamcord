@@ -11,6 +11,7 @@
 
 import fcntl
 import os
+import signal
 import struct
 import sys
 import time
@@ -208,6 +209,23 @@ def run_backend(backend, node, display):
     loop = GLib.MainLoop()
     ok = {"value": True}
     pipe = build_pipeline(backend, node=node, display=display)
+
+    # Arrêt demandé (SIGTERM du backend) : on NE meurt PAS en pleine image.
+    # gamescope 3.16.28 plante (SIGSEGV paint_pipewire → vulkan_screenshot)
+    # quand un client disparaît pendant qu'il lui dessine une image — sa gestion
+    # des tampons PipeWire n'est pas thread-safe (PR amont #2021, jamais
+    # fusionnée), et la session de jeu redémarre. Mesuré dans BoneCast le 30/09.
+    # Pause d'abord (gamescope arrête de nous dessiner), puis NULL dans finally.
+    def on_term():
+        log.info("SIGTERM — arrêt propre de la capture")
+        try:
+            pipe.set_state(Gst.State.PAUSED)
+            pipe.get_state(1 * Gst.SECOND)
+            time.sleep(0.3)
+        except Exception as e:
+            log.warning(f"arrêt propre: {e!r}")
+        loop.quit()
+        return False
     bus = pipe.get_bus()
     bus.add_signal_watch()
 
@@ -367,6 +385,7 @@ def run_backend(backend, node, display):
     ret = pipe.set_state(Gst.State.PLAYING)
     log.info(f"set_state(PLAYING) → {ret} (backend={backend}, device={DEVICE}, node={node}, display={display})")
     try:
+        sources.append(GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, on_term))
         loop.run()
     finally:
         # Retirer TOUS les timeouts encore en attente (sinon ils refireront dans

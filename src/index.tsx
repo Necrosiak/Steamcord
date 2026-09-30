@@ -47,6 +47,7 @@ import { ACCENT, DANGER, ONLINE, focusHalo, setVeilAlpha } from "./components/St
 // Même contournement que dans VoiceChatViews : les types publiés par @decky/ui
 // pour SliderField ne décrivent pas `bottomSeparator`.
 const SliderFieldAny = SliderField as any;
+
 import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
 import { initVideoRelay } from "./videoRelay";
@@ -72,6 +73,7 @@ import {
   VoiceChatChannel,
   VoiceChatMembers,
   SoundboardPanel,
+  ChatMixPanel,
 } from "./components/VoiceChatViews";
 import { GoLiveButton } from "./components/buttons/GoLiveButton";
 import { ScreenCameraButton } from "./components/buttons/ScreenCameraButton";
@@ -1364,11 +1366,14 @@ const ExpandedCallPanel = () => {
         <IcChat /> {t("xv_voice_chat")}{vc.channel_name ? ` · ${vc.channel_name}` : ""}
       </WideBtn>
     </div>
-    <Focusable flow-children="row" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+    {/* Vue agrandie : contrôles et nom du salon centrés (demande user 30/09),
+        comme dans le QAM. */}
+    <Focusable flow-children="row" style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 12 }}>
       <MuteButton /><DeafenButton /><DisconnectButton />
     </Focusable>
-    <VoiceChatChannel />
+    <div style={{ textAlign: "center" }}><VoiceChatChannel /></div>
     <SoundboardPanel />
+    <ChatMixPanel />
     <VoiceChatMembers />
     <div style={{ marginTop: 8 }}><GoLiveButton /></div>
     {shareEnv !== "desktop" && screenCam.visible && <div style={{ marginTop: 8 }}><ScreenCameraButton /></div>}
@@ -1553,6 +1558,7 @@ const ContentBody = () => {
               <>
                 <VoiceChatChannel />
                 <SoundboardPanel />
+                <ChatMixPanel />
                 <VoiceChatMembers />
                 {/* Go Live marche PARTOUT depuis v1.15.0 : portail KWin en
                     Bureau/Big Picture, portal_shim (node gamescope) en console
