@@ -187,3 +187,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [u/iReaddit-KRTORR](https://www.reddit.com/user/iReaddit-KRTORR/) (Reddit)
 
 - The idea behind **Game / Discord sound**: a slider to balance the game against Discord in your headset, like the PlayStation party chat, so you don't have to go into a game's settings mid-match to hear your friends (shipped in v1.40.0)
+
+### [@ezamelczyk](https://github.com/ezamelczyk)
+
+- The Game / Discord sound mix staying active outside calls and holding every other app at a low volume — a precise report that traced it to the routing loop, plus the fix itself ([#64](https://github.com/Necrosiak/Steamcord/issues/64), [#65](https://github.com/Necrosiak/Steamcord/pull/65), fixed in v1.40.1)

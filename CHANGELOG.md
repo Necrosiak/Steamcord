@@ -14,17 +14,29 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
-## Unreleased
+## 1.40.1 — 2026-10-01
 
 ### Fix
 
-- **Game / Discord sound kept turning other apps down outside of a call.** The
-  setting is remembered, but it was applied to every sound on your output all
-  the time, so a mix left off-centre made Firefox, games and system sounds sit
-  at a fraction of their volume, and any manual change was undone within
-  seconds — with no way to reach the slider outside a call. It now only applies
-  while you are in a call; when you leave, the sounds it turned down go back to
-  100 %, and your setting is kept for the next call.
+- **Game / Discord sound kept turning other apps down outside of a call**
+  ([#64](https://github.com/Necrosiak/Steamcord/issues/64)). The setting is
+  remembered, but it was applied to every sound on your output all the time, so
+  a mix left off-centre made Firefox, games and system sounds sit at a fraction
+  of their volume, and any manual change was undone within seconds — with no way
+  to reach the slider outside a call. It now only applies while you are in a
+  call; when you leave, the sounds it turned down go back to 100 %, and your
+  setting is kept for the next call. Reported and fixed by
+  [@ezamelczyk](https://github.com/ezamelczyk) in
+  [#65](https://github.com/Necrosiak/Steamcord/pull/65).
+- **Apps that still started quiet after that.** Your system remembers each
+  app's last volume, so apps that had been turned down kept starting low even
+  once the mix stopped touching them. For the week after this update, outside a
+  call, an app that starts at exactly the level the mix used to force is put
+  back to 100 % once — if you turn it down again yourself, it stays that way.
+- **Game / Discord sound did nothing when the saved output was unplugged.** If
+  the headset or speakers chosen in Steamcord were disconnected, the mix looked
+  for sounds on a device that wasn't there and adjusted nothing, even in a call.
+  It now falls back to the output you are actually using.
 
 ## 1.40.0 — 2026-09-30
 

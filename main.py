@@ -671,6 +671,12 @@ class Plugin:
     # 100 %, 100 = tout Discord). Voir _apply_chat_mix.
     _chat_mix = 50
     _mix_touched = set()          # sink-inputs dont on a changé le volume
+    # #64 : avant 1.40.1 le mix s'appliquait aussi HORS appel, et WirePlumber a
+    # mémorisé ces volumes baissés (stream-properties) → les applis redémarrent
+    # basses. Pendant 7 jours après la mise à jour, hors appel, un flux qui
+    # arrive pile au niveau qu'on imposait est remis à 100 % (une fois par flux).
+    _mix_heal_until = 0
+    _mix_healed = set()
 
     @classmethod
     async def _main(cls):
@@ -3138,8 +3144,13 @@ class Plugin:
 
     @classmethod
     async def _real_output_sink(cls):
+        # Seulement une sortie PRÉSENTE : le casque mémorisé dans _audio_out peut
+        # être débranché, et son nom ne correspond alors à aucun sink → le mix ne
+        # trouvait plus rien à régler (mesuré 01/10, sortie HDMI seule).
+        present = {l.split("	")[1] for l in (await cls._pactl("list", "short", "sinks")).splitlines()
+                   if l.count("	") >= 1}
         for name in (cls._ga_real_sink, cls._golive_bridge_real_sink, cls._audio_out):
-            if name and "steamcord_" not in name:
+            if name and "steamcord_" not in name and name in present:
                 return name
         d = (await cls._pactl("get-default-sink")).strip()
         return d if d and "steamcord_" not in d and "bonecast_" not in d else None
@@ -3152,6 +3163,10 @@ class Plugin:
         # reste n'est plus jamais modifié).
         m = cls._chat_mix if cls._in_call() else 50
         discord_pct, game_pct = cls._chat_mix_levels(m)
+        heal = None
+        if m == 50 and time.time() < cls._mix_heal_until:
+            d, g = cls._chat_mix_levels(cls._chat_mix)
+            heal = (g, d)
         real = await cls._real_output_sink()
         if not real:
             return
@@ -3182,6 +3197,11 @@ class Plugin:
                 if m == 50:
                     if idx in cls._mix_touched and cur != 100:
                         await cls._pactl("set-sink-input-volume", idx, "100%")
+                    elif heal and idx not in cls._mix_healed:
+                        cls._mix_healed.add(idx)
+                        if cur == heal[1 if is_discord else 0] != 100:
+                            await cls._pactl("set-sink-input-volume", idx, "100%")
+                            logger.info(f"[chatmix] volume mémorisé restauré : {idx} {cur}% → 100%")
                     continue
                 if cur != target:
                     await cls._pactl("set-sink-input-volume", idx, f"{target}%")
@@ -3222,6 +3242,11 @@ class Plugin:
                                     if k in cls._ga_vol})
             if isinstance(cfg.get("chat_mix"), int):
                 cls._chat_mix = max(0, min(100, cfg["chat_mix"]))
+            if isinstance(cfg.get("mix_heal_until"), (int, float)):
+                cls._mix_heal_until = cfg["mix_heal_until"]
+            elif cls._chat_mix != 50:
+                cls._mix_heal_until = int(time.time()) + 7 * 86400
+                cls._save_audio_cfg()
         except Exception:
             pass
 
@@ -3233,7 +3258,8 @@ class Plugin:
             with open(cls._AUDIO_CFG, "w") as f:
                 dump({"output": cls._audio_out, "input": cls._audio_in,
                       "mic": cls._mic_prefs, "ga_vol": cls._ga_vol,
-                      "chat_mix": cls._chat_mix}, f)
+                      "chat_mix": cls._chat_mix,
+                      "mix_heal_until": cls._mix_heal_until}, f)
         except Exception as e:
             logger.warning(f"save audio cfg failed: {e!r}")
 
