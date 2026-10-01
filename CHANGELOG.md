@@ -14,6 +14,18 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## Unreleased
+
+### Fix
+
+- **Game / Discord sound kept turning other apps down outside of a call.** The
+  setting is remembered, but it was applied to every sound on your output all
+  the time, so a mix left off-centre made Firefox, games and system sounds sit
+  at a fraction of their volume, and any manual change was undone within
+  seconds — with no way to reach the slider outside a call. It now only applies
+  while you are in a call; when you leave, the sounds it turned down go back to
+  100 %, and your setting is kept for the next call.
+
 ## 1.40.0 — 2026-09-30
 
 ### Game / Discord sound, like on PlayStation
