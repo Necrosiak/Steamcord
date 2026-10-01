@@ -3133,6 +3133,10 @@ class Plugin:
         return min(100, m * 2), min(100, (100 - m) * 2)     # (discord, jeu)
 
     @classmethod
+    def _in_call(cls):
+        return getattr(cls.evt_handler, "vc_channel_id", None) is not None
+
+    @classmethod
     async def _real_output_sink(cls):
         for name in (cls._ga_real_sink, cls._golive_bridge_real_sink, cls._audio_out):
             if name and "steamcord_" not in name:
@@ -3143,7 +3147,10 @@ class Plugin:
     @classmethod
     async def _apply_chat_mix(cls):
         from json import loads
-        m = cls._chat_mix
+        # Le réglage est mémorisé, mais il ne s'applique que EN APPEL : hors appel
+        # on se comporte comme à 50 (les flux déjà touchés repassent à 100 %, le
+        # reste n'est plus jamais modifié).
+        m = cls._chat_mix if cls._in_call() else 50
         discord_pct, game_pct = cls._chat_mix_levels(m)
         real = await cls._real_output_sink()
         if not real:
