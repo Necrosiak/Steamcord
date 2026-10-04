@@ -113,10 +113,27 @@ def _log_tool_report():
                 + " — see docs/OS-NOTES.md")
 
 
+def _desktop_session():
+    """Session Bureau (KWin) en cours ? Même signal que get_share_env."""
+    try:
+        import vesktop
+        return vesktop.proc_running(comm="kwin_wayland|kwin_x11")
+    except Exception:
+        return False
+
+
 async def initialize():
     # NATIVE approach: drive Vesktop (a real Electron Discord, mic works) over CDP
     # instead of a hidden Steam CEF BrowserView (where the mic is impossible).
     import vesktop
+    # #66 : « Ne pas lancer Vesktop en mode Bureau » → on attend le retour en
+    # mode Jeu au lieu de lancer (ceux qui ont un autre Discord sur le bureau).
+    waited = False
+    while Plugin._vesktop_desktop_off() and _desktop_session():
+        if not waited:
+            logger.info("[desktop-off] mode Bureau : Vesktop pas lancé avant le retour en mode Jeu")
+            waited = True
+        await sleep(5)
     _log_tool_report()
     # defaults/ d'abord : même piège que discord_client/tab_utils — la copie
     # racine vient du zip de release et n'est PAS resynchronisée par le deploy
@@ -837,6 +854,7 @@ class Plugin:
         # clavier/souris n'existe (aucun fd ouvert, donc rien à payer).
         create_task(cls._input_refresh())
         create_task(cls._input_watchdog())
+        create_task(cls._desktop_off_watch())
 
         async for state in cls.evt_handler.yield_new_state():
             await emit("state", state)
@@ -3957,7 +3975,7 @@ class Plugin:
                     await cls._golive_route_game(True)
                     out = (await cls._pactl(
                         "load-module", "module-loopback",
-                        "source=steamcord_share_sink.monitor",
+                        "source=steamcord_share_sink.monitor", *cls._MONITOR_LOOP,
                         f"sink={real}", "latency_msec=30",
                         f"sink_input_properties=media.name={cls._BRIDGE_TAG}")).strip()
                     if out.isdigit():
@@ -4889,6 +4907,61 @@ class Plugin:
             pass
         return {"gamescope_only": True}
 
+    # ── Vesktop absent du mode Bureau (#66, BrotherO4) ──────────────────────
+    # Désactivé par défaut : Vesktop tourne partout pour ne jamais raccrocher un
+    # appel au changement de session. Activé, Steamcord arrête Vesktop sous KWin
+    # (un appel en cours se termine) et le relance au retour en mode Jeu.
+    @classmethod
+    def _voice_env_cfg(cls):
+        from json import load as _load
+        try:
+            with open(cls._VOICE_ENV_CFG) as f:
+                cfg = _load(f)
+            return cfg if isinstance(cfg, dict) else {}
+        except Exception:
+            return {}
+
+    @classmethod
+    def _vesktop_desktop_off(cls):
+        return cls._voice_env_cfg().get("vesktop_desktop_off") is True
+
+    @classmethod
+    async def get_vesktop_desktop_off(cls):
+        return {"off": cls._vesktop_desktop_off()}
+
+    @classmethod
+    async def set_vesktop_desktop_off(cls, off=False):
+        if not isinstance(off, bool):
+            return {"ok": False, "error": "expected boolean"}
+        from json import dump as _dump
+        cfg = cls._voice_env_cfg()
+        cfg["vesktop_desktop_off"] = off
+        tmp = cls._VOICE_ENV_CFG + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(cls._VOICE_ENV_CFG), exist_ok=True)
+            with open(tmp, "w") as f:
+                _dump(cfg, f)
+            os.replace(tmp, cls._VOICE_ENV_CFG)
+        except Exception as e:
+            logger.warning(f"save {cls._VOICE_ENV_CFG} failed: {e!r}")
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "off": off}
+
+    @classmethod
+    async def _desktop_off_watch(cls):
+        """Arrête Vesktop quand on passe en mode Bureau avec l'option active.
+        Le watchdog voit alors « Discord has died » et rappelle initialize(),
+        qui attend le retour en mode Jeu avant de relancer et réinjecter."""
+        import vesktop
+        while True:
+            await sleep(5)
+            try:
+                if cls._vesktop_desktop_off() and _desktop_session() and await vesktop.is_up():
+                    logger.info("[desktop-off] mode Bureau détecté : arrêt de Vesktop")
+                    await vesktop.kill_for_recovery("[desktop-off]")
+            except Exception as e:
+                logger.warning(f"[desktop-off] {e!r}")
+
     @classmethod
     async def set_voice_gamescope_only(cls, gamescope_only=True):
         if not isinstance(gamescope_only, bool):
@@ -4897,8 +4970,10 @@ class Plugin:
         tmp = cls._VOICE_ENV_CFG + ".tmp"
         try:
             os.makedirs(os.path.dirname(cls._VOICE_ENV_CFG), exist_ok=True)
+            cfg = cls._voice_env_cfg()       # garder vesktop_desktop_off (#66)
+            cfg["gamescope_only"] = gamescope_only
             with open(tmp, "w") as f:
-                _dump({"gamescope_only": gamescope_only}, f)
+                _dump(cfg, f)
             os.replace(tmp, cls._VOICE_ENV_CFG)
         except Exception as e:
             logger.warning(f"save {cls._VOICE_ENV_CFG} failed: {e!r}")
@@ -4914,6 +4989,14 @@ class Plugin:
     # ne liste pas les monitors, donc sans micro réel il n'ouvrirait AUCUNE capture.
     # Vesktop reste routé sur la vraie sortie → la voix des participants n'entre
     # pas dans le mix (pas d'écho chez eux).
+    # « source=<sink>.monitor » seul ne suffit pas : WirePlumber voit une sortie
+    # comme cible d'un flux de capture et se rabat sur le monitor de la sortie
+    # PAR DÉFAUT. Si c'est la vraie sortie, la boucle renvoie le casque dans le
+    # casque = écho infini (mesuré 01/10 sur BoneCast, pw-link). Ça ne tombait
+    # juste ici que parce que la sortie par défaut est alors steamcord_game.
+    _MONITOR_LOOP = ("source_dont_move=true",
+                     "source_input_properties=stream.capture.sink=true")
+
     @classmethod
     async def _pactl_load(cls, *args):
         out = (await cls._pactl("load-module", *args)).strip()
@@ -5035,11 +5118,11 @@ class Plugin:
                                   "sink_properties=device.description=SteamcordMix")
             # Le user continue d'entendre le jeu sur la vraie sortie.
             await cls._pactl_load("module-loopback", "source=steamcord_game.monitor",
-                                  f"sink={real}", "latency_msec=30")
+                                  *cls._MONITOR_LOOP, f"sink={real}", "latency_msec=30")
             # Branche JEU du mix (jauge 🎮).
             cls._ga_loop_mod["game"] = await cls._pactl_load(
                 "module-loopback", "source=steamcord_game.monitor",
-                "sink=steamcord_mix", "latency_msec=30")
+                *cls._MONITOR_LOOP, "sink=steamcord_mix", "latency_msec=30")
             # Branche VOIX du mix (jauge 🎙️) — seulement si un vrai micro existe
             # (sur cette machine la source par défaut peut être un monitor HDMI).
             mic = cls._audio_in or (await cls._pactl("get-default-source")).strip()

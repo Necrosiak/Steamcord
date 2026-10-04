@@ -34,6 +34,8 @@ let _locale: Locale | null = null;
 
 const T: Record<Locale, Dict> = {
   en: {
+    vesktop_desktop_off: "Don't run Vesktop in Desktop Mode",
+    vesktop_desktop_off_desc: "For people who use another Discord app on the desktop. Steamcord closes Vesktop when you switch to Desktop Mode and starts it again in Gaming Mode. A call in progress ends when you switch.",
     clip_steam: "Steam clip",
     clip_will_convert: "will be converted",
     clip_converting: "Assembling and compressing the clip…",
@@ -288,6 +290,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is installed. Close and reopen the Quick Access menu to load it.",
   },
   fr: {
+    vesktop_desktop_off: "Ne pas lancer Vesktop en mode Bureau",
+    vesktop_desktop_off_desc: "Pour ceux qui utilisent une autre appli Discord sur le bureau. Steamcord ferme Vesktop au passage en mode Bureau et le relance en mode Jeu. Un appel en cours se termine au changement.",
     clip_steam: "Clip Steam",
     clip_will_convert: "sera converti",
     clip_converting: "Assemblage et compression du clip…",
@@ -542,6 +546,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} est installé. Ferme puis rouvre le menu d'accès rapide pour le charger.",
   },
   de: {
+    vesktop_desktop_off: "Vesktop nicht im Desktop-Modus ausführen",
+    vesktop_desktop_off_desc: "Für alle, die auf dem Desktop eine andere Discord-App nutzen. Steamcord schließt Vesktop beim Wechsel in den Desktop-Modus und startet es im Spielmodus wieder. Ein laufender Anruf endet beim Wechsel.",
     clip_steam: "Steam-Clip",
     clip_will_convert: "wird konvertiert",
     clip_converting: "Clip wird zusammengesetzt und komprimiert…",
@@ -797,6 +803,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} ist installiert. Schließe das Schnellzugriffsmenü und öffne es erneut, um es zu laden.",
   },
   es: {
+    vesktop_desktop_off: "No ejecutar Vesktop en el modo Escritorio",
+    vesktop_desktop_off_desc: "Para quien usa otra app de Discord en el escritorio. Steamcord cierra Vesktop al pasar al modo Escritorio y lo vuelve a abrir en el modo Juego. Una llamada en curso termina al cambiar.",
     clip_steam: "Clip de Steam",
     clip_will_convert: "se convertirá",
     clip_converting: "Ensamblando y comprimiendo el clip…",
@@ -1052,6 +1060,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} está instalado. Cierra y vuelve a abrir el menú de acceso rápido para cargarlo.",
   },
   it: {
+    vesktop_desktop_off: "Non avviare Vesktop in modalità Desktop",
+    vesktop_desktop_off_desc: "Per chi usa un'altra app Discord sul desktop. Steamcord chiude Vesktop quando passi alla modalità Desktop e lo riavvia in modalità Gioco. Una chiamata in corso termina al cambio.",
     clip_steam: "Clip Steam",
     clip_will_convert: "verrà convertita",
     clip_converting: "Assemblaggio e compressione della clip…",
@@ -1307,6 +1317,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} è installato. Chiudi e riapri il menu di accesso rapido per caricarlo.",
   },
   pt: {
+    vesktop_desktop_off: "Não executar o Vesktop no Modo Ambiente de Trabalho",
+    vesktop_desktop_off_desc: "Para quem usa outra app do Discord no ambiente de trabalho. O Steamcord fecha o Vesktop ao mudar para o Modo Ambiente de Trabalho e volta a abri-lo no Modo de Jogo. Uma chamada em curso termina na mudança.",
     clip_steam: "Clipe Steam",
     clip_will_convert: "será convertido",
     clip_converting: "A montar e a comprimir o clipe…",
@@ -1562,6 +1574,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "O Steamcord {v} está instalado. Fecha e volta a abrir o menu de acesso rápido para o carregar.",
   },
   nl: {
+    vesktop_desktop_off: "Vesktop niet uitvoeren in Bureaubladmodus",
+    vesktop_desktop_off_desc: "Voor wie een andere Discord-app op het bureaublad gebruikt. Steamcord sluit Vesktop bij het overschakelen naar Bureaubladmodus en start het weer in Gamemodus. Een lopend gesprek eindigt bij het wisselen.",
     clip_steam: "Steam-clip",
     clip_will_convert: "wordt geconverteerd",
     clip_converting: "Clip samenstellen en comprimeren…",
@@ -1817,6 +1831,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is geïnstalleerd. Sluit het snelmenu en open het opnieuw om het te laden.",
   },
   pl: {
+    vesktop_desktop_off: "Nie uruchamiaj Vesktop w trybie pulpitu",
+    vesktop_desktop_off_desc: "Dla osób używających innej aplikacji Discord na pulpicie. Steamcord zamyka Vesktop po przejściu do trybu pulpitu i uruchamia go ponownie w trybie gry. Trwająca rozmowa kończy się przy zmianie.",
     clip_steam: "Klip Steam",
     clip_will_convert: "zostanie przekonwertowany",
     clip_converting: "Składanie i kompresowanie klipu…",
@@ -2072,6 +2088,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} jest zainstalowany. Zamknij i otwórz ponownie menu szybkiego dostępu, aby go wczytać.",
   },
   ru: {
+    vesktop_desktop_off: "Не запускать Vesktop в режиме рабочего стола",
+    vesktop_desktop_off_desc: "Для тех, кто пользуется другим приложением Discord на рабочем столе. Steamcord закрывает Vesktop при переходе в режим рабочего стола и снова запускает его в игровом режиме. Текущий звонок при переключении завершится.",
     clip_steam: "Клип Steam",
     clip_will_convert: "будет преобразован",
     clip_converting: "Сборка и сжатие клипа…",

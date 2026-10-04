@@ -150,6 +150,7 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@BrotherO4](https://github.com/BrotherO4)
 
 - Asking for a way to keep voice chat out of Desktop mode ([#55](https://github.com/Necrosiak/Steamcord/issues/55), added in v1.39.0 as *Voice only in Gaming Mode*).
+- Pointing out that Vesktop still ran in Desktop mode next to his regular Discord app, which led to *Don't run Vesktop in Desktop Mode* ([#66](https://github.com/Necrosiak/Steamcord/issues/66), added in v1.40.2).
 
 ### [@silverxlotus](https://github.com/silverxlotus)
 

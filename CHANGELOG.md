@@ -14,6 +14,29 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.40.2 — 2026-10-04
+
+### Keep Vesktop out of Desktop Mode
+
+Requested by [BrotherO4](https://github.com/BrotherO4) in
+[#66](https://github.com/Necrosiak/Steamcord/issues/66).
+
+*Voice only in Gaming Mode* only hides the voice controls: Vesktop keeps running
+in both sessions so that switching never hangs up a call, and it came back if
+you closed it. For people who use another Discord app on the desktop, a new
+option, **Don't run Vesktop in Desktop Mode** (off by default), closes Vesktop
+when you switch to Desktop Mode and starts it again in Gaming Mode. A call in
+progress ends when you switch.
+
+### Fix
+
+- **Game audio sharing could loop your headset back into itself.** The links
+  that let you keep hearing the game while it is shared could attach to your
+  headset's own sound instead of the game's, which gives an endless echo. It
+  only worked here because the shared game output happened to be the default
+  one; the links now always listen to the right source. Found while fixing the
+  same echo in BoneCast.
+
 ## 1.40.1 — 2026-10-01
 
 ### Fix

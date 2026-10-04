@@ -2193,16 +2193,38 @@ const ScreenCamSetting = () => {
 
 const VoiceDesktopModeSetting = () => {
   const gamescopeOnly = useVoiceGamescopeOnly();
+  // #66 : arrêter Vesktop en mode Bureau (null tant que la valeur n'est pas lue).
+  const [desktopOff, setDesktopOff] = useState<boolean | null>(null);
+  useEffect(() => {
+    call<[], { off?: boolean }>("get_vesktop_desktop_off")
+      .then((r) => setDesktopOff(!!r?.off)).catch(() => setDesktopOff(false));
+  }, []);
   return (
-    <SR>
-      <ToggleField
-        label={t("voice_gamescope_only")}
-        description={t("voice_gamescope_only_desc")}
-        checked={gamescopeOnly}
-        onChange={(v: boolean) => setVoiceGamescopeOnly(v)}
-        bottomSeparator="none"
-      />
-    </SR>
+    <>
+      <SR>
+        <ToggleField
+          label={t("voice_gamescope_only")}
+          description={t("voice_gamescope_only_desc")}
+          checked={gamescopeOnly}
+          onChange={(v: boolean) => setVoiceGamescopeOnly(v)}
+          bottomSeparator="none"
+        />
+      </SR>
+      {desktopOff !== null && (
+        <SR>
+          <ToggleField
+            label={t("vesktop_desktop_off")}
+            description={t("vesktop_desktop_off_desc")}
+            checked={desktopOff}
+            onChange={(v: boolean) => {
+              setDesktopOff(v);
+              call<[boolean], any>("set_vesktop_desktop_off", v).catch(() => setDesktopOff(!v));
+            }}
+            bottomSeparator="none"
+          />
+        </SR>
+      )}
+    </>
   );
 };
 
