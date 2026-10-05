@@ -293,6 +293,9 @@ type ChatNotif = {
   // coupé par le réglage : un avis du plugin ou un toast rerouté d'un autre
   // plugin Decky n'a pas de son Discord en face, il garderait le silence.
   message?: boolean;
+  // `quiet: true` = toast d'un AUTRE plugin Decky rerouté en mode sûr : pas de
+  // son de message de chat (#68 — « tout plugin sonne comme un message Steam »).
+  quiet?: boolean;
   onClick?: () => void;
 };
 
@@ -300,12 +303,12 @@ function chatStyleNotification(n: ChatNotif) {
   // Point de passage de TOUT ce qui s'affiche en mode sûr (nos notifs et les
   // toasts reroutés des autres plugins Decky) → une seule garde suffit.
   if (streamerActive()) { holdForStream(() => chatStyleNotification(n)); return; }
-  const { title, body, sender, avatar, dm, message, onClick } = n;
+  const { title, body, sender, avatar, dm, message, quiet, onClick } = n;
   try {
     const name = sender || title || "Steamcord";
     const { sid64, accountid } = fakeSenderSid(name);
     primeSenderPersona(sid64, accountid, name, avatar || DEFAULT_AVATAR);
-    if (message && steamToastMuted()) markToastSilent(sid64);
+    if ((message && steamToastMuted()) || quiet) markToastSilent(sid64);
     // Type 2 (FriendChatMessage) pour les MP/appels : rendu « message privé »
     // (le type 1 affichait « Message de groupe » sur un MP — retour user).
     // Type 1 (GroupChatMessage) pour les chans de serveur et les notifs système.
@@ -374,7 +377,10 @@ export function patchDeckyToaster(_tries = 0) {
         const str = (v: any) => (typeof v === "string" ? v : v == null ? "" : "Notification");
         // Toast d'un plugin quelconque → avatar « ? » Steam neutre, PAS le logo
         // Discord (issue #4 : AutoFlatpaks passait pour un message Discord).
-        chatStyleNotification({ title: str(toast?.title) || "Decky", body: str(toast?.body), avatar: NEUTRAL_AVATAR });
+        // quiet : le son de message de chat n'a pas de sens pour un autre
+        // plugin (#68). Le style « chat » reste : c'est le seul rendu sûr (une
+        // notif Decky native plante encore SteamUI 10971728, revérifié 05/10).
+        chatStyleNotification({ title: str(toast?.title) || "Decky", body: str(toast?.body), avatar: NEUTRAL_AVATAR, quiet: true });
       } catch (e) {
         console.error("[Steamcord] safe toaster failed", e);
       }

@@ -192,3 +192,11 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@ezamelczyk](https://github.com/ezamelczyk)
 
 - The Game / Discord sound mix staying active outside calls and holding every other app at a low volume — a precise report that traced it to the routing loop, plus the fix itself ([#64](https://github.com/Necrosiak/Steamcord/issues/64), [#65](https://github.com/Necrosiak/Steamcord/pull/65), fixed in v1.40.1)
+
+### [@josejuanlr98](https://github.com/josejuanlr98)
+
+- Every Decky plugin's notifications sounding like a Steam chat message while Steamcord was installed ([#68](https://github.com/Necrosiak/Steamcord/issues/68), fixed in v1.40.3)
+
+### [@justEhCupcake](https://github.com/justEhCupcake)
+
+- Screen share freezing with Steam's game recording on, with the logs that showed Steam's recorder reading the screen at the moment the share froze ([#69](https://github.com/Necrosiak/Steamcord/issues/69), warning added in v1.40.3)

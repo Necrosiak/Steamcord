@@ -14,6 +14,25 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.40.3 — 2026-10-05
+
+### Fixes
+
+- **Other Decky plugins' notifications played the chat message sound**
+  ([#68](https://github.com/Necrosiak/Steamcord/issues/68)). Steamcord shows
+  every plugin's notifications in Steam's chat style, because a native Decky
+  notification still crashes Steam's interface on the current build (re-tested
+  today). They now stay silent instead of sounding like a new message, and keep
+  the neutral avatar; only Steamcord's own notifications keep the chat sound.
+  Reported by [josejuanlr98](https://github.com/josejuanlr98).
+- **Screen share freezing while Steam records your game**
+  ([#69](https://github.com/Necrosiak/Steamcord/issues/69)). Steam's background
+  game recording reads the same screen as the share, and with two readers one of
+  them stops getting pictures. Steamcord can't prevent that, but it now tells
+  you once per share when both run at the same time, with where to turn
+  background recording off. Reported, with the logs that showed it, by
+  [justEhCupcake](https://github.com/justEhCupcake).
+
 ## 1.40.2 — 2026-10-04
 
 ### Keep Vesktop out of Desktop Mode

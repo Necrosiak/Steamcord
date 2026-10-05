@@ -2731,6 +2731,7 @@ class Plugin:
                         if "Video" in mc or "gamescope" in (nm + mc).lower() or "screen" in nm.lower():
                             vids.append(f"{n.get('id')}:{nm}:{mc}")
                     await cls._watch_ghost_capture(objs, nodes)
+                    await cls._warn_steam_recording(nodes)
                 except Exception as e:
                     vids = [f"pw-dump err {e!r}"]
                 # Seulement quand ÇA CHANGE (#44 : bastiHST90 a trouvé son journal
@@ -2749,6 +2750,33 @@ class Plugin:
     # Dernière ligne d'état écrite par screendiag, pour ne journaliser que les
     # changements (voir la boucle ci-dessus).
     _screendiag_last = ""
+
+    # #69 : l'enregistrement de jeu de Steam lit AUSSI l'écran gamescope (node
+    # « steam » en Stream/Input/Video, vu dans les logs de justEhCupcake à
+    # 06:35:50). Deux lecteurs sur le node gamescope = l'un n'a plus d'images
+    # (même mécanisme que l'aperçu QAM retiré en septembre) → le partage fige.
+    # On ne peut pas l'empêcher depuis Steamcord : on prévient, une fois par
+    # partage, et seulement quand les deux tournent EN MÊME TEMPS.
+    _steam_rec_warned = False
+
+    @classmethod
+    async def _warn_steam_recording(cls, nodes):
+        vids = [nm for nm, mc in nodes.values() if mc == "Stream/Input/Video"]
+        sharing = any("vesktop" in nm.lower() for nm in vids)
+        steam_rec = any(nm == "steam" for nm in vids)
+        if not (sharing and steam_rec):
+            if not sharing:
+                cls._steam_rec_warned = False      # prochain partage : on reprévient
+            return
+        if cls._steam_rec_warned:
+            return
+        cls._steam_rec_warned = True
+        logger.warning("[screendiag] enregistrement de jeu Steam actif pendant le partage "
+                       "d'écran → deux lecteurs sur le node gamescope, le partage peut figer (#69)")
+        await cls._toast("Steamcord",
+                         "Steam's game recording is capturing the screen too, which can freeze "
+                         "your screen share. Turn off background recording in Steam settings → "
+                         "Game Recording while you share.")
 
     # Nombre de tours de screendiag (15 s chacun) pendant lesquels un
     # consommateur fantôme doit persister avant qu'on redémarre Vesktop.
