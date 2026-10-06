@@ -698,6 +698,28 @@ class Plugin:
     @classmethod
     async def _main(cls):
         logger.info("Starting Steamcord backend")
+        # Fenêtre d'overlay orpheline : après un rechargement du backend
+        # (mise à jour, déploiement) l'ancien overlay.py survit, mais
+        # _overlay_proc repart à None → plus aucune écriture de l'état, et
+        # l'overlay reste affiché avec un roster figé (mesuré 06/10 : fenêtre
+        # de 08:17, état gelé à 08:19, un membre arrivé ensuite jamais montré).
+        # Les interrupteurs d'overlay repartent éteints : rien ne doit rester.
+        try:
+            import vesktop, signal as _sig
+            # Filtre strict : un python qui exécute overlay.py avec SES
+            # arguments. Le seul motif « game_overlay/overlay.py » tuait aussi
+            # tout terminal ou éditeur dont la commande le contient (vécu 06/10).
+            pids = vesktop.proc_pids(comm=r"python3?(\.\d+)?",
+                                     cmdline=r"game_overlay/overlay\.py --state-dir")
+            for pid in pids:
+                try:
+                    os.kill(pid, _sig.SIGTERM)
+                except OSError:
+                    pass
+            if pids:
+                logger.info("[overlay] fenêtre orpheline d'avant le rechargement fermée")
+        except Exception as e:
+            logger.warning(f"[overlay] nettoyage orphelin: {e!r}")
         # CEF (SharedJSContext) can disconnect/reload during startup, which throws
         # mid-evaluate and would otherwise kill _main permanently (watchdog never
         # starts). Retry until the Discord tab is successfully created.
@@ -2731,7 +2753,7 @@ class Plugin:
                         if "Video" in mc or "gamescope" in (nm + mc).lower() or "screen" in nm.lower():
                             vids.append(f"{n.get('id')}:{nm}:{mc}")
                     await cls._watch_ghost_capture(objs, nodes)
-                    await cls._warn_steam_recording(nodes)
+                    await cls._warn_steam_recording(nodes, objs)
                 except Exception as e:
                     vids = [f"pw-dump err {e!r}"]
                 # Seulement quand ÇA CHANGE (#44 : bastiHST90 a trouvé son journal
@@ -2759,11 +2781,30 @@ class Plugin:
     # partage, et seulement quand les deux tournent EN MÊME TEMPS.
     _steam_rec_warned = False
 
+    @staticmethod
+    def _gamescope_format(objs):
+        """Format vidéo négocié sur le node gamescope (BGRx, NV12…) ou None."""
+        for o in objs or []:
+            if not str(o.get("type", "")).endswith("Node"):
+                continue
+            info = o.get("info") or {}
+            if (info.get("props") or {}).get("node.name") != "gamescope":
+                continue
+            for f in (info.get("params") or {}).get("Format") or []:
+                if isinstance(f, dict) and f.get("format"):
+                    return str(f["format"])
+        return None
+
     @classmethod
-    async def _warn_steam_recording(cls, nodes):
+    async def _warn_steam_recording(cls, nodes, objs=None):
         vids = [nm for nm, mc in nodes.values() if mc == "Stream/Input/Video"]
         sharing = any("vesktop" in nm.lower() for nm in vids)
         steam_rec = any(nm == "steam" for nm in vids)
+        # Mesuré 06/10 : le partage ne casse QUE si l'enregistrement Steam a
+        # imposé NV12 avant lui (Chromium n'en tire rien). En BGRx (partage
+        # démarré d'abord), les deux cohabitent → pas d'alerte.
+        if steam_rec and sharing and cls._gamescope_format(objs) not in (None, "NV12"):
+            return
         if not (sharing and steam_rec):
             if not sharing:
                 cls._steam_rec_warned = False      # prochain partage : on reprévient
@@ -2773,10 +2814,14 @@ class Plugin:
         cls._steam_rec_warned = True
         logger.warning("[screendiag] enregistrement de jeu Steam actif pendant le partage "
                        "d'écran → deux lecteurs sur le node gamescope, le partage peut figer (#69)")
+        # Conseil SANS couper l'enregistrement en pleine partie : le faire a
+        # planté Steam le 06/10 (« Driver deadlock in hardware accelerated
+        # desktop capture » → fatal assert, 1 coupure sur 3). D'où l'abandon de
+        # la pause automatique testée le même jour.
         await cls._toast("Steamcord",
-                         "Steam's game recording is capturing the screen too, which can freeze "
-                         "your screen share. Turn off background recording in Steam settings → "
-                         "Game Recording while you share.")
+                         "Steam's game recording started before your screen share, which can "
+                         "freeze it. Next time, start the share before the recording, or turn "
+                         "off background recording before launching the game.")
 
     # Nombre de tours de screendiag (15 s chacun) pendant lesquels un
     # consommateur fantôme doit persister avant qu'on redémarre Vesktop.
@@ -5374,6 +5419,40 @@ class Plugin:
         except Exception as e:
             logger.warning(f"[overlay] save settings failed: {e!r}")
 
+    # Arrivées / départs du vocal dans l'overlay (demande user 04/10 : comme
+    # l'overlay de Discord, savoir qui entre et sort sans quitter le jeu).
+    # Référence remise à None à la fermeture de l'overlay : un nouvel appel ne
+    # doit pas annoncer tous ses membres comme « arrivés ».
+    _ov_prev_users = None          # {id: pseudo} à l'écriture précédente
+    _ov_prev_channel = None        # salon de cette référence
+    _ov_events = []                # [{"kind": "join"|"leave", "name", "ts" (ms)}]
+    OV_EVENT_MS = 5000
+
+    @classmethod
+    def _ov_track_members(cls, users, channel_id=None):
+        # Overlay vocal éteint → pas de référence : sinon l'écriture faite par
+        # stop_voice_overlay recréait une référence périmée, et l'appel suivant
+        # annonçait tout le monde.
+        if not cls._voice_ov_on:
+            cls._ov_prev_users, cls._ov_prev_channel, cls._ov_events = None, None, []
+            return []
+        now = int(time.time() * 1000)
+        cur = {str(u["id"]): u.get("username") or "" for u in users if u.get("id")}
+        # Changement de salon : nouvelle référence, pas une rafale d'annonces
+        # pour tous les membres des deux salons.
+        if channel_id != cls._ov_prev_channel:
+            cls._ov_prev_users, cls._ov_events = None, []
+            cls._ov_prev_channel = channel_id
+        prev = cls._ov_prev_users
+        if prev is not None:
+            cls._ov_events += [{"kind": "join", "name": n, "ts": now}
+                               for i, n in cur.items() if i not in prev]
+            cls._ov_events += [{"kind": "leave", "name": n, "ts": now}
+                               for i, n in prev.items() if i not in cur]
+        cls._ov_prev_users = cur
+        cls._ov_events = [e for e in cls._ov_events if now - e["ts"] < cls.OV_EVENT_MS + 1000][-6:]
+        return cls._ov_events
+
     @classmethod
     def _write_overlay_state(cls, state=None):
         import json as _json
@@ -5395,7 +5474,9 @@ class Plugin:
                 })
             s = cls._load_overlay_settings()
             payload = {
-                "voice": {"enabled": cls._voice_ov_on, "settings": s.get("voice"), "users": users},
+                "voice": {"enabled": cls._voice_ov_on, "settings": s.get("voice"), "users": users,
+                          "events": cls._ov_track_members(users, vc.get("channel_id")),
+                          "event_ms": cls.OV_EVENT_MS},
                 "pov": {"enabled": cls._pov_ov_on, "settings": s.get("pov"), "feed": cls.POV_FEED_URL},
             }
             d = cls._overlay_dir()

@@ -14,6 +14,32 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## 1.41.0 — 2026-10-06
+
+### See who joins and leaves the call, in game
+
+The in-game voice overlay now shows a short line when someone joins the voice
+channel (**→ name**, in green) or leaves it (**← name**, in red), like
+Discord's own overlay, so you're no longer left guessing mid-game. It fades
+after 5 seconds. Opening the overlay or switching channels doesn't announce the
+people already there. Works with and without WebKit (Steam Deck included).
+
+### Fixes
+
+- **The voice overlay could stay frozen after Steamcord updated.** When the
+  plugin reloaded during a call, the old overlay window kept running with the
+  member list of that moment, and people who joined later never showed up. The
+  stale window is now closed when Steamcord starts.
+- **Screen share and Steam's game recording**
+  ([#69](https://github.com/Necrosiak/Steamcord/issues/69)): measured the real
+  cause. When Steam's background recording grabs the game screen first, it sets
+  the capture format to one Vesktop can't use, and the share freezes; when the
+  share starts first, both work side by side. The warning now only shows in
+  that exact case, and suggests the safe way around it: start the share before
+  the recording, or turn off background recording before launching the game.
+  (Turning recording off in the middle of a game can crash Steam itself, so
+  Steamcord doesn't do it for you.)
+
 ## 1.40.3 — 2026-10-05
 
 ### Fixes

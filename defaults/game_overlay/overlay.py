@@ -18,7 +18,7 @@
 #         overlay.py --probe        → capacités du système en JSON, puis exit
 #   --state-dir : dossier où vit voice_state.json (écrit par le backend à
 #                 chaque changement d'état vocal + réglages), poll-é en boucle.
-import os, json, math, argparse, hashlib, threading, urllib.request
+import os, json, math, time, argparse, hashlib, threading, urllib.request
 os.environ["GDK_BACKEND"] = "x11"  # window X11 sous XWayland → XID + atome settable
 
 import gi
@@ -387,7 +387,10 @@ class RosterArea(Gtk.DrawingArea):
 
         v = self.voice or {}
         users = v.get("users") or []
-        if not v.get("enabled") or not users:
+        now_ms = time.time() * 1000
+        events = [e for e in (v.get("events") or [])
+                  if now_ms - e.get("ts", 0) < (v.get("event_ms") or 5000)]
+        if not v.get("enabled") or not (users or events):
             return False
 
         st = v.get("settings") or {}
@@ -422,10 +425,46 @@ class RosterArea(Gtk.DrawingArea):
             w = pad_in + av + gap + tw + (gap + mute_sz if muted else 0) + pad_out
             rows.append({"u": u, "lay": lay, "tw": tw, "th": th, "w": w, "muted": muted})
 
+        # Arrivées / départs : petites lignes « → pseudo » (vert) / « ← pseudo »
+        # (rouge), du côté libre du roster (au-dessus en bas d'écran).
+        ev_rows = []
+        ev_h = (self.FONT_PX - 1) * scale + 6 * scale
+        for e in events:
+            leave = e.get("kind") == "leave"
+            arrow = self._layout(cr, "\u2190" if leave else "\u2192", (self.FONT_PX - 1) * scale, 40 * scale)
+            name = self._layout(cr, e.get("name") or "", (self.FONT_PX - 1) * scale, self.NAME_MAX * scale)
+            aw, ah = arrow.get_pixel_size()
+            nw, nh = name.get_pixel_size()
+            ev_rows.append({"leave": leave, "arrow": arrow, "name": name, "aw": aw,
+                            "nw": nw, "th": max(ah, nh), "w": 9 * scale * 2 + aw + 6 * scale + nw})
+        ev_total = len(ev_rows) * (ev_h + gap_row)
+
         total_h = len(rows) * row_h + max(0, len(rows) - 1) * gap_row
-        y = self.MARGIN if pos.startswith("top") else H - self.MARGIN - total_h
+        top = pos.startswith("top")
+        y = self.MARGIN if top else H - self.MARGIN - total_h - ev_total
 
         cr.push_group()
+
+        def draw_events(y):
+            for e in ev_rows:
+                x = (W - self.MARGIN - e["w"]) if right else self.MARGIN
+                cr.set_source_rgba(0, 0, 0, 0.45)
+                self._rounded(cr, x, y, e["w"], ev_h, 12 * scale)
+                cr.fill()
+                if e["leave"]:
+                    cr.set_source_rgba(0.93, 0.26, 0.27, 1)
+                else:
+                    cr.set_source_rgba(0.14, 0.65, 0.35, 1)
+                cr.move_to(x + 9 * scale, y + (ev_h - e["th"]) / 2)
+                PangoCairo.show_layout(cr, e["arrow"])
+                cr.set_source_rgba(1, 1, 1, 0.85)
+                cr.move_to(x + 9 * scale + e["aw"] + 6 * scale, y + (ev_h - e["th"]) / 2)
+                PangoCairo.show_layout(cr, e["name"])
+                y += ev_h + gap_row
+            return y
+
+        if not top:
+            y = draw_events(y)
         for r in rows:
             u = r["u"]
             x = (W - self.MARGIN - r["w"]) if right else self.MARGIN
@@ -457,6 +496,8 @@ class RosterArea(Gtk.DrawingArea):
                                 y + (row_h - mute_sz) / 2, mute_sz)
 
             y += row_h + gap_row
+        if top:
+            draw_events(y)
         cr.pop_group_to_source()
         cr.paint_with_alpha(max(0.0, min(1.0, opacity)))
         return False
@@ -494,6 +535,13 @@ def run_cairo(state_dir, state_path):
 
     tick()
     GLib.timeout_add(300, tick)
+
+    def expire():
+        # Une annonce d'arrivée/départ s'efface même si le state ne bouge plus.
+        if (area.voice or {}).get("events"):
+            area.queue_draw()
+        return True
+    GLib.timeout_add(500, expire)
     Gtk.main()
 
 

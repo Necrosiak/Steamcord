@@ -43,6 +43,17 @@
   }
   .row.speaking .name { color: #fff; }
   .mute { width: calc(13px * var(--scale)); height: calc(13px * var(--scale)); flex-shrink: 0; }
+  /* Arrivées / départs : ligne discrète, flèche verte (entre) ou rouge (sort). */
+  .event {
+    display: flex; align-items: center; gap: calc(6px * var(--scale)); width: fit-content;
+    background: rgba(0,0,0,0.45); border-radius: calc(12px * var(--scale));
+    padding: calc(2px * var(--scale)) calc(9px * var(--scale));
+    color: rgba(255,255,255,0.85); font-size: calc(12px * var(--scale)); font-weight: 600;
+  }
+  .event .arrow { font-weight: 800; }
+  .event.join .arrow { color: #23a55a; }
+  .event.leave .arrow { color: #ed4245; }
+  .event .ename { max-width: calc(160px * var(--scale)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ── POV vidéo ── */
   #pov {
@@ -85,20 +96,40 @@
     + '<path d="M12.5 6.5a4.1 4.1 0 0 1-.45 1.86l1.1 1.1a5.57 5.57 0 0 0 .85-2.96h-1.5z"/></svg>';
 
   // ── ① Roster vocal ─────────────────────────────────────────────────────
+  let lastVoice = null, lastEvKey = "";
+  const liveEvents = (v) => {
+    const ms = (v && v.event_ms) || 5000, now = Date.now();
+    return ((v && v.events) || []).filter((e) => now - e.ts < ms);
+  };
   const renderVoice = (v) => {
+    lastVoice = v;
     if (!v || !v.enabled) { roster.className = ""; roster.innerHTML = ""; return; }
     const s = v.settings || {};
     const pos = ["top-left","top-right","bottom-left","bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
     roster.className = "on " + pos;
     roster.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 85) / 100);
     roster.style.setProperty("--scale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
-    roster.innerHTML = (v.users || []).map((u) => {
+    const rows = (v.users || []).map((u) => {
       const cls = "row" + (u.is_speaking ? " speaking" : "");
       const mute = (u.is_muted || u.is_deafened) ? MUTE_SVG : "";
       return '<div class="' + cls + '"><img class="avatar" src="' + (u.avatar_url || "") + '">'
         + '<span class="name">' + esc(u.username) + '</span>' + mute + '</div>';
     }).join("");
+    const evs = liveEvents(v);
+    lastEvKey = evs.map((e) => e.kind + e.name + e.ts).join("|");
+    const events = evs.map((e) => '<div class="event ' + (e.kind === "leave" ? "leave" : "join") + '">'
+      + '<span class="arrow">' + (e.kind === "leave" ? "&larr;" : "&rarr;") + '</span>'
+      + '<span class="ename">' + esc(e.name) + '</span></div>').join("");
+    // Les annonces se placent du côté libre : au-dessus du roster en bas
+    // d'écran, en dessous en haut d'écran.
+    roster.innerHTML = pos.startsWith("bottom") ? events + rows : rows + events;
   };
+  // Une annonce expire même si rien d'autre ne change dans le state.
+  setInterval(() => {
+    if (!lastVoice) return;
+    const key = liveEvents(lastVoice).map((e) => e.kind + e.name + e.ts).join("|");
+    if (key !== lastEvKey) renderVoice(lastVoice);
+  }, 500);
 
   // ── ② POV : vrai flux vidéo H264/fMP4 en MSE, une source par user ───────
   // Fragment WS binaire : [1o len uid][uid][1o init][payload fMP4].
