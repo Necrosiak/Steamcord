@@ -6,6 +6,7 @@ from json import loads
 from aiohttp import WSMsgType  # type: ignore
 from decky import emit  # type: ignore
 import logging
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class EventHandler:
             "$MIC_WEBRTC": self._mic_webrtc,
             "$VIDEO_WEBRTC": self._video_webrtc,
             "CALL_RING": self._call_ring,
+            "CALL_RING_STOP": self._call_ring_stop,
             "TYPING_START": self._typing_start,
             "CHAT_MESSAGE": self._chat_message,
         }
@@ -71,6 +73,9 @@ class EventHandler:
         #    `self.notification = None` d'après-yield. 2 messages coup sur coup =
         #    1 seul toast. Une Queue conserve l'ordre et ne perd rien.
         self.notifications: Queue = Queue()
+        # Dernier toast d'appel par salon : Discord peut signaler le même appel
+        # deux fois (CALL_RING du client + son message système « appel »).
+        self._call_notified_at = {}
         self.remote_auth = RemoteAuth()
         # Posé par Plugin : ré-assertion de réglages (ex. prefs micro) à chaque
         # login du client — la persistance Discord seule ne suffit pas (#14).
@@ -423,6 +428,9 @@ class EventHandler:
         # fallback sans client — un message de serveur porte un guild_id, pas un MP
         # (couvre un Vesktop qui tourne encore avec l'ancien client injecté).
         dm = bool(data.get("__sc_dm")) if "__sc_dm" in data else not msg.get("guild_id")
+        # Nom affiché en tête du chat plein écran ouvert au clic sur la notif :
+        # #salon pour un serveur, nom du groupe ou de l'expéditeur pour un MP.
+        channel_name = data.get("__sc_channel") or title
         if not dm:
             chan = data.get("__sc_channel") or ""
             guild = data.get("__sc_guild") or ""
@@ -430,6 +438,12 @@ class EventHandler:
             if ctx:
                 title = f"{title} ({ctx})"
         chan_id = str(data.get("channelId") or msg.get("channel_id") or "")
+        # Message système « appel » (type 3) : c'est la notif qu'envoie Discord
+        # pour un appel entrant. La traiter en message ouvrait la conversation
+        # au clic, sans rien pour répondre.
+        if msg.get("type") == 3 and dm and chan_id:
+            self._queue_call(chan_id, author.get("global_name") or author.get("username") or title, icon)
+            return
         # Salon en cours de lecture plein écran → on saute la notif de message
         # (David #21). Ne concerne QUE les messages : les appels (_call_ring) et
         # les events stream/caméra (_notify_video_event) passent par d'autres
@@ -439,7 +453,8 @@ class EventHandler:
             return
         notification = {"title": title, "body": body, "icon": icon,
                         "kind": "dm" if dm else "group",
-                        "channel_id": chan_id}
+                        "channel_id": chan_id, "channel_name": channel_name,
+                        "message_id": str(msg.get("id") or "")}
         logger.info(f"notification built: kind={notification['kind']} "
                     f"title={title!r} icon={'oui' if icon else 'non'} "
                     f"enrichi={'__sc_dm' in data}")
@@ -449,10 +464,26 @@ class EventHandler:
         # Incoming DM call → notify. The frontend localizes the title via kind="call".
         # channel_id lets a click on the notification answer the call directly
         # (dm_call(channel_id, join_existing=True) — same call already ringing).
+        self._queue_call(str(data.get("channel_id") or ""),
+                         data.get("caller") or "Discord", data.get("caller_avatar") or "")
+
+    CALL_DEDUP_S = 30
+
+    def _queue_call(self, channel_id, caller, icon):
+        now = time.monotonic()
+        if channel_id and now - self._call_notified_at.get(channel_id, -1e9) < self.CALL_DEDUP_S:
+            logger.info(f"notification d'appel en double ignorée (salon {channel_id})")
+            return
+        if channel_id:
+            self._call_notified_at[channel_id] = now
         self.notifications.put_nowait(
-            {"title": "", "body": data.get("caller") or "Discord",
-             "kind": "call", "icon": data.get("caller_avatar") or "",
-             "channel_id": data.get("channel_id") or ""})
+            {"title": "", "body": caller or "Discord", "kind": "call",
+             "icon": icon or "", "channel_id": channel_id})
+
+    async def _call_ring_stop(self, data):
+        # La sonnerie s'est arrêtée (appel décroché ailleurs, raccroché, refusé) :
+        # la page « appel entrant » ouverte depuis la notif passe en « appel terminé ».
+        await emit("call_ring_stop", {"channel_id": str(data.get("channel_id") or "")})
 
     async def _typing_start(self, data):
         # "X is typing…" for whichever conversation is open in the fullscreen

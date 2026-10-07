@@ -41,7 +41,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { patchMenu } from "./patches/menuPatch";
-import { notify, patchDeckyToaster, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
+import { notify, patchDeckyToaster, installClickHook, uninstallClickHook, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
 import { ACCENT, DANGER, ONLINE, focusHalo, setVeilAlpha } from "./components/Styled";
 
 // Même contournement que dans VoiceChatViews : les types publiés par @decky/ui
@@ -53,6 +53,8 @@ import { BackNavRoot, useBackHandler } from "./backNav";
 import { initVideoRelay } from "./videoRelay";
 import { initKeepAwake, releaseKeepAwake, setKeepAwakeEnabled } from "./keepAwake";
 import { DiscordExpandedModal } from "./components/DiscordExpanded";
+import { ChatFullscreenModal } from "./components/ChatFullscreen";
+import { openIncomingCall } from "./components/IncomingCall";
 import { EventsPanel } from "./components/EventsPanel";
 import { openCaptchaSolver } from "./components/CaptchaSolver";
 import {
@@ -2376,7 +2378,7 @@ export default definePlugin(() => {
     .catch(() => {});
 
   window.STEAMCORD = {
-    dispatchNotification: (payload: { title: string; body: string; kind?: string; icon?: string; channel_id?: string }) => {
+    dispatchNotification: (payload: { title: string; body: string; kind?: string; icon?: string; channel_id?: string; channel_name?: string; message_id?: string }) => {
       console.log("Dispatching Steamcord notification: ", payload);
       // #25 — filtrage des notifications pendant qu'un jeu tourne. Il se fait
       // ICI et pas dans le backend : seul le contexte Steam sait qu'un jeu est
@@ -2398,17 +2400,18 @@ export default definePlugin(() => {
       if (payload.kind === "call") {
         // Appel entrant (toujours un MP) : le backend met le nom de l'appelant
         // dans body et son avatar Discord dans icon → persona = appelant.
-        // Pas d'action au clic pour l'instant : dm_call() peut rejoindre l'appel
-        // en arrière-plan, mais rien ne peut ramener le QAM au premier plan
-        // pour voir qui est connecté (aucune API SteamClient trouvée pour ça,
-        // cherché des deux côtés SharedJSContext/QuickAccess) — un clic qui ne
-        // fait "qu'à moitié" son travail semblerait buggé, retour user.
+        // Clic → page Répondre/Refuser ; Répondre ouvre ensuite le panneau
+        // Steamcord du QAM sur l'appel (Navigation.OpenQuickAccessMenu).
+        const caller = payload.body || "Discord";
+        const channelId = payload.channel_id;
         notify({
           title: "",
           body: `📞 ${t("incoming_call")}`,
-          sender: payload.body || "Discord",
+          sender: caller,
           avatar: payload.icon,
           dm: true,
+          onClick: channelId ? () => openIncomingCall(channelId, caller, payload.icon) : undefined,
+          personaKey: "call:" + caller,
         });
       } else if (payload.kind === "stream_start" || payload.kind === "camera_start") {
         // Quelqu'un du vocal a lancé un partage d'écran / sa caméra (issue #8,
@@ -2450,6 +2453,16 @@ export default definePlugin(() => {
           // Discord joue DÉJÀ son son `message1` pour ce message-là : c'est la
           // seule famille de notifications que le réglage du son peut taire.
           message: true,
+          // Clic → la conversation en plein écran, comme le bouton « agrandir »
+          // du chat QAM, sélection posée sur le message notifié.
+          onClick: payload.channel_id ? () => showModal(
+            <ChatFullscreenModal
+              channelId={payload.channel_id!}
+              channelName={payload.channel_name || payload.title}
+              isDm={payload.kind === "dm"}
+              focusMessageId={payload.message_id}
+            />
+          ) : undefined,
         });
       }
     },
@@ -2518,6 +2531,7 @@ export default definePlugin(() => {
   // Anti-crash panneau de notifs Steam : sécurise le toaster Decky partagé
   // (Decky + plugins tiers) qui crée des entrées sans notification_type.
   patchDeckyToaster();
+  installClickHook();
 
   // Mode streamer : notre Go Live est une source de live (voir notify.ts).
   const onStateForStreamer = (st: any) => setLiveSource("steamcord-golive", !!st?.me?.is_live);
@@ -2599,6 +2613,7 @@ export default definePlugin(() => {
     icon: <FaDiscord />,
     onDismount() {
       unpatchMenu();
+      uninstallClickHook();
       stopStatusSync();
       releaseKeepAwake();
       removeEventListener("webrtc", webrtcEventListener);

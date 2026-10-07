@@ -19,6 +19,7 @@
 //   rendre. Si l'écran d'erreur apparaît, l'utilisateur désactive et le
 //   balayage du tray au chargement suivant purge les entrées empoisonnées.
 
+import { findModuleExport, Navigation } from "@decky/ui";
 import { t } from "./i18n";
 
 // ── Mode streamer ──────────────────────────────────────────────────────────
@@ -185,11 +186,81 @@ const DEFAULT_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png";
 const NEUTRAL_AVATAR = "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg";
 const STEAMID_BASE = BigInt("76561197960265728");
 
+const FAKE_ACCOUNT_BASE = 0xde000000;
+const FAKE_ACCOUNT_MASK = 0xfffff;
+
 function fakeSenderSid(sender: string): { sid64: string; accountid: number } {
   let h = 5381;
   for (let i = 0; i < sender.length; i++) h = (Math.imul(h, 33) ^ sender.charCodeAt(i)) >>> 0;
-  const accountid = 0xde000000 + (h & 0xfffff);
+  const accountid = FAKE_ACCOUNT_BASE + (h & FAKE_ACCOUNT_MASK);
   return { sid64: (STEAMID_BASE + BigInt(accountid)).toString(), accountid };
+}
+
+const isFakeAccount = (accountid: number) =>
+  accountid >= FAKE_ACCOUNT_BASE && accountid <= FAKE_ACCOUNT_BASE + FAKE_ACCOUNT_MASK;
+
+// ── Clic sur une notification ─────────────────────────────────────────────
+// Mesuré au CDP le 06/10 : le 3e argument de DisplayClientNotification n'est
+// JAMAIS appelé au clic. Le clic passe par le renderer Steam (onActivate), qui
+// appelle un singleton du bundle :
+//   type 2 (FriendChatMessage) → ShowFriendChatDialog(browserCtx, steamID)
+//   type 1 (GroupChatMessage)  → ShowChatRoomGroupDialog(browserCtx, chat_group_id, chat_id)
+// Sur nos personas factices, Steam ouvrait donc une conv avec un ami
+// inexistant (rien) ou un chat de groupe VIDE. Le type 2 transmet le steamid
+// de l'expéditeur → on retrouve NOTRE notif ; le type 1 ne transmet que
+// chat_group_id/chat_id, que DisplayClientNotification ignore (testé : string,
+// nombre, autres noms de champ → toujours ""). D'où : une notif cliquable part
+// en type 2, et un ShowChatRoomGroupDialog sans aucun id (jamais émis par un
+// vrai chat Steam) est avalé au lieu d'ouvrir un chat de groupe vide.
+// Une action par persona : le hash du persona inclut le contexte (« Pseudo
+// (#salon, Serveur) »), donc la dernière notif d'un expéditeur à un endroit
+// donné est celle qu'on rouvre — tray compris.
+const clickActions = new Map<number, () => void>();
+let unhookClick: (() => void) | null = null;
+
+export function installClickHook() {
+  if (unhookClick) return;
+  try {
+    const store = findModuleExport((e: any) =>
+      e && typeof e.ShowFriendChatDialog === "function" && typeof e.ShowChatRoomGroupDialog === "function");
+    if (!store) {
+      console.warn("[Steamcord] store de chat Steam introuvable : clic sur les notifs inactif");
+      return;
+    }
+    const origFriend = store.ShowFriendChatDialog;
+    const origGroup = store.ShowChatRoomGroupDialog;
+    unhookClick = () => {
+      store.ShowFriendChatDialog = origFriend;
+      store.ShowChatRoomGroupDialog = origGroup;
+      unhookClick = null;
+    };
+    store.ShowFriendChatDialog = function (ctx: any, steamID: any, ...rest: any[]) {
+      let accountid = NaN;
+      try { accountid = Number(steamID?.GetAccountID?.()); } catch {}
+      if (isFakeAccount(accountid)) {
+        const action = clickActions.get(accountid);
+        if (action) {
+          // Ferme d'abord le centre de notifs : la notif est traitée, et Retour
+          // doit ramener à ce qu'on faisait avant (le jeu), pas à la liste.
+          try { Navigation.CloseSideMenus(); } catch {}
+          try { action(); } catch (e) { console.error("[Steamcord] action de clic échouée", e); }
+        }
+        return;
+      }
+      return origFriend.call(this, ctx, steamID, ...rest);
+    };
+    store.ShowChatRoomGroupDialog = function (ctx: any, groupId: any, chatId: any, ...rest: any[]) {
+      if (!groupId && !chatId) return;
+      return origGroup.call(this, ctx, groupId, chatId, ...rest);
+    };
+  } catch (e) {
+    console.error("[Steamcord] hook du clic des notifs échoué", e);
+  }
+}
+
+export function uninstallClickHook() {
+  unhookClick?.();
+  clickActions.clear();
 }
 
 // Steam rafraîchit en ASYNC le persona d'un accountid inconnu et efface
@@ -297,31 +368,43 @@ type ChatNotif = {
   // son de message de chat (#68 — « tout plugin sonne comme un message Steam »).
   quiet?: boolean;
   onClick?: () => void;
+  // Clé du persona factice, si elle doit différer du nom affiché : un appel et
+  // les messages de la même personne doivent garder chacun leur action de clic.
+  personaKey?: string;
 };
 
 function chatStyleNotification(n: ChatNotif) {
   // Point de passage de TOUT ce qui s'affiche en mode sûr (nos notifs et les
   // toasts reroutés des autres plugins Decky) → une seule garde suffit.
   if (streamerActive()) { holdForStream(() => chatStyleNotification(n)); return; }
-  const { title, body, sender, avatar, dm, message, quiet, onClick } = n;
+  const { title, body, sender, avatar, dm, message, quiet, onClick, personaKey } = n;
   try {
     const name = sender || title || "Steamcord";
-    const { sid64, accountid } = fakeSenderSid(name);
+    const { sid64, accountid } = fakeSenderSid(personaKey || name);
     primeSenderPersona(sid64, accountid, name, avatar || DEFAULT_AVATAR);
     if ((message && steamToastMuted()) || quiet) markToastSilent(sid64);
+    if (onClick) {
+      installClickHook();
+      clickActions.set(accountid, onClick);
+    } else {
+      clickActions.delete(accountid);
+    }
     // Type 2 (FriendChatMessage) pour les MP/appels : rendu « message privé »
     // (le type 1 affichait « Message de groupe » sur un MP — retour user).
     // Type 1 (GroupChatMessage) pour les chans de serveur et les notifs système.
+    // Une notif CLIQUABLE part toujours en type 2 : seul ce type rend le
+    // steamid au clic (voir installClickHook).
     // `title` du proto = nom de groupe (affiché seulement hors gamemode) : on le
     // vide quand il répéterait le pseudo déjà rendu via le persona.
-    // Le 3e argument est appelé par Steam quand l'utilisateur CLIQUE la notif
-    // (doc SteamClient : "executed when the user interacts with the notification")
-    // — jusqu'ici toujours un no-op, donc cliquer une notif ne faisait rien
-    // (retour user : « répondre à l'appel/aller à la conv » demandés).
+    // 3e argument : jamais appelé par Steam (ni au clic ni ailleurs, vérifié).
+    // PAS de champ `state` : en type 2 Steam le range dans `response_steamurl`,
+    // et en mode jeu un response_steamurl non vide remplace l'ouverture du chat
+    // par un menu « Accepter l'invitation » qui ouvre cette « URL » (« active »
+    // → rien). Vide, le clic passe par ShowFriendChatDialog (installClickHook).
     const send = () => (window as any).SteamClient?.ClientNotifications?.DisplayClientNotification?.(
-      dm ? 2 : 1,
-      JSON.stringify({ title: title === name ? "" : title, body, state: "active", steamid: sid64 }),
-      () => { try { onClick?.(); } catch (e) { console.error("[Steamcord] notification onClick failed", e); } },
+      dm || onClick ? 2 : 1,
+      JSON.stringify({ title: title === name ? "" : title, body, steamid: sid64 }),
+      () => {},
     );
     send();
     verifyFirstToastRendered(send); // #23, voir plus haut

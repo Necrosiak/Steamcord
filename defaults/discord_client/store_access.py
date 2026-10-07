@@ -187,6 +187,12 @@ class StoreAccess:
     async def dm_call(self, channel_id, join_existing=False):
         return await self._store_access_request("$dm_call", id=channel_id, join_existing=join_existing)
 
+    async def call_ringing(self, channel_id):
+        return await self._store_access_request("$call_ringing", id=channel_id)
+
+    async def decline_call(self, channel_id):
+        return await self._store_access_request("$call_decline", id=channel_id)
+
     async def get_text_channels(self):
         return await self._store_access_request("$get_text_channels")
 

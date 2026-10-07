@@ -1224,6 +1224,8 @@ class Plugin:
                     "kind": notification.get("kind", ""),
                     "icon": notification.get("icon", ""),
                     "channel_id": notification.get("channel_id", ""),
+                    "channel_name": notification.get("channel_name", ""),
+                    "message_id": notification.get("message_id", ""),
                 }
             )
             # payload (json.dumps ASCII) est une expression JS valide telle quelle.
@@ -2464,6 +2466,14 @@ class Plugin:
     @classmethod
     async def dm_call(cls, channel_id, join_existing=False):
         return await cls.evt_handler.api.dm_call(channel_id, join_existing)
+
+    @classmethod
+    async def call_ringing(cls, channel_id):
+        return await cls.evt_handler.api.call_ringing(channel_id)
+
+    @classmethod
+    async def decline_call(cls, channel_id):
+        return await cls.evt_handler.api.decline_call(channel_id)
 
     @classmethod
     async def get_text_channels(cls, include_hidden=False):
