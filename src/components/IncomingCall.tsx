@@ -7,7 +7,7 @@ import { Focusable, ModalRoot, Navigation, QuickAccessTab, showModal } from "@de
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useState } from "react";
 import { t, errText } from "../i18n";
-import { ActionCard, DANGER, ONLINE } from "./Styled";
+import { ActionCard, DANGER, ONLINE, SteamcordModalFrame } from "./Styled";
 import { IcPhone } from "./Icons";
 
 const ModalRootAny = ModalRoot as any;
@@ -62,20 +62,24 @@ function IncomingCallModal({ channelId, caller, avatar, closeModal }:
 
   return (
     <ModalRootAny closeModal={closeModal} onCancel={() => closeModal?.()}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "8px 0" }}>
-        <img src={avatar || DEFAULT_AVATAR} width={88} height={88} style={{ borderRadius: "50%" }} />
-        <div style={{ fontSize: 20, fontWeight: 600 }}>{caller}</div>
-        <div style={{ fontSize: 14, opacity: 0.7 }}>{ended ? t("call_ended") : t("incoming_call")}</div>
-        {error && <div style={{ color: "#ff6b6b", fontSize: 12 }}>{error}</div>}
-        <Focusable flow-children="horizontal" style={{ display: "flex", gap: 10, width: "100%", marginTop: 8 }}>
-          <ActionCard color={ONLINE} disabled={busy} onClick={answer}>
-            <IcPhone /> {ended ? t("call_back") : t("call_answer")}
-          </ActionCard>
-          <ActionCard color={ended ? undefined : DANGER} disabled={busy} onClick={ended ? () => closeModal?.() : decline}>
-            {ended ? t("call_close") : t("call_decline")}
-          </ActionCard>
-        </Focusable>
-      </div>
+      <SteamcordModalFrame maxWidth={480}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "24px 22px 22px" }}>
+          <div style={{ color: ended ? "#aeb6c4" : ONLINE, display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700 }}>
+            <IcPhone /> {ended ? t("call_ended") : t("incoming_call")}
+          </div>
+          <img src={avatar || DEFAULT_AVATAR} width={88} height={88} style={{ borderRadius: "50%", border: "3px solid rgba(88,101,242,.7)", objectFit: "cover" }} />
+          <div style={{ fontSize: 21, fontWeight: 700, textAlign: "center", overflowWrap: "anywhere" }}>{caller}</div>
+          {error && <div style={{ color: "#ff6b6b", fontSize: 12, textAlign: "center" }}>{error}</div>}
+          <Focusable flow-children="row" style={{ display: "flex", gap: 10, width: "100%", marginTop: 8 }}>
+            <ActionCard color={ONLINE} disabled={busy} onClick={answer}>
+              <IcPhone /> {ended ? t("call_back") : t("call_answer")}
+            </ActionCard>
+            <ActionCard color={ended ? undefined : DANGER} disabled={busy} onClick={ended ? () => closeModal?.() : decline}>
+              {ended ? t("call_close") : t("call_decline")}
+            </ActionCard>
+          </Focusable>
+        </div>
+      </SteamcordModalFrame>
     </ModalRootAny>
   );
 }

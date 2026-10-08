@@ -5,7 +5,7 @@ import { errText, t } from "../i18n";
 import { Btn, ChipBtn, Message, MessageRow, draftByChannel, failReason, notifyTypingThrottled, isInteractingWithMessage, lastMessageInteractionAt, onMessageFocus, qamWatchedChannel } from "./TextChat";
 import { ScreenshotPickerButton } from "./ScreenshotPicker";
 import { ClipPickerButton } from "./ClipPicker";
-import { ActionCard, ACCENT, focusHalo } from "./Styled";
+import { ActionCard, ACCENT, focusHalo, SteamcordModalFrame } from "./Styled";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 
 const ModalRootAny = ModalRoot as any;
@@ -612,12 +612,12 @@ export function ChatView({ channelId, channelName, isDm, onClosed, embedded, foc
         style={embedded
           // Dans la vue agrandie : occupe le bloc de droite, borné par lui.
           ? { display: "flex", flexDirection: "column", flex: 1, minHeight: 0, width: "100%" }
-          : { display: "flex", flexDirection: "column", height: "78vh", maxWidth: 720, margin: "0 auto", width: "100%" }}
+          : { display: "flex", flexDirection: "column", height: "70vh", margin: "0 auto", width: "100%", boxSizing: "border-box", padding: "0 16px 16px" }}
       >
         {/* Titre inutile en vue agrandie : l'en-tête de la vue le porte déjà. */}
         {!embedded && <div style={{
-          fontSize: 16, fontWeight: 600, textAlign: "center", marginBottom: 8,
-          padding: "8px 12px", borderRadius: 8, background: "rgba(255,255,255,0.06)",
+          fontSize: 18, fontWeight: 700, marginBottom: 10,
+          padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,.09)",
         }}>
           {isDm ? channelName : `#${channelName}`}
         </div>}
@@ -774,7 +774,7 @@ export function ChatFullscreenModal({ closeModal, ...props }:
       onCancelActionDescription={t("video_exit_fullscreen")}
       bAllowFullSize
     >
-      <ChatView {...props} />
+      <SteamcordModalFrame><ChatView {...props} /></SteamcordModalFrame>
     </ModalRootAny>
   );
 }

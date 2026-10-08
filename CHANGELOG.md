@@ -14,7 +14,7 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
-## Unreleased
+## 1.41.1 — 2026-10-08
 
 ### Clicking a notification takes you there
 
@@ -28,6 +28,9 @@ Gaming Mode — showed an "Accept invite" menu that did nothing.
 - **Incoming calls** open a call window with **Answer** and **Decline**.
   Answering joins the call and opens the Steamcord panel on it. If the call
   stopped ringing, the window offers **Call back** instead.
+- The conversation and call windows now use Steamcord's dark styling, logo and
+  controller focus treatment. The call buttons use Steam's supported row
+  navigation, so both remain reachable with a controller.
 - The notification center closes when you click, so Back returns you to what
   you were doing (your game), not to the notification list.
 
@@ -44,6 +47,17 @@ one Steam lets us make clickable), so in Gaming Mode their header reads
 - **An incoming call could arrive as a plain message notification** (Discord's
   own "started a call" message). It is now treated as a call, and you only get
   one notification per call.
+
+Notification click routing and mention rendering contributed by
+[@azizzidi](https://github.com/azizzidi) in
+[#71](https://github.com/Necrosiak/Steamcord/pull/71). Tested on a Steam Machine
+by the contributor and on Bazzite by Necrosiak (message and call clicks).
+**A huge thank-you to @azizzidi:** I had been stuck on this part because Steam
+ignored the notification callback and opened its own empty chat instead. Their
+work traced the actual click path through Steam's chat store and made the
+redirect to the right Discord conversation or call possible. The Steamcord
+window styling and controller navigation were then finished and tested on
+Bazzite.
 
 ## 1.41.0 — 2026-10-06
 

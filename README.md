@@ -42,6 +42,7 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
 - **Watching a stream keeps the screen awake** — while you are watching someone's Go Live (in the panel, the expanded view or the fullscreen grid), the SteamOS screen saver is switched off, then put back exactly as it was. It can be turned off in Settings, and screen dimming and auto-sleep are never touched.
 - **Share game audio** — Stream your game's sound into the voice channel **along with your voice**. Two mix sliders (🎙️ voice / 🎮 game) control what the others hear, while you keep hearing the game normally — and it works even **without a physical microphone** (the plugin creates a virtual *Steamcord Mic* input).
 - **In-game notifications** — Incoming DM calls and pings appear as **native Steam notifications (popup + sound)**, respecting your Discord status (silenced when invisible / do-not-disturb). A message rings on both sides at once (Discord's own sound and Steam's), so the notification settings let you pick which one you keep — Discord by default.
+- **Open a notification** — Selecting a DM or server mention opens the matching conversation at that message. An incoming call opens Steamcord's Answer / Decline window; the conversation and call windows share Steamcord's dark style.
 - **🕹️ Controller voice shortcut** — Capture **any button combo on your controller** and bind it to **mute toggle** or **push-to-talk**. With a **Steam Controller (2026)** it also works in-game with the QAM closed; with other controllers, Steam only passes the buttons on while its own UI has focus ([details](#controller-voice-shortcut-in-game)). Set it up in the Settings tab.
 - **Share screenshots** — Send a Steam screenshot straight into the conversation you have open.
 - **[Vencord](https://vencord.dev/)** is built into Vesktop, giving access to its plugin ecosystem.
@@ -162,6 +163,7 @@ Feature requests and "it works!" reports on unusual setups are just as valuable.
 ### Code contributors
 
 - [@azizzidi](https://github.com/azizzidi) — **native Go Live in Gaming Mode** via the gamescope ScreenCast portal shim ([#10](https://github.com/Necrosiak/Steamcord/pull/10), landed in v1.15.0)
+- [@azizzidi](https://github.com/azizzidi) — **clickable notifications** for messages and calls, plus readable Discord mentions ([#71](https://github.com/Necrosiak/Steamcord/pull/71), landed in v1.41.1)
 - [@Memberoffoxhound](https://github.com/Memberoffoxhound) — five fixes carried over from his [GameModeCord](https://github.com/Memberoffoxhound/GameModeCord) fork (landed in v1.31.0): **the panel scaling to its own size** instead of Deck-absolute pixels, **B walking back one menu at a time**, **chat images and videos opening in the fullscreen viewer**, and two that were silently breaking screen sharing for everyone — **v4l2loopback looked up in sysfs** rather than hardcoded to `/dev/video42`, and **both share buttons no longer vanishing from DM calls**
 - [@jezonek](https://github.com/jezonek) — **push-to-talk on a keyboard key or a mouse button** ([#34](https://github.com/Necrosiak/Steamcord/pull/34)), including the backend evdev reader and its privacy constraints
 

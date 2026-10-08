@@ -3,9 +3,9 @@
 // scale on gamepad focus, one accent color per section. Keeping every
 // Steamcord control on this kit makes the three plugins read as one family.
 import { DialogButton } from "@decky/ui";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useQamUi } from "../qamUi";
-import { IcChevronDown } from "./Icons";
+import { IcChevronDown, SteamcordLogo } from "./Icons";
 
 const Btn = DialogButton as any;
 
@@ -136,6 +136,29 @@ export const chromeHideMarkerRef = (el: HTMLDivElement | null) => {
   if (!el) { [0, 400, 1200].forEach((ms) => setTimeout(releaseClosed, ms)); return; }
   [0, 300, 800].forEach((ms) => setTimeout(() => hideDialogChromeFrom(el), ms));
 };
+
+// Cadre commun des fenêtres Steamcord ouvertes depuis les notifications.
+// Le marqueur est un frère du panneau : l'effacement du chrome Steam ne
+// traverse donc jamais notre propre fond sombre (même règle que la vue agrandie).
+export function SteamcordModalFrame({ children, maxWidth = 720 }:
+  { children: ReactNode; maxWidth?: number }) {
+  return <>
+    <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
+    <div style={{
+      width: "100%", maxWidth, margin: "0 auto", boxSizing: "border-box",
+      borderRadius: 12, overflow: "hidden", color: "#f4f5f7",
+      background: "#11151d", border: "1px solid rgba(255,255,255,.10)",
+      boxShadow: "0 22px 60px rgba(0,0,0,.55)",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9, padding: "12px 16px",
+        background: "#20252f", borderBottom: "1px solid rgba(255,255,255,.08)",
+        fontSize: 16, fontWeight: 800,
+      }}><SteamcordLogo size={27} /> Steamcord</div>
+      {children}
+    </div>
+  </>;
+}
 
 // Hauteur d'une liste scrollable qui remplit le QAM JUSQU'EN BAS SANS déborder,
 // quelle que soit la machine : mesurée depuis la position réelle du conteneur

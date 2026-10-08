@@ -167,6 +167,17 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 # Code contributions
 
+### [@azizzidi](https://github.com/azizzidi)
+
+- Native Go Live in Gaming Mode via the gamescope ScreenCast portal shim
+  ([#10](https://github.com/Necrosiak/Steamcord/pull/10), v1.15.0).
+- Clicking a Steamcord notification opens the matching DM or server message, or
+  the incoming-call controls; Discord mentions display names instead of raw
+  IDs ([#71](https://github.com/Necrosiak/Steamcord/pull/71), v1.41.1). Steam
+  did not call the notification callback, which had blocked this feature;
+  @azizzidi found the real route through Steam's chat store. A huge thank-you
+  for solving that and testing it on a Steam Machine.
+
 ### [@jezonek](https://github.com/jezonek)
 
 - Push-to-talk on a keyboard key or a mouse button ([#34](https://github.com/Necrosiak/Steamcord/pull/34)) — the backend evdev reader, its privacy constraints and the config migration. Along the way he found and fixed two pre-existing bugs nobody had reported: holding a controller button and a key at once cut the mic when either was released, and saving the voice shortcut silently dropped unrelated settings.
