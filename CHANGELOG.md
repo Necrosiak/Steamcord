@@ -14,6 +14,37 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
 - **Screen + camera as separate POV tiles** — when someone shares both at
   once, show them as two tiles instead of preferring the screen.
 
+## Unreleased
+
+### Clicking a notification takes you there
+
+Until now, clicking a Steamcord notification led nowhere: Steam tried to open
+a chat with a friend that doesn't exist, opened an empty group chat, or — in
+Gaming Mode — showed an "Accept invite" menu that did nothing.
+
+- **Messages (DMs and server mentions)** open the conversation in the
+  fullscreen chat, with the notified message selected. If more messages
+  arrived since, it scrolls back to it.
+- **Incoming calls** open a call window with **Answer** and **Decline**.
+  Answering joins the call and opens the Steamcord panel on it. If the call
+  stopped ringing, the window offers **Call back** instead.
+- The notification center closes when you click, so Back returns you to what
+  you were doing (your game), not to the notification list.
+
+Server-message notifications now use Steam's private-message style (the only
+one Steam lets us make clickable), so in Gaming Mode their header reads
+"Message" instead of "Group message".
+
+### Fixes
+
+- **Mentions showed as a long number** (`@111101782683328512`) in the chat.
+  They now show the name — server nickname first — highlighted like in
+  Discord, with mentions of you in gold. Role mentions and channel links are
+  fixed too.
+- **An incoming call could arrive as a plain message notification** (Discord's
+  own "started a call" message). It is now treated as a call, and you only get
+  one notification per call.
+
 ## 1.41.0 — 2026-10-06
 
 ### See who joins and leaves the call, in game

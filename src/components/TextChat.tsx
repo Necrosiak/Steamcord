@@ -10,6 +10,7 @@ import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
 import { GuildIcon, TinyIconBtn } from "./ChannelBrowser";
 import { openMediaLightbox, saveAttachment, humanSize } from "./MediaLightbox";
 import { openForward } from "./ForwardModal";
+import { useSteamcordState } from "../hooks/useSteamcordState";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -109,6 +110,8 @@ export interface Message {
   bot: boolean; content: string; ts: string | null;
   images: MsgImage[]; videos?: MsgVideo[]; docs?: MsgFile[]; files: number; reactions?: MsgReaction[];
   reply_to?: { author: string; content: string } | null;
+  // Jeton de mention (<@id>, <@&id>, <#id>) → libellé lisible (@pseudo, #salon).
+  mentions?: Record<string, string>;
 }
 
 export const Btn = DialogButton as any;
@@ -169,14 +172,33 @@ export const shortTime = (ts: string | null) => {
 // chaque token par l'image CDN correspondante (webp statique / gif animé), le
 // reste du texte est laissé tel quel. Marche sans charger la liste d'emojis de
 // la guilde : l'id suffit à construire l'URL.
-const CUSTOM_EMOJI_RE = /<(a)?:(\w+):(\d+)>/g;
-export function renderContent(text: string): Array<string | JSX.Element> {
+const CUSTOM_EMOJI_RE = /<(a)?:(\w+):(\d+)>|<(@!?|@&|#)(\d+)>/g;
+// Mention non résolue (auteur hors cache, rôle supprimé) : libellé neutre
+// plutôt que l'identifiant brut.
+const MENTION_FALLBACK: Record<string, string> = { "@": "@?", "@!": "@?", "@&": "@?", "#": "#?" };
+
+export function renderContent(text: string, mentions?: Record<string, string>, myId?: string): Array<string | JSX.Element> {
   const out: Array<string | JSX.Element> = [];
   let last = 0;
   let m: RegExpExecArray | null;
   CUSTOM_EMOJI_RE.lastIndex = 0;
   while ((m = CUSTOM_EMOJI_RE.exec(text)) !== null) {
     if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[4]) {
+      const tok = m[0];
+      const self = !!myId && (m[4] === "@" || m[4] === "@!") && m[5] === myId;
+      out.push(
+        <span key={`m${m.index}`} style={{
+          borderRadius: 3, padding: "0 2px", fontWeight: 500,
+          background: self ? "rgba(240,178,50,0.28)" : "rgba(88,101,242,0.30)",
+          color: self ? "#ffe7a8" : "#c9cdfb",
+        }}>
+          {mentions?.[tok] || MENTION_FALLBACK[m[4]]}
+        </span>,
+      );
+      last = m.index + tok.length;
+      continue;
+    }
     const [, animated, name, id] = m;
     const ext = animated ? "gif" : "webp";
     out.push(
@@ -322,6 +344,7 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
   onLocalDelete?: () => void;
   onReply?: () => void;
 }) {
+  const myId = useSteamcordState()?.me?.id;
   const [focused, setFocused] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(m.content);
@@ -475,7 +498,7 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
         <div style={{ display: "flex", gap: 4, fontSize: 10, opacity: 0.6, marginBottom: 2 }}>
           <span>↩</span>
           <span style={{ fontWeight: 600 }}>{m.reply_to.author}</span>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{renderContent(m.reply_to.content)}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{renderContent(m.reply_to.content, m.mentions, myId)}</span>
         </div>
       )}
       {/* Avatar en taille FIXE (16px, rond) + verticalAlign négatif pour
@@ -506,7 +529,7 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
         </div>
       ) : (
         m.content
-          ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{renderContent(m.content)}</div>
+          ? <div style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: 0.92 }}>{renderContent(m.content, m.mentions, myId)}</div>
           : (!hasBody && <div style={{ opacity: 0.4, fontStyle: "italic" }}>—</div>)
       )}
 
@@ -672,7 +695,7 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
     // onFocus/onBlur par bubbling (focusin/focusout) depuis n'importe quel
     // descendant focusé.
     return (
-      <div onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={rowStyle}>
+      <div data-msg-id={m.id} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={rowStyle}>
         {body}
       </div>
     );
@@ -680,6 +703,7 @@ export function MessageRow({ m, channelId, isMine, passive, preferred, onLocalUp
 
   return (
     <Btn noFocusRing
+      data-msg-id={m.id}
       preferredFocus={preferred}
       onClick={firstMedia ? () => openMediaLightbox(firstMedia) : undefined}
       onFocus={() => setFocused(true)}

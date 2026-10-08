@@ -105,6 +105,22 @@ const focusLastMessage = (list: HTMLElement | null) => {
     }, 50);
   }, 700);
 };
+// Même délai que focusLastMessage : la nav manette de la modale doit être
+// montée pour que le focus prenne. Focaliser un message qui n'est pas le
+// dernier fige la vue dessus (onMessageFocus), comme une sélection manuelle.
+const focusMessageRow = (list: HTMLElement | null, id: string) => {
+  setTimeout(() => {
+    const row = list?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
+    if (!row) { focusLastMessage(list); return; }
+    const stop = row.matches("button, [tabindex]") ? row : row.querySelector<HTMLElement>("button, [tabindex]");
+    (stop || row).focus?.();
+    row.scrollIntoView?.({ block: "center" });
+  }, 700);
+};
+// Pages d'historique remontées au plus pour retrouver le message notifié
+// (30 messages chacune) ; au-delà on reste sur les plus récents.
+const FOCUS_MAX_OLDER_PAGES = 5;
+
 // En column-reverse, scrollTop vaut 0 en bas et devient NÉGATIF en remontant
 // dans l'historique (sémantique Chromium standard pour ce mode).
 const isFsNearBottom = (list: HTMLElement | null) => !list || -list.scrollTop < NEAR_BOTTOM_PX;
@@ -124,8 +140,8 @@ const isFsNearBottom = (list: HTMLElement | null) => !list || -list.scrollTop < 
 // Le chat lui-même, sans fenêtre : rendu tel quel dans le bloc de droite de la
 // vue agrandie (`embedded`), ou enveloppé par ChatFullscreenModal ailleurs.
 // Toute la logique (direct, brouillons, ancrage #21) vit ici, une seule fois.
-export function ChatView({ channelId, channelName, isDm, onClosed, embedded }:
-  { channelId: string; channelName: string; isDm: boolean; onClosed?: () => void; embedded?: boolean }) {
+export function ChatView({ channelId, channelName, isDm, onClosed, embedded, focusMessageId }:
+  { channelId: string; channelName: string; isDm: boolean; onClosed?: () => void; embedded?: boolean; focusMessageId?: string }) {
   const myId = useSteamcordState()?.me?.id;
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -136,6 +152,9 @@ export function ChatView({ channelId, channelName, isDm, onClosed, embedded }:
   const [, setFocusedInitial] = useState(false);
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<{ id: string; author: string } | null>(null);
+  // Message à sélectionner à l'ouverture (clic sur une notification).
+  const pendingFocusRef = useRef<string | null>(focusMessageId || null);
+  const focusOlderPagesRef = useRef(0);
 
   // Suit-on encore le flux ? Faux dès que l'utilisateur SÉLECTIONNE un message
   // qui n'est pas le dernier — la vue se fige alors sur ce qu'il regarde
@@ -294,7 +313,13 @@ export function ChatView({ channelId, channelName, isDm, onClosed, embedded }:
         setHasMore(fresh.length >= PAGE_SIZE);
         if (stick) scrollFsBottom(listElRef.current);
         if (force && fresh.length > 0) {
-          setFocusedInitial((already) => { if (!already) focusLastMessage(listElRef.current); return true; });
+          // Le message notifié est d'ordinaire le dernier : sélection habituelle.
+          // Sinon l'effet plus bas le cherche, au besoin dans l'historique.
+          if (pendingFocusRef.current === fresh[fresh.length - 1].id) pendingFocusRef.current = null;
+          setFocusedInitial((already) => {
+            if (!already && !pendingFocusRef.current) focusLastMessage(listElRef.current);
+            return true;
+          });
         }
       })
       .catch(() => { if (force) setMessages([]); }); // un poll raté ne doit pas effacer ce qui est déjà affiché
@@ -435,6 +460,26 @@ export function ChatView({ channelId, channelName, isDm, onClosed, embedded }:
       .catch(() => {})
       .finally(() => setLoadingOlder(false));
   };
+
+  useEffect(() => {
+    const target = pendingFocusRef.current;
+    if (!target || !messages || messages.length === 0 || loadingOlder) return;
+    if (messages.some((m) => m.id === target)) {
+      pendingFocusRef.current = null;
+      liveEdgeRef.current = false;
+      focusMessageRow(listElRef.current, target);
+    } else if (hasMore && focusOlderPagesRef.current < FOCUS_MAX_OLDER_PAGES
+               && BigInt(messages[0].id) > BigInt(target)) {
+      focusOlderPagesRef.current++;
+      loadOlder();
+    } else {
+      // Supprimé, trop ancien, ou plus récent que la liste : on retombe sur
+      // la sélection habituelle du dernier message.
+      pendingFocusRef.current = null;
+      focusLastMessage(listElRef.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, loadingOlder, hasMore]);
 
   const send = async () => {
     const text = draft.trim();
@@ -721,7 +766,7 @@ export function ChatView({ channelId, channelName, isDm, onClosed, embedded }:
 
 // Chat plein écran en fenêtre (QAM, et partout hors vue agrandie).
 export function ChatFullscreenModal({ closeModal, ...props }:
-  { channelId: string; channelName: string; isDm: boolean; closeModal?: () => void; onClosed?: () => void }) {
+  { channelId: string; channelName: string; isDm: boolean; closeModal?: () => void; onClosed?: () => void; focusMessageId?: string }) {
   return (
     <ModalRootAny
       closeModal={closeModal}

@@ -116,6 +116,36 @@ window.__sc_mapMsg = (m) => {
         author: ref.author?.global_name || ref.author?.username || "?",
         content: (ref.content || "").slice(0, 80),
     } : null;
+    // Discord écrit une mention dans le texte sous la forme <@id>, <@&id>
+    // (rôle) ou <#id> (salon) : sans traduction, le chat affichait l'identifiant
+    // brut. On garde le texte tel quel (une édition doit renvoyer la vraie
+    // mention) et on joint la table jeton → libellé, résolue comme le fait
+    // Discord : pseudo de serveur, puis nom global, puis identifiant.
+    const mentions = {};
+    try {
+        const C = Vencord.Webpack.Common;
+        const guildId = m.guild_id || C.ChannelStore.getChannel(m.channel_id)?.guild_id || null;
+        const known = {};
+        for (const u of [...(Array.isArray(m.mentions) ? m.mentions : []), ...(ref && Array.isArray(ref.mentions) ? ref.mentions : [])])
+            if (u?.id) known[u.id] = u;
+        const text = (m.content || "") + " " + (ref?.content || "");
+        for (const [tok, kind, id] of text.matchAll(/<(@!?|@&|#)(\d+)>/g)) {
+            if (mentions[tok]) continue;
+            if (kind === "#") {
+                const ch = C.ChannelStore.getChannel(id);
+                if (ch?.name) mentions[tok] = "#" + ch.name;
+            } else if (kind === "@&") {
+                const g = guildId && C.GuildStore?.getGuild?.(guildId);
+                const role = C.GuildStore?.getRole?.(guildId, id) || g?.roles?.[id] || g?.getRole?.(id);
+                if (role?.name) mentions[tok] = "@" + role.name;
+            } else {
+                const nick = guildId && C.GuildMemberStore?.getNick?.(guildId, id);
+                const u = known[id] || C.UserStore.getUser(id);
+                const name = nick || u?.global_name || u?.globalName || u?.username;
+                if (name) mentions[tok] = "@" + name;
+            }
+        }
+    } catch (_) {}
     return {
         id: String(m.id),
         author: m.author?.global_name || m.author?.username || "?",
@@ -130,6 +160,7 @@ window.__sc_mapMsg = (m) => {
         docs,
         reactions,
         reply_to,
+        mentions,
         _hasBody: !!(m.content) || images.length > 0 || atts.length > 0,
     };
 };
@@ -1972,6 +2003,24 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     result = true;
                                     break;
                                 }
+                                case "$call_ringing": {
+                                    // La page « appel entrant » s'ouvre au clic, parfois bien
+                                    // après la sonnerie : elle demande si l'appel sonne encore.
+                                    const call = Vencord.Webpack.findStore("CallStore")?.getCall?.(data.id);
+                                    const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
+                                    result = !!(call && me && Array.isArray(call.ringing) && call.ringing.includes(me.id));
+                                    break;
+                                }
+                                case "$call_decline": {
+                                    // Même requête que le bouton « Refuser » de Discord :
+                                    // arrête la sonnerie pour SOI seulement.
+                                    const RingActions = Vencord.Webpack.find(m => m && typeof m.stopRinging === "function");
+                                    const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
+                                    if (!RingActions || !me) throw new Error("call_decline_unavailable");
+                                    await RingActions.stopRinging(data.id, [me.id]);
+                                    result = true;
+                                    break;
+                                }
                                 case "$get_guilds_vc": {
                                     const GS = Vencord.Webpack.Common?.GuildStore;
                                     const GCS = Vencord.Webpack.findStore("GuildChannelStore");
@@ -2597,13 +2646,20 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     try {
                         if (e.type && e.type.indexOf("CALL") === 0)
                             console.log("[Steamcord] CALL event: " + e.type + " ringing=" + JSON.stringify(e.ringing) + " ch=" + e.channelId);
+                        // Fin d'une sonnerie qu'on a notifiée → la page « appel
+                        // entrant » ouverte depuis la notif passe en « appel terminé ».
+                        const ringStopped = (chId) => {
+                            if (!window.__sc_ringing || !window.__sc_ringing[chId]) return;
+                            delete window.__sc_ringing[chId];
+                            window.STEAMCORD_WS.send(JSON.stringify({ type: "CALL_RING_STOP", channel_id: String(chId) }));
+                        };
                         if (e.type === "CALL_DELETE" && window.__sc_ringing) {
-                            delete window.__sc_ringing[e.channelId];
+                            ringStopped(e.channelId);
                         } else if ((e.type === "CALL_CREATE" || e.type === "CALL_UPDATE") && Array.isArray(e.ringing)) {
                             const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
                             window.__sc_ringing = window.__sc_ringing || {};
                             if (!e.ringing.includes(me?.id)) {
-                                delete window.__sc_ringing[e.channelId]; // ring stopped / answered
+                                ringStopped(e.channelId); // ring stopped / answered
                             } else {
                                 const ch = Vencord.Webpack.Common.ChannelStore.getChannel(e.channelId);
                                 console.log("[Steamcord] incoming ring for me, ch.type=" + ch?.type + " status=" + Vencord.Webpack.findStore("PresenceStore")?.getStatus?.(me.id));
@@ -2710,6 +2766,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     e.__sc_channel = ch.name || "";
                                     const g = ch.guild_id && Vencord.Webpack.Common.GuildStore?.getGuild?.(ch.guild_id);
                                     e.__sc_guild = (g && g.name) || "";
+                                } else if (ch && ch.type === 3 && ch.name) {
+                                    e.__sc_channel = ch.name;
                                 }
                             } catch (_) {}
                         }
