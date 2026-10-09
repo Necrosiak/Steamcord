@@ -4,6 +4,8 @@
 
 Chat de voz, mensagens privadas e partilha de ecrã a partir do menu de acesso rápido, sem sair do modo de jogo e sem um segundo dispositivo.
 
+A sobreposição POV experimental pode mostrar vídeo no SteamOS através de GStreamer VP8/WebM sem WebKitGTK, se os componentes necessários estiverem instalados. Estado dos testes: [issue #70](https://github.com/Necrosiak/Steamcord/issues/70).
+
 🌍 **Idiomas:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · **Português** · [Nederlands](README.nl.md) · [Polski](README.pl.md) · [Русский](README.ru.md)
 
 > **Steamcord é um projeto independente.** Foi originalmente inspirado pelo

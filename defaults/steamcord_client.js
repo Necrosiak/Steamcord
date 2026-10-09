@@ -933,22 +933,19 @@ window.Vencord.Plugins.plugins.Steamcord = {
             } catch (e) { console.error("[Steamcord] video relay stop failed", e); }
         };
 
-        // ── Relais POV pour l'overlay in-game (H264/fMP4 → MSE) ──────────────
-        // L'overlay tourne dans WebKitGTK : PAS de WebRTC, et son MSE NE DÉCODE
-        // PAS le WebM/VP8 de MediaRecorder (sondé : démuxé mais jamais lu) —
-        // MAIS il DÉCODE le H264/MP4 fragmenté (sondé : readyState 3, lecture
-        // fluide). Donc : ICI (Chromium/Vesktop) on encode la piste en
-        // `video/mp4;codecs=avc1` avec MediaRecorder (vrai flux 30 fps, décodage
-        // matériel/logiciel efficace, contrairement au motion-JPEG) et on pousse
-        // les fragments par le WS local ; le backend les relaie à l'overlay qui
-        // les lit en MSE. Le 1er fragment (init : ftyp+moov) est marqué `init`
-        // et mis en cache backend pour tout consommateur qui se connecte après.
+        // ── Relais POV pour l'overlay in-game ────────────────────────────────
+        // WebKitGTK lit H264/fMP4 avec MSE. SteamOS sans WebKit lit VP8/WebM
+        // avec GStreamer puis peint les images sur l'overlay GTK/Cairo. Le
+        // backend choisit le format après avoir sondé le rendu disponible.
+        // Chromium/Vesktop encode la piste avec MediaRecorder, pousse les
+        // fragments par le WS local et marque le premier `init`, que le backend
+        // garde en cache pour chaque consommateur qui se connecte après.
         // Un encodeur par user relayé ; piste préférée = écran, sinon caméra.
         window.STEAMCORD_POV = window.STEAMCORD_POV || {}; // userId -> entry
 
-        window.STEAMCORD_startPov = (userId) => {
+        window.STEAMCORD_startPov = (userId, format = "mp4") => {
             if (window.STEAMCORD_POV[userId]) return;
-            const entry = { alive: true, streamKey: null, rec: null, kind: null };
+            const entry = { alive: true, streamKey: null, rec: null, kind: null, format };
             window.STEAMCORD_POV[userId] = entry;
 
             const acquire = async () => {
@@ -985,29 +982,38 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     entry.kind = sel.kind;
                     let rec;
                     try {
+                        const mimeType = entry.format === "webm"
+                            ? "video/webm;codecs=vp8" : "video/mp4;codecs=avc1.42E01E";
+                        if (entry.format === "webm" && !MediaRecorder.isTypeSupported(mimeType))
+                            throw new Error("MediaRecorder does not support " + mimeType);
                         rec = new MediaRecorder(new MediaStream([track]),
-                            { mimeType: 'video/mp4;codecs=avc1.42E01E', videoBitsPerSecond: 2500000 });
+                            { mimeType, videoBitsPerSecond: entry.format === "webm" ? 1500000 : 2500000 });
                     } catch (e) { console.error("[Steamcord] pov: MediaRecorder KO", e); break; }
                     entry.rec = rec;
                     let seq = 0;
+                    let sendChain = Promise.resolve();
                     const stopped = new Promise((r) => { rec.onstop = r; rec.onerror = r; });
-                    rec.ondataavailable = async (ev2) => {
+                    rec.ondataavailable = (ev2) => {
                         if (!ev2.data || !ev2.data.size) return;
-                        try {
-                            const buf = new Uint8Array(await ev2.data.arrayBuffer());
-                            let bin = ""; const CH = 0x8000;
-                            for (let i = 0; i < buf.length; i += CH)
-                                bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
-                            window.STEAMCORD_WS.send(JSON.stringify({
-                                type: "$pov_chunk", userId, kind: entry.kind,
-                                init: seq === 0, data: btoa(bin),
-                            }));
-                            seq++;
-                        } catch (e) { /* WS fermé : reprise au prochain start */ }
+                        // arrayBuffer() est asynchrone : sérialiser les blobs
+                        // pour ne jamais envoyer un fragment avant son init.
+                        sendChain = sendChain.then(async () => {
+                            try {
+                                const buf = new Uint8Array(await ev2.data.arrayBuffer());
+                                let bin = ""; const CH = 0x8000;
+                                for (let i = 0; i < buf.length; i += CH)
+                                    bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+                                window.STEAMCORD_WS.send(JSON.stringify({
+                                    type: "$pov_chunk", userId, kind: entry.kind,
+                                    init: seq === 0, data: btoa(bin),
+                                }));
+                                seq++;
+                            } catch (e) { /* WS fermé : reprise au prochain start */ }
+                        });
                     };
-                    // timeslice court = faible latence (fragments fMP4 ~120 ms).
+                    // Timeslice court = faible latence, quel que soit le format.
                     rec.start(120);
-                    console.log("[Steamcord] pov: encodeur H264 " + sel.kind + " démarré pour " + userId);
+                    console.log("[Steamcord] pov: encodeur " + entry.format + " " + sel.kind + " démarré pour " + userId);
                     // Surveille la piste : morte (partage coupé) ou mutée
                     // (caméra éteinte) → on stoppe et l'acquire suivant
                     // re-sélectionne (nouveau fragment d'init pour l'overlay).
@@ -1017,6 +1023,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     }
                     try { if (rec.state !== "inactive") rec.stop(); } catch (e) {}
                     await stopped;
+                    await sendChain;
                     if (!entry.alive) break;
                     await new Promise(r => setTimeout(r, 300));
                 }
@@ -2417,7 +2424,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     return;
                                 }
                                 case "$POV_START":
-                                    window.STEAMCORD_startPov(data.userId);
+                                    window.STEAMCORD_startPov(data.userId, data.format || "mp4");
                                     return;
                                 case "$POV_STOP":
                                     window.STEAMCORD_stopPov(data.userId);
