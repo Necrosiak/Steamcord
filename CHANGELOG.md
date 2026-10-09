@@ -3,7 +3,9 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
-## Unreleased — SteamOS POV overlay (#70)
+## 1.41.2 — 2026-10-09
+
+### SteamOS POV overlay (#70)
 
 - The in-game POV overlay can use GTK/Cairo plus GStreamer VP8/WebM when
   WebKitGTK is absent. Steamcord probes `appsrc`, `matroskademux`, `vp8dec`,
@@ -14,9 +16,22 @@ Older releases (v1.0.0 → v1.11.0) are documented on the
   video switch is unavailable.
 - The new path displayed a real remote Discord screen share on Bazzite.
   Frame pacing was corrected after live testing. Stock SteamOS still needs
-  a real in-game test before a stable release; the successful Bazzite test
-  is not a SteamOS result. Thanks to @justEhCupcake for the Steam Machine
+  a real in-game test before compatibility can be confirmed; the successful
+  Bazzite test is not a SteamOS result. Thanks to @justEhCupcake for the Steam Machine
   GStreamer inventory in [#70](https://github.com/Necrosiak/Steamcord/issues/70).
+
+### Decky notification sounds and AudioLoader (#72)
+
+- Notifications from other Decky plugins now play the Steam UI toast sound
+  through the audio manager that AudioLoader can replace with a custom pack.
+  Toasts requesting `playSound: false` remain silent. Steamcord still avoids
+  Decky's native toast rendering on SteamUI builds where it crashes.
+- Fixed an intermittent extra chat-message sound after SteamUI recreates its
+  notification store. The filter now recognizes both `steamid_sender()` and
+  older `steamid()` getters and reattaches when SteamUI replaces the method.
+- Verified on Bazzite with AudioLoader 1.6.1: a custom test pack's WAV loaded
+  successfully, a silent toast played no sound, and a normal toast triggered
+  one sound. The temporary pack was removed and the original settings restored.
 
 ## Planned for upcoming updates
 

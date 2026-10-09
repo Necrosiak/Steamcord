@@ -6,6 +6,8 @@ Sprachchat, Direktnachrichten und Bildschirmübertragung direkt aus dem Schnellz
 
 Das experimentelle POV-Overlay kann Video unter SteamOS mit GStreamer VP8/WebM ohne WebKitGTK anzeigen, sofern die nötigen Systemmodule installiert sind. Teststand: [Issue #70](https://github.com/Necrosiak/Steamcord/issues/70).
 
+Benachrichtigungen anderer Decky-Plugins können wieder AudioLoader-Soundpakete verwenden; ausdrücklich stumme Benachrichtigungen bleiben stumm. Siehe [Issue #72](https://github.com/Necrosiak/Steamcord/issues/72).
+
 🌍 **Sprachen:** [English](../README.md) · [Français](README.fr.md) · **Deutsch** · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · [Nederlands](README.nl.md) · [Polski](README.pl.md) · [Русский](README.ru.md)
 
 > **Steamcord ist ein unabhängiges Projekt.** Es wurde ursprünglich von

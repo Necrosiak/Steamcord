@@ -89,8 +89,9 @@ const steamToastMuted = () => notifSound === "discord" || notifSound === "none";
 
 // Steam sonne dans `NotificationStore.PlayNotificationSound(notif)`. Mesuré au
 // CDP le 20/09 : elle est appelée UNE fois par notification, avec l'objet
-// complet, et `notif.data.steamid()` rend exactement le steamid envoyé — nos
-// notifications sont donc reconnaissables à leur persona factice. On ne coupe
+// complet. Sur le SteamUI d'octobre, le getter est `steamid_sender()` ; des
+// builds précédents exposaient `steamid()`. Les deux permettent de reconnaître
+// notre persona factice. On ne coupe
 // que celles qu'on a nous-mêmes marquées : toute vraie notification Steam
 // (message d'un ami, téléchargement fini…) garde son son.
 // Fenêtre + compteur plutôt qu'un simple drapeau : le toast part en asynchrone
@@ -98,19 +99,21 @@ const steamToastMuted = () => notifSound === "discord" || notifSound === "none";
 // sur coup doivent taire DEUX sons.
 const SILENT_TOAST_WINDOW_MS = 8000;
 const silentToasts = new Map<string, { n: number; exp: number }>();
-let toastSoundPatched = false;
+let patchedToastSound: ((n: any) => void) | null = null;
 
 function patchToastSound() {
-  if (toastSoundPatched) return;
   try {
     const ns = (window as any).NotificationStore;
+    // SteamUI peut recréer le store ou rétablir sa méthode après notre init.
+    // Le marqueur booléen restait alors vrai et le son de chat revenait.
+    if (ns?.PlayNotificationSound === patchedToastSound) return;
     const orig = ns && Object.getPrototypeOf(ns)?.PlayNotificationSound;
     if (typeof orig !== "function") return;
-    toastSoundPatched = true;
-    ns.PlayNotificationSound = function (n: any) {
+    const patched = function (this: any, n: any) {
       try {
         const d = n?.data;
-        const raw = d ? (typeof d.steamid === "function" ? d.steamid() : d.steamid) : null;
+        const raw = d ? (typeof d.steamid_sender === "function" ? d.steamid_sender()
+          : d.steamid_sender ?? (typeof d.steamid === "function" ? d.steamid() : d.steamid)) : null;
         const sid = raw == null ? "" : String(raw);
         const e = sid ? silentToasts.get(sid) : undefined;
         if (e) {
@@ -123,6 +126,8 @@ function patchToastSound() {
       } catch {}
       return orig.call(this, n);
     };
+    ns.PlayNotificationSound = patched;
+    patchedToastSound = patched;
   } catch (e) {
     console.error("[Steamcord] patch du son des toasts échoué", e);
   }
@@ -133,6 +138,22 @@ function markToastSilent(sid: string) {
   const exp = Date.now() + SILENT_TOAST_WINDOW_MS;
   const e = silentToasts.get(sid);
   if (e && e.exp > Date.now()) { e.n++; e.exp = exp; } else silentToasts.set(sid, { n: 1, exp });
+}
+
+// Un toast Decky rerouté ne doit pas jouer le son de MESSAGE Steam (#68), mais
+// ne doit pas devenir muet non plus (#72). Passer par le lecteur audio Steam
+// permet à AudioLoader de remplacer deck_ui_toast.wav avec le pack choisi.
+// Le préfixe /sounds/ (avec / initial) est requis par son mapping slice(8).
+let pluginToastAudioManager: any;
+function playPluginToastSound() {
+  try {
+    pluginToastAudioManager ??= findModuleExport((e: any) =>
+      typeof e?.GamepadUIAudio?.m_AudioPlaybackManager?.PlayAudioURL === "function")
+      ?.GamepadUIAudio?.m_AudioPlaybackManager;
+    pluginToastAudioManager?.PlayAudioURL?.("/sounds/deck_ui_toast.wav");
+  } catch (e) {
+    console.warn("[Steamcord] son du toast Decky indisponible", e);
+  }
 }
 
 const NATIVE_TOASTS_KEY = "steamcord_native_toasts";
@@ -364,8 +385,8 @@ type ChatNotif = {
   // coupé par le réglage : un avis du plugin ou un toast rerouté d'un autre
   // plugin Decky n'a pas de son Discord en face, il garderait le silence.
   message?: boolean;
-  // `quiet: true` = toast d'un AUTRE plugin Decky rerouté en mode sûr : pas de
-  // son de message de chat (#68 — « tout plugin sonne comme un message Steam »).
+  // `quiet: true` = pas de son de message de chat (#68). Le reroutage joue
+  // séparément deck_ui_toast.wav pour conserver le son AudioLoader (#72).
   quiet?: boolean;
   onClick?: () => void;
   // Clé du persona factice, si elle doit différer du nom affiché : un appel et
@@ -460,10 +481,12 @@ export function patchDeckyToaster(_tries = 0) {
         const str = (v: any) => (typeof v === "string" ? v : v == null ? "" : "Notification");
         // Toast d'un plugin quelconque → avatar « ? » Steam neutre, PAS le logo
         // Discord (issue #4 : AutoFlatpaks passait pour un message Discord).
-        // quiet : le son de message de chat n'a pas de sens pour un autre
-        // plugin (#68). Le style « chat » reste : c'est le seul rendu sûr (une
-        // notif Decky native plante encore SteamUI 10971728, revérifié 05/10).
+        // quiet coupe le son de MESSAGE (#68), puis on joue le vrai son de
+        // toast via Steam (et donc via AudioLoader si présent, #72). Le style
+        // « chat » reste le seul rendu sûr sur ce build SteamUI.
         chatStyleNotification({ title: str(toast?.title) || "Decky", body: str(toast?.body), avatar: NEUTRAL_AVATAR, quiet: true });
+        // Certains plugins demandent explicitement un toast silencieux.
+        if (toast?.playSound !== false) playPluginToastSound();
       } catch (e) {
         console.error("[Steamcord] safe toaster failed", e);
       }

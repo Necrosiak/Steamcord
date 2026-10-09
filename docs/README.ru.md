@@ -6,6 +6,8 @@
 
 Экспериментальный оверлей POV может показывать видео в SteamOS через GStreamer VP8/WebM без WebKitGTK, если установлены необходимые системные компоненты. Ход проверки: [issue #70](https://github.com/Necrosiak/Steamcord/issues/70).
 
+Уведомления других плагинов Decky снова могут использовать звуковые наборы AudioLoader; уведомления с явно отключённым звуком остаются беззвучными. См. [issue #72](https://github.com/Necrosiak/Steamcord/issues/72).
+
 🌍 **Языки:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · [Nederlands](README.nl.md) · [Polski](README.pl.md) · **Русский**
 
 > **Steamcord — независимый проект.** Изначально он был вдохновлён

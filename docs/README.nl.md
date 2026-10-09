@@ -6,6 +6,8 @@ Spraakchat, privéberichten en schermdeling vanuit het snelmenu, zonder de spelm
 
 De experimentele POV-overlay kan video op SteamOS tonen via GStreamer VP8/WebM zonder WebKitGTK, als de benodigde systeemonderdelen zijn geïnstalleerd. Teststatus: [issue #70](https://github.com/Necrosiak/Steamcord/issues/70).
 
+Meldingen van andere Decky-plug-ins kunnen weer de geluidspakketten van AudioLoader gebruiken; bewust stille meldingen blijven stil. Zie [issue #72](https://github.com/Necrosiak/Steamcord/issues/72).
+
 🌍 **Talen:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · **Nederlands** · [Polski](README.pl.md) · [Русский](README.ru.md)
 
 > **Steamcord is een onafhankelijk project.** Het werd oorspronkelijk geïnspireerd door
