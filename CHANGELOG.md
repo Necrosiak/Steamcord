@@ -3,6 +3,21 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.41.2-beta.1 — 2026-10-09 (SteamOS POV test build)
+
+- The in-game POV overlay can use GTK/Cairo plus GStreamer VP8/WebM when
+  WebKitGTK is absent. Steamcord probes `appsrc`, `matroskademux`, `vp8dec`,
+  `videoconvert` and `appsink` before enabling the switch. The WebKit path
+  keeps its H.264/MP4 stream.
+- Up to four video tiles use the existing layout, size and opacity controls.
+  A missing decoder leaves the voice roster available and explains why the
+  video switch is unavailable.
+- The new path displayed a real remote Discord screen share on Bazzite.
+  Frame pacing was corrected after live testing; this beta asks SteamOS users
+  to verify the video over a game on stock SteamOS. A successful Bazzite test
+  is not yet a SteamOS result. Thanks to @justEhCupcake for the Steam Machine
+  GStreamer inventory in [#70](https://github.com/Necrosiak/Steamcord/issues/70).
+
 ## Planned for upcoming updates
 
 > The UI of recently added features (in-game voice/POV overlays, the

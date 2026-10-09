@@ -4,6 +4,8 @@
 
 Голосовой чат, личные сообщения и демонстрация экрана прямо из меню быстрого доступа — не выходя из игрового режима и без второго устройства.
 
+Экспериментальный оверлей POV может показывать видео в SteamOS через GStreamer VP8/WebM без WebKitGTK, если установлены необходимые системные компоненты. Ход проверки: [issue #70](https://github.com/Necrosiak/Steamcord/issues/70).
+
 🌍 **Языки:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · [Nederlands](README.nl.md) · [Polski](README.pl.md) · **Русский**
 
 > **Steamcord — независимый проект.** Изначально он был вдохновлён

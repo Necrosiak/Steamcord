@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Fenêtre overlay in-game de Steamcord (vocal, et à terme POV vidéo).
+# Fenêtre overlay in-game de Steamcord (vocal et POV vidéo).
 # Fenêtre plein écran TRANSPARENTE qui pose l'atome GAMESCOPE_EXTERNAL_OVERLAY
 # sur son window X11 (= mécanisme mangoapp) → en gamemode, gamescope la peint
 # sur le plan overlay au-dessus du jeu. Même recette éprouvée que l'overlay
@@ -8,17 +8,18 @@
 #
 # DEUX backends de rendu, choisis automatiquement :
 #   · webkit — WebKitGTK charge voice.html : roster vocal + POV vidéo (MSE).
-#   · cairo  — repli SANS WebKit : le roster vocal est peint directement en
-#              GTK3/Cairo. SteamOS (Steam Deck) n'expose AUCUN binding GIR
-#              WebKit2 (ni 4.1 ni 4.0) → l'overlay ne démarrait jamais là-bas
-#              (#22). Le POV vidéo reste indisponible dans ce mode (il repose
-#              sur MediaSource, donc sur un moteur web).
+#   · cairo  — repli SANS WebKit : roster et POV peints en GTK3/Cairo.
+#              SteamOS n'expose pas WebKit2 GIR ; GStreamer y décode WebM/VP8
+#              en images brutes. Si les éléments manquent, le roster reste là.
 #
 # Usage : overlay.py --state-dir <dir>
 #         overlay.py --probe        → capacités du système en JSON, puis exit
 #   --state-dir : dossier où vit voice_state.json (écrit par le backend à
 #                 chaque changement d'état vocal + réglages), poll-é en boucle.
 import os, json, math, time, argparse, hashlib, threading, urllib.request
+import socket, base64, secrets, struct
+from collections import deque
+from urllib.parse import urlsplit
 os.environ["GDK_BACKEND"] = "x11"  # window X11 sous XWayland → XID + atome settable
 
 import gi
@@ -54,19 +55,37 @@ try:
 except Exception:
     HAVE_PANGO = False
 
+# Le fallback Cairo peut décoder les POV sans WebKit. SteamOS fournit vp8dec ;
+# appsrc + matroskademux transforment les fragments WebM de MediaRecorder en
+# images brutes pour Cairo. On sonde les éléments exacts au lieu de supposer
+# qu'un paquet GStreamer entier est installé sur toutes les distributions.
+try:
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
+    Gst.init(None)
+    GST_POV_MISSING = [name for name in (
+        "appsrc", "matroskademux", "vp8dec", "videoconvert", "appsink")
+        if Gst.ElementFactory.find(name) is None]
+except Exception:
+    Gst = None
+    GST_POV_MISSING = ["Gst Python bindings"]
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAGE_HTML = os.path.join(HERE, "voice.html")
 
 
-def capabilities():
+def capabilities(requested_backend="auto"):
     """Ce que cette machine sait afficher — lu par le backend (menu QAM)."""
     backend = "webkit" if WEBKIT_VER else ("cairo" if (HAVE_CAIRO and HAVE_PANGO) else "none")
+    if requested_backend == "cairo" and HAVE_CAIRO and HAVE_PANGO:
+        backend = "cairo"
     return {
         "backend": backend,
         "webkit_version": WEBKIT_VER,
         "voice": backend != "none",
-        # Le POV décode du fMP4 en MediaSource : moteur web obligatoire.
-        "pov": backend == "webkit",
+        "pov": backend == "webkit" or (backend == "cairo" and not GST_POV_MISSING),
+        "pov_format": "mp4" if backend == "webkit" else "webm",
+        "pov_missing": GST_POV_MISSING if backend == "cairo" else [],
         "cairo": HAVE_CAIRO,
         "pango": HAVE_PANGO,
     }
@@ -218,7 +237,7 @@ def run_webkit(state_dir, state_path):
     Gtk.main()
 
 
-# ── Backend cairo (roster vocal seul, sans moteur web) ────────────────────────
+# ── Backend cairo (roster vocal et POV sans moteur web) ───────────────────────
 # Reproduit le rendu de voice.html : rangée pilule sombre, avatar rond, pseudo,
 # badge micro coupé, halo vert quand la personne parle. Mêmes métriques que le
 # CSS (26 px d'avatar, 13 px de texte, rayon 16 px…), mises à l'échelle par le
@@ -243,6 +262,8 @@ class RosterArea(Gtk.DrawingArea):
         self._cache_dir = os.path.join(state_dir, "avatars")
         os.makedirs(self._cache_dir, exist_ok=True)
         self.voice = {}
+        self.pov = {}
+        self.pov_frames = {}   # uid -> (backing bytes, Cairo surface, width, height, last frame)
         self.connect("draw", self.on_draw)
 
     # ---- avatars ----
@@ -304,6 +325,40 @@ class RosterArea(Gtk.DrawingArea):
     def set_voice(self, voice):
         self.voice = voice or {}
         self.queue_draw()
+
+    def set_pov(self, pov):
+        self.pov = pov or {}
+        if not self.pov.get("enabled"):
+            self.pov_frames.clear()
+        self.queue_draw()
+
+    def set_pov_frame(self, uid, data, width, height):
+        if not self.pov.get("enabled") or width < 1 or height < 1 or width > 1920 or height > 1080:
+            return False
+        stride = len(data) // height
+        if stride * height != len(data) or stride < width * 4 or stride % 4:
+            return False
+        try:
+            surface = cairo.ImageSurface.create_for_data(data, cairo.FORMAT_RGB24,
+                                                          width, height, stride)
+            self.pov_frames[uid] = (data, surface, width, height, time.monotonic())
+            self.queue_draw()
+        except Exception as e:
+            print("[overlay] POV frame rejected: %s" % e, flush=True)
+        return False
+
+    def clear_pov_frame(self, uid):
+        self.pov_frames.pop(uid, None)
+        self.queue_draw()
+        return False
+
+    def expire_pov_frames(self):
+        now = time.monotonic()
+        expired = [uid for uid, frame in self.pov_frames.items() if now - frame[4] > 5]
+        for uid in expired:
+            self.pov_frames.pop(uid, None)
+        if expired:
+            self.queue_draw()
 
     @staticmethod
     def _layout(cr, text, size, max_w):
@@ -384,6 +439,8 @@ class RosterArea(Gtk.DrawingArea):
         cr.set_source_rgba(0, 0, 0, 0)
         cr.paint()
         cr.set_operator(cairo.OPERATOR_OVER)
+
+        self._draw_pov(cr)
 
         v = self.voice or {}
         users = v.get("users") or []
@@ -502,16 +559,335 @@ class RosterArea(Gtk.DrawingArea):
         cr.paint_with_alpha(max(0.0, min(1.0, opacity)))
         return False
 
+    def _draw_pov(self, cr):
+        if not self.pov.get("enabled") or not self.pov_frames:
+            return
+        st = self.pov.get("settings") or {}
+        layout = st.get("layout")
+        if layout not in ("right", "left", "top", "bottom", "corners"):
+            layout = "right"
+        raw_scale = st.get("scale")
+        scale = max(0.5, min(1.8, (raw_scale if isinstance(raw_scale,
+                    (int, float)) else 100) / 100.0))
+        opacity = max(0.0, min(1.0, (st.get("opacity") if isinstance(st.get("opacity"),
+                    (int, float)) else 90) / 100.0))
+        width, height = self.get_allocated_width(), self.get_allocated_height()
+        frames = list(self.pov_frames.items())[:4]
+        count, gap, margin = len(frames), 8.0, 16.0
+        tile_w = 280.0 * scale
+        if layout in ("top", "bottom"):
+            tile_w = min(tile_w, (width - margin * 2 - gap * (count - 1)) / count)
+        elif layout in ("right", "left"):
+            tile_w = min(tile_w, (height - margin * 2 - gap * (count - 1)) / count * 16 / 9)
+        tile_w = max(48.0, tile_w)
+        tile_h = tile_w * 9 / 16
+        cr.push_group()
+        for index, (uid, (_, surface, video_w, video_h, _)) in enumerate(frames):
+            if layout == "right":
+                x = width - margin - tile_w
+                y = (height - count * tile_h - (count - 1) * gap) / 2 + index * (tile_h + gap)
+            elif layout == "left":
+                x = margin
+                y = (height - count * tile_h - (count - 1) * gap) / 2 + index * (tile_h + gap)
+            elif layout in ("top", "bottom"):
+                x = (width - count * tile_w - (count - 1) * gap) / 2 + index * (tile_w + gap)
+                y = margin if layout == "top" else height - margin - tile_h
+            else:
+                x = margin if index % 2 == 0 else width - margin - tile_w
+                y = margin if index < 2 else height - margin - tile_h
+            cr.set_source_rgba(0.04, 0.05, 0.07, 0.92)
+            self._rounded(cr, x - 2, y - 2, tile_w + 4, tile_h + 4, 7)
+            cr.fill()
+            cr.save()
+            self._rounded(cr, x, y, tile_w, tile_h, 5)
+            cr.clip()
+            factor = min(tile_w / video_w, tile_h / video_h)
+            cr.translate(x + (tile_w - video_w * factor) / 2,
+                         y + (tile_h - video_h * factor) / 2)
+            cr.scale(factor, factor)
+            cr.set_source_surface(surface, 0, 0)
+            cr.paint()
+            cr.restore()
+            username = next((u.get("username") for u in (self.voice.get("users") or [])
+                             if str(u.get("id")) == uid), None)
+            if username:
+                label = self._layout(cr, username, 11 * min(scale, 1.2), tile_w - 16)
+                _, label_h = label.get_pixel_size()
+                cr.set_source_rgba(0, 0, 0, 0.7)
+                cr.rectangle(x, y + tile_h - label_h - 9, tile_w, label_h + 9)
+                cr.fill()
+                cr.set_source_rgba(1, 1, 1, 0.94)
+                cr.move_to(x + 7, y + tile_h - label_h - 5)
+                PangoCairo.show_layout(cr, label)
+        cr.pop_group_to_source()
+        cr.paint_with_alpha(opacity)
+
+
+class PovDecoder:
+    """Un décodeur WebM/VP8 par participant ; seule la dernière image va à GTK."""
+
+    def __init__(self, uid, on_frame):
+        self.uid = uid
+        self.on_frame = on_frame
+        self.pipeline = Gst.parse_launch(
+            "appsrc name=source is-live=true format=bytes block=false max-bytes=4194304 "
+            "! matroskademux ! vp8dec ! videoconvert "
+            "! video/x-raw,format=BGRx "
+            "! appsink name=sink emit-signals=true max-buffers=1 drop=true sync=false")
+        self.source = self.pipeline.get_by_name("source")
+        self.sink = self.pipeline.get_by_name("sink")
+        self.sink.connect("new-sample", self._sample)
+        if self.pipeline.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
+            raise RuntimeError("GStreamer VP8 pipeline could not start")
+
+    def _sample(self, sink):
+        sample = sink.emit("pull-sample")
+        if sample is None:
+            return Gst.FlowReturn.OK
+        caps = sample.get_caps().get_structure(0)
+        width, height = caps.get_value("width"), caps.get_value("height")
+        buf = sample.get_buffer()
+        ok, mapped = buf.map(Gst.MapFlags.READ)
+        if ok:
+            try:
+                self.on_frame(self.uid, bytearray(mapped.data), width, height)
+            finally:
+                buf.unmap(mapped)
+        return Gst.FlowReturn.OK
+
+    def push(self, data):
+        result = self.source.emit("push-buffer", Gst.Buffer.new_wrapped(data))
+        if result != Gst.FlowReturn.OK:
+            raise RuntimeError("GStreamer VP8 push-buffer: %s" % result)
+        msg = self.pipeline.get_bus().pop_filtered(Gst.MessageType.ERROR)
+        if msg:
+            err, detail = msg.parse_error()
+            raise RuntimeError("GStreamer VP8 decode: %s %s" % (err, detail))
+
+    def close(self):
+        self.pipeline.set_state(Gst.State.NULL)
+
+
+class PovReceiver:
+    """Client du relais WS local. Aucun I/O réseau ne bloque le thread GTK."""
+
+    def __init__(self, area):
+        self.area = area
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.sock = None
+        self.url = None
+        self.decoders = {}
+        self.pending = {}
+        self.pending_lock = threading.Lock()
+        self.flush_scheduled = False
+        self.frame_timer_id = None
+
+    def start(self, url):
+        if self.thread and self.thread.is_alive() and self.url == url:
+            return
+        self.stop()
+        if self.thread and self.thread.is_alive():
+            return
+        self.url = url
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stop_event.set()
+        with self.pending_lock:
+            self.pending.clear()
+        if self.sock:
+            try:
+                self.sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+            self.sock = None
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=2)
+        if self.thread and not self.thread.is_alive():
+            self.thread = None
+        self.url = None
+
+    def _frame(self, uid, data, width, height):
+        with self.pending_lock:
+            # MediaRecorder livre plusieurs images à la fois (~120 ms). Garder
+            # seulement la dernière limitait le rendu à ~8 i/s alors que le
+            # décodeur en sort 30. Une petite file bornée préserve leur rythme
+            # sans accumuler de latence si le rendu prend du retard.
+            self.pending.setdefault(uid, deque(maxlen=6)).append(
+                (data, width, height))
+            if self.flush_scheduled:
+                return
+            self.flush_scheduled = True
+        GLib.idle_add(self._start_frame_clock)
+
+    def _start_frame_clock(self):
+        if self.frame_timer_id is None:
+            self.frame_timer_id = GLib.timeout_add(33, self._flush_frames)
+        self._flush_frames()
+        return False
+
+    def _flush_frames(self):
+        with self.pending_lock:
+            frames = {uid: queue.popleft() for uid, queue in self.pending.items()
+                      if queue}
+            self.pending = {uid: queue for uid, queue in self.pending.items()
+                            if queue}
+            if not frames:
+                self.flush_scheduled = False
+                self.frame_timer_id = None
+                return False
+        for uid, (data, width, height) in frames.items():
+            self.area.set_pov_frame(uid, data, width, height)
+        return True
+
+    def _clear_decoders(self):
+        for uid, decoder in list(self.decoders.items()):
+            decoder.close()
+            GLib.idle_add(self.area.clear_pov_frame, uid)
+        self.decoders.clear()
+
+    def _read_exact(self, count, pending):
+        while len(pending) < count:
+            if self.stop_event.is_set():
+                raise ConnectionError("POV stopped")
+            try:
+                chunk = self.sock.recv(max(4096, count - len(pending)))
+            except socket.timeout:
+                continue
+            if not chunk:
+                raise ConnectionError("POV feed closed")
+            pending.extend(chunk)
+        data = bytes(pending[:count])
+        del pending[:count]
+        return data
+
+    def _connect(self):
+        parsed = urlsplit(self.url or "")
+        if parsed.scheme != "ws" or parsed.hostname not in ("127.0.0.1", "localhost"):
+            raise ValueError("POV feed must be local ws://")
+        self.sock = socket.create_connection((parsed.hostname, parsed.port or 80), timeout=3)
+        self.sock.settimeout(0.5)
+        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+        request = ("GET %s HTTP/1.1\r\nHost: %s:%s\r\nUpgrade: websocket\r\n"
+                   "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\n"
+                   "Sec-WebSocket-Version: 13\r\n\r\n") % (
+                       path, parsed.hostname, parsed.port or 80, key)
+        self.sock.sendall(request.encode("ascii"))
+        pending = bytearray()
+        while b"\r\n\r\n" not in pending:
+            if self.stop_event.is_set():
+                raise ConnectionError("POV stopped")
+            try:
+                chunk = self.sock.recv(4096)
+            except socket.timeout:
+                continue
+            if not chunk:
+                raise ConnectionError("POV feed closed during handshake")
+            pending.extend(chunk)
+            if len(pending) > 8192:
+                raise ConnectionError("POV WebSocket response too large")
+        header, rest = pending.split(b"\r\n\r\n", 1)
+        if not header.startswith(b"HTTP/1.1 101"):
+            raise ConnectionError("POV WebSocket handshake refused")
+        return bytearray(rest)
+
+    def _send_pong(self, payload):
+        mask = secrets.token_bytes(4)
+        size = len(payload)
+        if size > 125:
+            return
+        encoded = bytes(value ^ mask[i % 4] for i, value in enumerate(payload))
+        self.sock.sendall(bytes([0x8a, 0x80 | size]) + mask + encoded)
+
+    def _consume(self, pending):
+        fragments = bytearray()
+        while not self.stop_event.is_set():
+            first, second = self._read_exact(2, pending)
+            fin, opcode, length = bool(first & 0x80), first & 0x0f, second & 0x7f
+            if length == 126:
+                length = struct.unpack("!H", self._read_exact(2, pending))[0]
+            elif length == 127:
+                length = struct.unpack("!Q", self._read_exact(8, pending))[0]
+            if length > 4 * 1024 * 1024:
+                raise ConnectionError("POV frame too large")
+            mask = self._read_exact(4, pending) if second & 0x80 else None
+            payload = self._read_exact(length, pending)
+            if mask:
+                payload = bytes(value ^ mask[i % 4] for i, value in enumerate(payload))
+            if opcode == 8:
+                return
+            if opcode == 9:
+                self._send_pong(payload)
+                continue
+            if opcode not in (0, 2):
+                continue
+            if opcode == 2:
+                fragments.clear()
+            fragments.extend(payload)
+            if len(fragments) > 4 * 1024 * 1024:
+                raise ConnectionError("POV message too large")
+            if fin:
+                self._handle_message(bytes(fragments))
+                fragments.clear()
+
+    def _handle_message(self, data):
+        if len(data) < 3:
+            return
+        uid_len = data[0]
+        if not uid_len or len(data) <= uid_len + 2:
+            return
+        uid = data[1:1 + uid_len].decode("ascii", "ignore")
+        is_init = data[1 + uid_len] == 1
+        payload = data[2 + uid_len:]
+        if is_init:
+            previous = self.decoders.pop(uid, None)
+            if previous:
+                previous.close()
+            GLib.idle_add(self.area.clear_pov_frame, uid)
+            self.decoders[uid] = PovDecoder(uid, self._frame)
+        decoder = self.decoders.get(uid)
+        if decoder:
+            decoder.push(payload)
+
+    def _run(self):
+        while not self.stop_event.is_set():
+            try:
+                self._consume(self._connect())
+            except Exception as e:
+                if not self.stop_event.is_set():
+                    print("[overlay] POV feed/decode: %s" % e, flush=True)
+            finally:
+                self._clear_decoders()
+                if self.sock:
+                    try:
+                        self.sock.close()
+                    except OSError:
+                        pass
+                    self.sock = None
+            self.stop_event.wait(1)
+
 
 def run_cairo(state_dir, state_path):
     win = build_window()
     area = RosterArea(state_dir)
+    receiver = PovReceiver(area) if not GST_POV_MISSING else None
     win.add(area)
-    print("[overlay] backend=cairo (no WebKit2 binding on this system) — "
-          "voice roster OK, video POV unavailable", flush=True)
+    print("[overlay] backend=cairo, POV=%s%s" % (
+        "VP8/WebM" if receiver else "unavailable",
+        " (missing: %s)" % ", ".join(GST_POV_MISSING) if GST_POV_MISSING else ""), flush=True)
     win.show_all()
 
-    state = {"json": "", "warned_pov": False}
+    state = {"json": ""}
 
     def tick():
         try:
@@ -527,10 +903,13 @@ def run_cairo(state_dir, state_path):
         except Exception:
             return True
         area.set_voice(st.get("voice"))
-        if (st.get("pov") or {}).get("enabled") and not state["warned_pov"]:
-            state["warned_pov"] = True
-            print("[overlay] video POV requested but unavailable without WebKit2 "
-                  "— showing the voice roster only", flush=True)
+        pov = st.get("pov") or {}
+        area.set_pov(pov)
+        if receiver:
+            if pov.get("enabled") and pov.get("feed"):
+                receiver.start(pov["feed"])
+            else:
+                receiver.stop()
         return True
 
     tick()
@@ -540,9 +919,14 @@ def run_cairo(state_dir, state_path):
         # Une annonce d'arrivée/départ s'efface même si le state ne bouge plus.
         if (area.voice or {}).get("events"):
             area.queue_draw()
+        area.expire_pov_frames()
         return True
     GLib.timeout_add(500, expire)
-    Gtk.main()
+    try:
+        Gtk.main()
+    finally:
+        if receiver:
+            receiver.stop()
 
 
 def main():
@@ -557,14 +941,14 @@ def main():
     args = ap.parse_args()
 
     if args.probe:
-        print(json.dumps(capabilities()), flush=True)
+        print(json.dumps(capabilities(args.backend)), flush=True)
         return
 
     state_dir = args.state_dir
     os.makedirs(state_dir, exist_ok=True)
     state_path = os.path.join(state_dir, "voice_state.json")
 
-    caps = capabilities()
+    caps = capabilities(args.backend)
     backend = caps["backend"]
     if args.backend == "cairo" and HAVE_CAIRO and HAVE_PANGO:
         backend = "cairo"

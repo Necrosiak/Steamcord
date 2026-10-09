@@ -5349,12 +5349,12 @@ class Plugin:
         await cls.evt_handler.send_client({"type": "$VIDEO_ANSWER", "userId": user_id, "payload": answer})
 
     # ── Overlays in-game (vocal + POV vidéo) ──────────────────────────────────
-    # UNE seule fenêtre WebKitGTK transparente (gamescope n'a qu'UN plan
+    # UNE seule fenêtre GTK transparente (gamescope n'a qu'UN plan
     # external-overlay — la recette mangoapp, éprouvée par le chat BoneCast)
     # qui héberge les deux widgets ; chacun s'active indépendamment via le
     # menu QAM. La page poll voice_state.json (roster + réglages, réécrit par
-    # la boucle de state) et consomme /pov_feed (WS binaire, chunks WebM du
-    # client MediaRecorder → lecture MSE : WebKit n'a PAS de WebRTC, sondé).
+    # la boucle de state) et consomme /pov_feed : MP4/H264 dans WebKit MSE,
+    # WebM/VP8 décodé par GStreamer sur SteamOS/Cairo.
     _OVERLAY_CFG = os.path.expanduser("~/.config/steamcord-overlay.json")
     _overlay_proc = None
     _overlay_settings = None
@@ -5363,7 +5363,7 @@ class Plugin:
     _pov_ov_on = False
     _pov_users = set()          # users actuellement relayés (client MediaRecorder)
     _pov_clients = {}           # ws overlay -> asyncio.Queue de fragments binaires
-    _pov_init = {}              # uid -> fragment d'init fMP4 (ftyp+moov) en cache
+    _pov_init = {}              # uid -> fragment d'init MP4 ou WebM en cache
 
     POV_MAX = 4
     POV_FEED_URL = "ws://127.0.0.1:65123/pov_feed"
@@ -5379,19 +5379,33 @@ class Plugin:
             script = Path(DECKY_PLUGIN_DIR) / "defaults" / "game_overlay" / "overlay.py"
         return script
 
+    @staticmethod
+    def _overlay_backend_args():
+        """Optional local override for testing the SteamOS Cairo path on Bazzite.
+
+        The probe and the actual helper must use the same backend, otherwise
+        the frontend picks MP4 for WebKit while the renderer expects WebM.
+        """
+        backend = os.environ.get("STEAMCORD_OVERLAY_BACKEND", "").strip()
+        if not backend:
+            try:
+                backend = (Path.home() / ".config/steamcord-overlay-backend").read_text().strip()
+            except OSError:
+                pass
+        return ("--backend", backend) if backend in ("cairo", "webkit") else ()
+
     @classmethod
     async def _overlay_caps(cls):
-        """Ce que le helper sait rendre ICI. SteamOS n'a AUCUN binding GIR
-        WebKit2 → le helper y peint le roster vocal en GTK/Cairo, mais le POV
-        (décodage fMP4 en MediaSource) reste hors de portée sans moteur web
-        (#22). Sondé une fois, puis mémorisé."""
+        """Ce que le helper sait rendre ICI : WebKit MSE ou GTK/Cairo avec
+        GStreamer VP8/WebM sur SteamOS. Sondé une fois, puis mémorisé."""
         if cls._overlay_caps_cache is not None:
             return cls._overlay_caps_cache
         import json as _json
-        caps = {"backend": "unknown", "voice": True, "pov": True}
+        caps = {"backend": "unknown", "voice": False, "pov": False}
         try:
             proc = await create_subprocess_exec(
                 sys_python(), str(cls._overlay_script()), "--probe",
+                *cls._overlay_backend_args(),
                 stdout=PIPE, stderr=PIPE)
             out, _err = await wait_for(proc.communicate(), timeout=15)
             caps = _json.loads(out.decode().strip().splitlines()[-1])
@@ -5520,6 +5534,7 @@ class Plugin:
                 env.pop("LD_LIBRARY_PATH", None)
             cls._overlay_proc = await create_subprocess_exec(
                 sys_python(), str(script), "--state-dir", cls._overlay_dir(),
+                *cls._overlay_backend_args(),
                 env=env, stdout=PIPE, stderr=PIPE)
             create_task(stream_watcher(cls._overlay_proc.stdout, prefix="[overlay]"))
             create_task(stream_watcher(cls._overlay_proc.stderr, True, prefix="[overlay]"))
@@ -5588,11 +5603,11 @@ class Plugin:
     # ── Overlay POV ───────────────────────────────────────────────────────────
     @classmethod
     async def start_pov_overlay(cls):
-        # Échec HONNÊTE plutôt qu'un toggle qui ment : sans moteur web, le POV
-        # ne peut pas être décodé (le roster vocal, lui, marche — backend cairo).
+        # Échec honnête si ni WebKit MSE ni GStreamer VP8/WebM ne peuvent
+        # décoder la vidéo. Le roster vocal reste disponible.
         caps = await cls._overlay_caps()
         if not caps.get("pov", True):
-            logger.info("[overlay] POV refused: backend %s has no MediaSource"
+            logger.info("[overlay] POV refused: backend %s has no video decoder"
                         % caps.get("backend"))
             return {"ok": False, "reason": "pov_unsupported"}
         cls._pov_ov_on = True
@@ -5664,7 +5679,9 @@ class Plugin:
                     break
             want = set(want)
             for uid in want - cls._pov_users:
-                await cls.evt_handler.send_client({"type": "$POV_START", "userId": uid})
+                caps = await cls._overlay_caps()
+                await cls.evt_handler.send_client({"type": "$POV_START", "userId": uid,
+                                                   "format": caps.get("pov_format", "mp4")})
             for uid in cls._pov_users - want:
                 await cls.evt_handler.send_client({"type": "$POV_STOP", "userId": uid})
                 cls._pov_init.pop(uid, None)
@@ -5674,10 +5691,10 @@ class Plugin:
 
     @classmethod
     def _on_pov_chunk(cls, data):
-        """Fragment fMP4 du client (base64) → fragment binaire poussé aux pages
+        """Fragment MP4/WebM du client (base64) → fragment binaire poussé aux pages
         overlay connectées : [1o len uid][uid][1o init][payload]. L'init
-        (ftyp+moov, marqué `init`) est mis en CACHE par user pour être renvoyé
-        en TÊTE à tout consommateur qui se connecte après (fMP4 : un fragment
+        (marqué `init`) est mis en CACHE par user pour être renvoyé
+        en TÊTE à tout consommateur qui se connecte après (un fragment
         média n'est décodable qu'avec l'init de son flux). Une queue par
         client + tâche d'envoi dédiée : l'ordre des fragments est vital."""
         import base64
@@ -5700,7 +5717,7 @@ class Plugin:
 
     @classmethod
     async def _pov_feed(cls, request):
-        """WS binaire consommé par la page overlay (lecture MSE H264/fMP4).
+        """WS binaire consommé par la fenêtre overlay (MSE ou GStreamer).
         À la connexion, on envoie d'abord l'init caché de chaque user actif
         pour que les fragments média qui suivent soient décodables."""
         from asyncio import Queue
