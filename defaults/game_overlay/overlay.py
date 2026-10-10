@@ -264,6 +264,8 @@ class RosterArea(Gtk.DrawingArea):
         self.voice = {}
         self.pov = {}
         self.pov_frames = {}   # uid -> (backing bytes, Cairo surface, width, height, last frame)
+        self._pov_first_surface_logged = False
+        self._pov_first_reject_logged = False
         self.connect("draw", self.on_draw)
 
     # ---- avatars ----
@@ -330,18 +332,29 @@ class RosterArea(Gtk.DrawingArea):
         self.pov = pov or {}
         if not self.pov.get("enabled"):
             self.pov_frames.clear()
+            self._pov_first_surface_logged = False
+            self._pov_first_reject_logged = False
         self.queue_draw()
 
     def set_pov_frame(self, uid, data, width, height):
         if not self.pov.get("enabled") or width < 1 or height < 1 or width > 1920 or height > 1080:
+            if self.pov.get("enabled") and not self._pov_first_reject_logged:
+                print("[overlay] POV frame rejected: dimensions=%dx%d" % (width, height), flush=True)
+                self._pov_first_reject_logged = True
             return False
         stride = len(data) // height
         if stride * height != len(data) or stride < width * 4 or stride % 4:
+            if not self._pov_first_reject_logged:
+                print("[overlay] POV frame rejected: invalid stride", flush=True)
+                self._pov_first_reject_logged = True
             return False
         try:
             surface = cairo.ImageSurface.create_for_data(data, cairo.FORMAT_RGB24,
                                                           width, height, stride)
             self.pov_frames[uid] = (data, surface, width, height, time.monotonic())
+            if not self._pov_first_surface_logged:
+                print("[overlay] POV first Cairo surface ready: %dx%d" % (width, height), flush=True)
+                self._pov_first_surface_logged = True
             self.queue_draw()
         except Exception as e:
             print("[overlay] POV frame rejected: %s" % e, flush=True)
@@ -682,6 +695,8 @@ class PovReceiver:
         self.pending_lock = threading.Lock()
         self.flush_scheduled = False
         self.frame_timer_id = None
+        self.diag_lock = threading.Lock()
+        self.diag = {"connections": 0, "inits": 0, "media": 0, "frames": 0}
 
     def start(self, url):
         if self.thread and self.thread.is_alive() and self.url == url:
@@ -690,6 +705,9 @@ class PovReceiver:
         if self.thread and self.thread.is_alive():
             return
         self.url = url
+        with self.diag_lock:
+            self.diag = {"connections": 0, "inits": 0, "media": 0, "frames": 0}
+        print("[overlay] POV receiver starting", flush=True)
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -715,6 +733,11 @@ class PovReceiver:
         self.url = None
 
     def _frame(self, uid, data, width, height):
+        with self.diag_lock:
+            self.diag["frames"] += 1
+            first_frame = self.diag["frames"] == 1
+        if first_frame:
+            print("[overlay] POV first decoded frame: %dx%d" % (width, height), flush=True)
         with self.pending_lock:
             # MediaRecorder livre plusieurs images à la fois (~120 ms). Garder
             # seulement la dernière limitait le rendu à ~8 i/s alors que le
@@ -799,6 +822,9 @@ class PovReceiver:
         header, rest = pending.split(b"\r\n\r\n", 1)
         if not header.startswith(b"HTTP/1.1 101"):
             raise ConnectionError("POV WebSocket handshake refused")
+        with self.diag_lock:
+            self.diag["connections"] += 1
+        print("[overlay] POV feed WebSocket connected", flush=True)
         return bytearray(rest)
 
     def _send_pong(self, payload):
@@ -850,14 +876,33 @@ class PovReceiver:
         is_init = data[1 + uid_len] == 1
         payload = data[2 + uid_len:]
         if is_init:
+            with self.diag_lock:
+                self.diag["inits"] += 1
+                init_count = self.diag["inits"]
+            print("[overlay] POV decoder init received: total=%d" % init_count, flush=True)
             previous = self.decoders.pop(uid, None)
             if previous:
                 previous.close()
             GLib.idle_add(self.area.clear_pov_frame, uid)
             self.decoders[uid] = PovDecoder(uid, self._frame)
+        else:
+            with self.diag_lock:
+                self.diag["media"] += 1
+                first_media = self.diag["media"] == 1
+            if first_media:
+                print("[overlay] POV first media segment received", flush=True)
         decoder = self.decoders.get(uid)
         if decoder:
             decoder.push(payload)
+
+    def log_health(self):
+        if not self.thread or not self.thread.is_alive():
+            return
+        with self.diag_lock:
+            stats = dict(self.diag)
+        print("[overlay] POV health: ws=%d init=%d media=%d decoded=%d decoders=%d" % (
+            stats["connections"], stats["inits"], stats["media"],
+            stats["frames"], len(self.decoders)), flush=True)
 
     def _run(self):
         while not self.stop_event.is_set():
@@ -887,7 +932,7 @@ def run_cairo(state_dir, state_path):
         " (missing: %s)" % ", ".join(GST_POV_MISSING) if GST_POV_MISSING else ""), flush=True)
     win.show_all()
 
-    state = {"json": ""}
+    state = {"json": "", "pov_status": None}
 
     def tick():
         try:
@@ -904,6 +949,11 @@ def run_cairo(state_dir, state_path):
             return True
         area.set_voice(st.get("voice"))
         pov = st.get("pov") or {}
+        pov_status = (bool(pov.get("enabled")), bool(pov.get("feed")))
+        if pov_status != state["pov_status"]:
+            print("[overlay] POV state: enabled=%s feed_configured=%s" % pov_status,
+                  flush=True)
+            state["pov_status"] = pov_status
         area.set_pov(pov)
         if receiver:
             if pov.get("enabled") and pov.get("feed"):
@@ -914,6 +964,12 @@ def run_cairo(state_dir, state_path):
 
     tick()
     GLib.timeout_add(300, tick)
+
+    def log_pov_health():
+        if receiver:
+            receiver.log_health()
+        return True
+    GLib.timeout_add_seconds(10, log_pov_health)
 
     def expire():
         # Une annonce d'arrivée/départ s'efface même si le state ne bouge plus.

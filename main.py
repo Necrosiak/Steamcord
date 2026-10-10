@@ -5364,6 +5364,7 @@ class Plugin:
     _pov_users = set()          # users actuellement relayés (client MediaRecorder)
     _pov_clients = {}           # ws overlay -> asyncio.Queue de fragments binaires
     _pov_init = {}              # uid -> fragment d'init MP4 ou WebM en cache
+    _pov_media_seen = set()      # diagnostic one-shot, jamais de user ID dans les logs
 
     POV_MAX = 4
     POV_FEED_URL = "ws://127.0.0.1:65123/pov_feed"
@@ -5617,6 +5618,8 @@ class Plugin:
             cls._write_overlay_state()
             return {"ok": ok}
         cls._write_overlay_state()
+        logger.info("[overlay] POV enabled: backend=%s format=%s" % (
+            caps.get("backend"), caps.get("pov_format")))
         # Lance tout de suite le relais des POV déjà actives (sans attendre le
         # prochain event de state).
         await cls._sync_pov_users()
@@ -5632,6 +5635,8 @@ class Plugin:
                 pass
         cls._pov_users.clear()
         cls._pov_init.clear()
+        cls._pov_media_seen.clear()
+        logger.info("[overlay] POV disabled")
         cls._write_overlay_state()
         await cls._maybe_stop_overlay_window()
         return {"ok": True}
@@ -5678,6 +5683,8 @@ class Plugin:
                 if len(want) >= cls.POV_MAX:
                     break
             want = set(want)
+            added = len(want - cls._pov_users)
+            removed = len(cls._pov_users - want)
             for uid in want - cls._pov_users:
                 caps = await cls._overlay_caps()
                 await cls.evt_handler.send_client({"type": "$POV_START", "userId": uid,
@@ -5685,7 +5692,11 @@ class Plugin:
             for uid in cls._pov_users - want:
                 await cls.evt_handler.send_client({"type": "$POV_STOP", "userId": uid})
                 cls._pov_init.pop(uid, None)
+                cls._pov_media_seen.discard(uid)
             cls._pov_users = want
+            if added or removed:
+                logger.info("[overlay] POV sources: active=%d requested=%d stopped=%d" % (
+                    len(want), added, removed))
         except Exception as e:
             logger.debug(f"[overlay] sync pov users failed: {e!r}")
 
@@ -5706,7 +5717,15 @@ class Plugin:
             is_init = bool(data.get("init"))
             frame = bytes([len(uid)]) + uid.encode() + bytes([1 if is_init else 0]) + payload
             if is_init:
+                first_init = uid not in cls._pov_init
                 cls._pov_init[uid] = frame
+                if first_init:
+                    logger.info("[overlay] POV init received: sources=%d consumers=%d" % (
+                        len(cls._pov_init), len(cls._pov_clients)))
+            elif uid not in cls._pov_media_seen:
+                cls._pov_media_seen.add(uid)
+                logger.info("[overlay] POV first media received: sources=%d consumers=%d" % (
+                    len(cls._pov_media_seen), len(cls._pov_clients)))
             for q in list(cls._pov_clients.values()):
                 # Client à la traîne : on jette les fragments média récents
                 # plutôt que d'accumuler (l'image reprendra, la latence non).
@@ -5729,6 +5748,8 @@ class Plugin:
             if fr:
                 q.put_nowait(fr)
         cls._pov_clients[ws] = q
+        logger.info("[overlay] POV feed connected: clients=%d cached_inits=%d" % (
+            len(cls._pov_clients), q.qsize()))
 
         async def sender():
             try:
@@ -5743,6 +5764,7 @@ class Plugin:
                 pass
         finally:
             cls._pov_clients.pop(ws, None)
+            logger.info("[overlay] POV feed disconnected: clients=%d" % len(cls._pov_clients))
             send_task.cancel()
         return ws
 

@@ -3,6 +3,19 @@
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 
+## 1.41.3 — 2026-10-10
+
+### SteamOS POV diagnostics (#70)
+
+- Added bounded, privacy-conscious logs for POV activation, requested remote
+  streams, first incoming init/media segments, local WebSocket connection,
+  decoded frames and Cairo surfaces. A short counter summary appears every
+  10 seconds while the POV receiver is active.
+- Logs contain counts, backend/format and frame dimensions only; they do not
+  include Discord user IDs, stream contents or the local feed URL. This build
+  does not claim to fix the reporter's SteamOS POV failure; it makes the
+  failing stage observable on the next test.
+
 ## 1.41.2 — 2026-10-09
 
 ### SteamOS POV overlay (#70)
