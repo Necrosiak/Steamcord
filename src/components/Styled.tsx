@@ -465,7 +465,7 @@ export function Rail({ children, color }: any) {
 // l'accent en fond, le focus manette reprend le halo commun. C'est la
 // généralisation de GuildRowBtn, qui était le seul à l'avoir.
 export function RowBtn({
-  active, color, disabled, sub, flex, gap, minHeight, radius, onClick, title, children,
+  active, color, disabled, sub, flex, gap, minHeight, radius, embedded, onClick, title, children,
 }: any) {
   const [focused, setFocused] = useState(false);
   const { px } = useQamUi();
@@ -482,7 +482,7 @@ export function RowBtn({
       style={{
         display: "flex", alignItems: "center", gap: px(gap ?? (sub ? 7 : 9)),
         // `flex` : la rangée partage sa ligne avec des puces (mode réorganisation).
-        width: flex ? undefined : "100%", flex: flex ? 1 : undefined,
+        width: flex ? 0 : "100%", flex: flex ? "1 1 0%" : undefined,
         minWidth: 0, margin: 0, boxSizing: "border-box",
         padding: sub ? `${px(5)}px ${px(9)}px` : `${px(6)}px ${px(9)}px`,
         minHeight: px(minHeight ?? (sub ? 32 : 42)),
@@ -492,7 +492,7 @@ export function RowBtn({
         opacity: disabled ? 0.5 : 1,
         background: active
           ? c
-          : focused ? (sub ? hexA(c, 0.7) : hexA(c, 0.85)) : "rgba(255,255,255,0.05)",
+            : focused ? (sub ? hexA(c, 0.7) : hexA(c, 0.85)) : embedded ? "transparent" : "rgba(255,255,255,0.05)",
         // Anneau blanc seul, sans agrandissement ni lueur : ces rangées vivent
         // dans des listes qui défilent, où tout ce qui dépasse est coupé net et
         // dessinait un 2e cadre — même correctif que les listes de la vue
@@ -540,7 +540,7 @@ export function InlineBtn({ on, color, tone, big, disabled, onClick, title, chil
 // Puce d'action minuscule alignée à droite d'un titre (rafraîchir, replier).
 // Reprend le halo au lieu du focus natif, qui posait un fond clair et du texte
 // sombre sur ces boutons-là aussi.
-export function MiniBtn({ onClick, disabled, title, children }: any) {
+export function MiniBtn({ onClick, disabled, title, compact, dmAction, onGamepadDirection, children }: any) {
   const [focused, setFocused] = useState(false);
   const { px } = useQamUi();
   return (
@@ -548,16 +548,20 @@ export function MiniBtn({ onClick, disabled, title, children }: any) {
       disabled={disabled}
       onClick={onClick}
       title={title}
+        aria-label={title}
+      data-sc-dm-action={dmAction}
+      onGamepadDirection={onGamepadDirection}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onGamepadFocus={() => setFocused(true)}
       onGamepadBlur={() => setFocused(false)}
       style={{
-        margin: 0, padding: `${px(3)}px ${px(9)}px`, minHeight: px(26), minWidth: 0,
+          margin: 0, padding: compact ? px(4) : `${px(3)}px ${px(9)}px`, minHeight: px(compact ? 28 : 26), minWidth: compact ? px(28) : 0,
+          width: compact ? px(28) : undefined, flex: compact ? `0 0 ${px(28)}px` : undefined,
         boxSizing: "border-box", borderRadius: px(8), fontSize: px(11), lineHeight: 1.2,
         color: "#fff", overflow: "visible", opacity: disabled ? 0.5 : 1,
-        display: "flex", alignItems: "center", gap: px(5),
-        background: focused ? hexA(ACCENT, 0.85) : "rgba(255,255,255,0.06)",
+          display: "flex", alignItems: "center", justifyContent: compact ? "center" : undefined, flexShrink: compact ? 0 : undefined, gap: px(5),
+          background: focused ? hexA(ACCENT, 0.85) : compact ? "transparent" : "rgba(255,255,255,0.06)",
         ...focusHalo(ACCENT, focused, 1.06),
       }}
     >

@@ -1,9 +1,12 @@
 import { call } from "@decky/api";
-import { useEffect, useState } from "react";
-import { t, errText } from "../i18n";
-import { useFillHeight, Card, InlineBtn, MiniBtn, Notice, Pill, ACCENT, ONLINE } from "./Styled";
+import { Focusable, NavEntryPositionPreferences } from "@decky/ui";
+import { useState } from "react";
+import { t } from "../i18n";
+import { useFillHeight, Card, InlineBtn, Notice, Pill, ACCENT, ONLINE } from "./Styled";
 import { useQamUi } from "../qamUi";
-import { IcPhone, IcRefresh } from "./Icons";
+import { IcPhone } from "./Icons";
+import { useDmChannels } from "../hooks/useDmChannels";
+import { DmPinButton } from "./DmPinButton";
 
 interface DMRecipient { id: string; username: string; avatar: string | null; }
 interface DMChannel {
@@ -13,6 +16,7 @@ interface DMChannel {
   icon: string | null;
   recipients: DMRecipient[];
   active_call: boolean;
+  pinned?: boolean;
 }
 
 // Avatar d'une conversation. Même géométrie que l'icône de serveur (taille
@@ -62,9 +66,9 @@ function DMRow({ ch }: { ch: DMChannel }) {
   // Bloc sur la surface commune (Card) : arrondi, liseré, et teinte verte
   // quand un appel est en cours — le même vocabulaire que les autres listes.
   return (
-    <div style={{ marginBottom: px(5) }}>
+    <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.MAINTAIN_X} style={{ marginBottom: px(5) }}>
       <Card tint={ONLINE} active={ch.active_call} style={{ padding: `${px(7)}px ${px(9)}px` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: px(9), minWidth: 0 }}>
+        <Focusable flow-children="row" navEntryPreferPosition={NavEntryPositionPreferences.MAINTAIN_X} style={{ display: "flex", alignItems: "center", gap: px(9), minWidth: 0 }}>
           <DMAvatar ch={ch} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: px(13), fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -75,63 +79,33 @@ function DMRow({ ch }: { ch: DMChannel }) {
             )}
           </div>
           {ch.active_call && <Pill color={ONLINE}>{t("in_call")}</Pill>}
-        </div>
+          <DmPinButton channel={ch} />
+        </Focusable>
         <div style={{ marginTop: px(6) }}>
           <InlineBtn on={ch.active_call} color={ONLINE} disabled={busy} onClick={onCall}>
             {busy ? "…" : <><IcPhone /> {ch.active_call ? t("join") : t("call")}</>}
           </InlineBtn>
         </div>
       </Card>
-    </div>
+    </Focusable>
   );
 }
 
 export function DMBrowser() {
-  const { px } = useQamUi();
   const fill = useFillHeight();
-  const [channels, setChannels] = useState<DMChannel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = () => {
-    setLoading(true);
-    call<[], any>("get_dm_channels")
-      .then(res => {
-        if (Array.isArray(res)) {
-          const sorted = [...res].sort((a, b) => (b.active_call ? 1 : 0) - (a.active_call ? 1 : 0));
-          setChannels(sorted);
-          setError(null);
-        } else {
-          setError(t("error") + JSON.stringify(res));
-        }
-      })
-      .catch(e => setError(errText(e)))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    refresh();
-    // Keep "EN CALL" / "Rejoindre" in sync — a call ending while the list is open
-    // wouldn't update otherwise.
-    const timer = setInterval(refresh, 4000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (error) return <Notice tone="error">{error}</Notice>;
+  const { channels, error } = useDmChannels<DMChannel>();
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: px(4) }}>
-        <MiniBtn onClick={refresh}><IcRefresh /></MiniBtn>
-      </div>
-      {loading && channels.length === 0 ? (
+      {error && <Notice tone="error">{error}</Notice>}
+      {channels === null ? (
         <Notice>{t("loading")}</Notice>
       ) : channels.length === 0 ? (
         <Notice>{t("no_dms")}</Notice>
       ) : (
-        <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
+        <Focusable data-sc-dm-list flow-children="column" ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto" }}>
           {channels.map(ch => <DMRow key={ch.id} ch={ch} />)}
-        </div>
+        </Focusable>
       )}
     </div>
   );

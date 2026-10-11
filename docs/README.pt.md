@@ -1,5 +1,7 @@
 # Steamcord
 
+v1.41.4: As conversas privadas atualizam-se automaticamente e seguem a última mensagem enviada/recebida. Usa o pequeno ícone para fixar uma conversa e as setas para alterar a ordem das fixadas. Preferências guardadas por conta Discord e partilhadas entre Voz, Texto e Big Screen. Navegação com comando testada no Bazzite; feedback de outros dispositivos SteamOS é bem-vindo.
+
 **Discord no Modo Jogo do Steam** — um plugin [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) para Steam Deck / Bazzite / SteamOS.
 
 Chat de voz, mensagens privadas e partilha de ecrã a partir do menu de acesso rápido, sem sair do modo de jogo e sem um segundo dispositivo.

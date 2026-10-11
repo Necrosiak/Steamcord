@@ -1,5 +1,7 @@
 # Steamcord
 
+v1.41.4: Private Gespräche aktualisieren sich automatisch und werden nach der letzten gesendeten/empfangenen Nachricht sortiert. Mit dem kleinen Pin-Symbol anheften und mit den Pfeilen daneben die Reihenfolge ändern. Pins und Reihenfolge werden pro Discord-Konto gespeichert und zwischen Sprache, Text und Big Screen geteilt. Controller-Navigation auf Bazzite getestet; Rückmeldungen von anderen SteamOS-Geräten sind willkommen.
+
 **Discord im Steam-Spielmodus** — ein [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)-Plugin für Steam Deck / Bazzite / SteamOS.
 
 Sprachchat, Direktnachrichten und Bildschirmübertragung direkt aus dem Schnellzugriffsmenü — ohne den Spielmodus zu verlassen und ohne zweites Gerät.

@@ -31,6 +31,13 @@ jobs:
           pnpm i
           pnpm run build
 
+      - name: Test private conversation ordering and navigation regressions
+        run: |
+          python3 -m unittest discover -s tests -p test_dm_preferences.py -v
+          node tests/test-dm-channels.cjs
+          node tests/test-dm-pin-navigation.cjs
+          node tests/test-notify-audioloader.cjs
+
       - name: Download Decky Plugin CLI
         run: |
           mkdir $(pwd)/cli

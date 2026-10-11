@@ -1,5 +1,7 @@
 # Steamcord
 
+v1.41.4: Private conversations refresh automatically and follow the latest sent/received message. Pin a conversation with the small pin icon and use the arrows beside pinned chats to change their order. Pins and their order are saved per Discord account and shared between Voice, Text and Big Screen. Controller navigation fixes were tested on Bazzite; feedback from other SteamOS devices is welcome.
+
 **Discord in Steam Gaming Mode** — a [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin for Steam Deck / Bazzite / SteamOS.
 
 Voice chat, private messages and screen sharing from the Quick Access Menu, without leaving Game Mode and without a second device.

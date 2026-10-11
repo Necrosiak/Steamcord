@@ -2412,7 +2412,25 @@ class Plugin:
 
     @classmethod
     async def get_dm_channels(cls):
-        return await cls.evt_handler.api.get_dm_channels()
+        from discord_client.dm_preferences import load_pins, order_channels
+        channels = await cls.evt_handler.api.get_dm_channels()
+        if not isinstance(channels, list):
+            return channels
+        return order_channels(channels, load_pins(cls.evt_handler.me.id))
+
+    @classmethod
+    async def set_dm_pinned(cls, channel_id, pinned):
+        from discord_client.dm_preferences import set_pin
+        set_pin(cls.evt_handler.me.id, channel_id, bool(pinned))
+        await emit("dm_channels_changed", {})
+        return True
+
+    @classmethod
+    async def move_dm_pin(cls, channel_id, direction):
+        from discord_client.dm_preferences import move_pin
+        move_pin(cls.evt_handler.me.id, channel_id, direction)
+        await emit("dm_channels_changed", {})
+        return True
 
     # ── Amis (vue agrandie) ──────────────────────────────────────────────────
     @classmethod

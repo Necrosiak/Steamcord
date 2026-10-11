@@ -1819,7 +1819,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const US = Vencord.Webpack.Common.UserStore;
                                     const VSS = Vencord.Webpack.findStore?.("VoiceStateStore");
                                     const sorted = CS?.getSortedPrivateChannels?.() ?? [];
-                                    result = sorted.slice(0, 30).map(ch => {
+                                    result = sorted.map(ch => {
                                         // "Active" only if someone is actually connected to the call.
                                         // CallStore.getCall() lingers after a call ends → false "EN CALL".
                                         const states = VSS?.getVoiceStatesForChannel?.(ch.id) || {};
@@ -1839,6 +1839,11 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             icon: ch.icon ?? null,
                                             recipients,
                                             active_call: activeCall,
+                                            last_message_id: [window.__sc_dm_activity?.[ch.id],
+                                                Vencord.Webpack.findStore?.("ReadStateStore")?.getLastMessageId?.(ch.id),
+                                                ch.lastMessageId, ch.last_message_id, ch.id]
+                                                .map(value => String(value || "0")).filter(value => /^\d+$/.test(value))
+                                                .reduce((latest, value) => BigInt(value) > BigInt(latest) ? value : latest, "0"),
                                         };
                                     });
                                     break;
@@ -2647,6 +2652,20 @@ window.Vencord.Plugins.plugins.Steamcord = {
 
                 FluxDispatcher.addInterceptor(e => {
                     if (e.type == "CHANNEL_SELECT") patchTypingField();
+                    // Observe all DM activity, not only the chat currently open.
+                    if (e.type === "MESSAGE_CREATE" && e.message) {
+                        const id = String(e.message.channel_id || e.channelId || "");
+                        const channel = Vencord.Webpack.Common.ChannelStore?.getChannel?.(id);
+                        if (channel?.type === 1 || channel?.type === 3) {
+                            window.__sc_dm_activity = window.__sc_dm_activity || {};
+                            const messageId = String(e.message.id || "");
+                            const previous = window.__sc_dm_activity[id] || "0";
+                            if (/^\d+$/.test(messageId) && BigInt(messageId) > BigInt(previous)) {
+                                window.__sc_dm_activity[id] = messageId;
+                                window.STEAMCORD_WS.send(JSON.stringify({type: "DM_CHANNELS_CHANGED"}));
+                            }
+                        }
+                    }
 
                     // Incoming DM call → Steam toast (DMs only; guild calls are useless).
                     // Respect the user's Discord status: skip if invisible or DnD (busy).

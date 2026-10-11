@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.41.4 — 2026-10-11
+
+### Live private-conversation lists and pins (#73)
+
+- Keep private conversations ordered by their latest sent/received message in
+  voice QAM, text QAM and Big Screen, with live Discord activity updates and a
+  recovery poll. Do not prioritize ongoing calls above newer conversations.
+- Pin/unpin conversations from all three views. Pins are shared, persisted
+  separately per Discord account, and the latest pinned conversation goes first.
+  Unpinned conversations return to latest-message ordering.
+- Remove the arbitrary 30-conversation cutoff so older pinned chats can appear.
+- Keep keyed rows and the last good list during transient refresh errors;
+  dispose event listeners and ignore late requests when a view closes.
+- Pin controls use matching SVG icons with labels in all nine languages.
+- Move pinned conversations up/down using compact arrow controls next to the
+  pin. The saved order is shared by voice, text and Big Screen.
+- Keep conversation names visible alongside compact pin controls. Voice cards
+  have explicit controller navigation groups; text/Big Screen rows reset their
+  entry focus to the conversation instead of remembering a previously visited pin.
+- Thanks to @TheAwesomeGcdm for the request and to Nekyron for repeated live
+  controller tests on Bazzite. Other SteamOS devices still need field feedback.
+
 Older releases (v1.0.0 → v1.11.0) are documented on the
 [GitHub Releases](https://github.com/Necrosiak/Steamcord/releases) page.
 

@@ -34,6 +34,7 @@ let _locale: Locale | null = null;
 
 const T: Record<Locale, Dict> = {
   en: {
+    dm_pin: "Pin conversation", dm_unpin: "Unpin conversation", dm_pin_failed: "Unable to save pin. Try again.",
     vesktop_desktop_off: "Don't run Vesktop in Desktop Mode",
     vesktop_desktop_off_desc: "For people who use another Discord app on the desktop. Steamcord closes Vesktop when you switch to Desktop Mode and starts it again in Gaming Mode. A call in progress ends when you switch.",
     clip_steam: "Steam clip",
@@ -295,6 +296,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is installed. Close and reopen the Quick Access menu to load it.",
   },
   fr: {
+    dm_pin: "Épingler la conversation", dm_unpin: "Désépingler la conversation", dm_pin_failed: "Échec de sauvegarde de l’épinglage. Réessaie.",
     vesktop_desktop_off: "Ne pas lancer Vesktop en mode Bureau",
     vesktop_desktop_off_desc: "Pour ceux qui utilisent une autre appli Discord sur le bureau. Steamcord ferme Vesktop au passage en mode Bureau et le relance en mode Jeu. Un appel en cours se termine au changement.",
     clip_steam: "Clip Steam",
@@ -556,6 +558,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} est installé. Ferme puis rouvre le menu d'accès rapide pour le charger.",
   },
   de: {
+    dm_pin: "Unterhaltung anheften", dm_unpin: "Unterhaltung lösen", dm_pin_failed: "Anheften konnte nicht gespeichert werden. Erneut versuchen.",
     vesktop_desktop_off: "Vesktop nicht im Desktop-Modus ausführen",
     vesktop_desktop_off_desc: "Für alle, die auf dem Desktop eine andere Discord-App nutzen. Steamcord schließt Vesktop beim Wechsel in den Desktop-Modus und startet es im Spielmodus wieder. Ein laufender Anruf endet beim Wechsel.",
     clip_steam: "Steam-Clip",
@@ -818,6 +821,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} ist installiert. Schließe das Schnellzugriffsmenü und öffne es erneut, um es zu laden.",
   },
   es: {
+    dm_pin: "Fijar conversación", dm_unpin: "Desfijar conversación", dm_pin_failed: "No se pudo guardar. Reinténtalo.",
     vesktop_desktop_off: "No ejecutar Vesktop en el modo Escritorio",
     vesktop_desktop_off_desc: "Para quien usa otra app de Discord en el escritorio. Steamcord cierra Vesktop al pasar al modo Escritorio y lo vuelve a abrir en el modo Juego. Una llamada en curso termina al cambiar.",
     clip_steam: "Clip de Steam",
@@ -1080,6 +1084,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} está instalado. Cierra y vuelve a abrir el menú de acceso rápido para cargarlo.",
   },
   it: {
+    dm_pin: "Fissa conversazione", dm_unpin: "Rimuovi conversazione fissata", dm_pin_failed: "Impossibile salvare. Riprova.",
     vesktop_desktop_off: "Non avviare Vesktop in modalità Desktop",
     vesktop_desktop_off_desc: "Per chi usa un'altra app Discord sul desktop. Steamcord chiude Vesktop quando passi alla modalità Desktop e lo riavvia in modalità Gioco. Una chiamata in corso termina al cambio.",
     clip_steam: "Clip Steam",
@@ -1342,6 +1347,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} è installato. Chiudi e riapri il menu di accesso rapido per caricarlo.",
   },
   pt: {
+    dm_pin: "Fixar conversa", dm_unpin: "Desafixar conversa", dm_pin_failed: "Não foi possível guardar. Tente novamente.",
     vesktop_desktop_off: "Não executar o Vesktop no Modo Ambiente de Trabalho",
     vesktop_desktop_off_desc: "Para quem usa outra app do Discord no ambiente de trabalho. O Steamcord fecha o Vesktop ao mudar para o Modo Ambiente de Trabalho e volta a abri-lo no Modo de Jogo. Uma chamada em curso termina na mudança.",
     clip_steam: "Clipe Steam",
@@ -1604,6 +1610,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "O Steamcord {v} está instalado. Fecha e volta a abrir o menu de acesso rápido para o carregar.",
   },
   nl: {
+    dm_pin: "Gesprek vastpinnen", dm_unpin: "Gesprek losmaken", dm_pin_failed: "Opslaan mislukt. Probeer opnieuw.",
     vesktop_desktop_off: "Vesktop niet uitvoeren in Bureaubladmodus",
     vesktop_desktop_off_desc: "Voor wie een andere Discord-app op het bureaublad gebruikt. Steamcord sluit Vesktop bij het overschakelen naar Bureaubladmodus en start het weer in Gamemodus. Een lopend gesprek eindigt bij het wisselen.",
     clip_steam: "Steam-clip",
@@ -1866,6 +1873,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is geïnstalleerd. Sluit het snelmenu en open het opnieuw om het te laden.",
   },
   pl: {
+    dm_pin: "Przypnij rozmowę", dm_unpin: "Odepnij rozmowę", dm_pin_failed: "Nie udało się zapisać. Spróbuj ponownie.",
     vesktop_desktop_off: "Nie uruchamiaj Vesktop w trybie pulpitu",
     vesktop_desktop_off_desc: "Dla osób używających innej aplikacji Discord na pulpicie. Steamcord zamyka Vesktop po przejściu do trybu pulpitu i uruchamia go ponownie w trybie gry. Trwająca rozmowa kończy się przy zmianie.",
     clip_steam: "Klip Steam",
@@ -2128,6 +2136,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} jest zainstalowany. Zamknij i otwórz ponownie menu szybkiego dostępu, aby go wczytać.",
   },
   ru: {
+    dm_pin: "Закрепить беседу", dm_unpin: "Открепить беседу", dm_pin_failed: "Не удалось сохранить. Повторите попытку.",
     vesktop_desktop_off: "Не запускать Vesktop в режиме рабочего стола",
     vesktop_desktop_off_desc: "Для тех, кто пользуется другим приложением Discord на рабочем столе. Steamcord закрывает Vesktop при переходе в режим рабочего стола и снова запускает его в игровом режиме. Текущий звонок при переключении завершится.",
     clip_steam: "Клип Steam",

@@ -14,10 +14,12 @@ import { FriendsHub, activityLine } from "./FriendsHub";
 import { GuildMembers } from "./GuildMembers";
 import { openPersonMenu } from "./PersonMenu";
 import { useOpenChat } from "./ExpandedNav";
+import { useDmChannels } from "../hooks/useDmChannels";
+import { DmPinButton } from "./DmPinButton";
 
 const ModalRootAny = ModalRoot as any;
 type Recipient = { id: string; avatar: string | null; status?: string; activity?: any; custom?: any };
-type Dm = { id: string; name: string; icon: string | null; type: number; recipients: Recipient[]; active_call?: boolean };
+type Dm = { id: string; name: string; icon: string | null; type: number; recipients: Recipient[]; active_call?: boolean; pinned?: boolean };
 type Mode = "dms" | "friends" | "servers" | "events" | "call" | "settings";
 // Une page du bloc de droite. Un chat retient la section d'où il a été ouvert,
 // pour garder la barre latérale allumée dessus.
@@ -67,9 +69,9 @@ function SidebarItem({ active, icon, label, badge, onPick }: { active: boolean; 
   return <Focusable noFocusRing onClick={onPick} onActivate={onPick} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} className="sc-xv-item" style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", borderRadius: 8, marginBottom: 5, background: active ? "rgba(88,101,242,.82)" : focused ? "rgba(255,255,255,.13)" : "transparent", fontWeight: active ? 700 : 500, ...focusHalo("#fff", focused, 1.02) }}>{icon}<span style={{ flex: 1 }}>{label}</span>{badge}</Focusable>;
 }
 
-function Tile({ children, onClick, flex, active, onSecondary }: { children: any; onClick: () => void; flex?: boolean; active?: boolean; onSecondary?: () => void }) {
+function Tile({ children, onClick, flex, active, embedded, onSecondary }: { children: any; onClick: () => void; flex?: boolean; active?: boolean; embedded?: boolean; onSecondary?: () => void }) {
   const [focused, setFocused] = useState(false);
-  return <Focusable noFocusRing onClick={onClick} onActivate={onClick} onSecondaryButton={onSecondary} onSecondaryActionDescription={onSecondary ? t("xv_more") : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(flex ? { flex: 1, minWidth: 0 } : { flexShrink: 0 }), display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 9, background: active ? "rgba(35,165,90,.38)" : focused ? "rgba(88,101,242,.28)" : "rgba(255,255,255,.045)", ...listHalo(focused) }}>{children}</Focusable>;
+  return <Focusable noFocusRing onClick={onClick} onActivate={onClick} onSecondaryButton={onSecondary} onSecondaryActionDescription={onSecondary ? t("xv_more") : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ ...(flex ? { flex: 1, minWidth: 0 } : { flexShrink: 0 }), display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 9, background: active ? "rgba(35,165,90,.38)" : focused ? "rgba(88,101,242,.28)" : embedded ? "transparent" : "rgba(255,255,255,.045)", ...listHalo(focused) }}>{children}</Focusable>;
 }
 
 // Une conversation privée = son chat ET son appel, sur la même ligne (comme
@@ -88,8 +90,9 @@ function DmRow({ dm, onOpen }: { dm: Dm; onOpen: () => void }) {
   };
   // MP à deux : l'activité en cours de la personne passe avant « Message privé ».
   const sub = dm.active_call ? t("xv_call") : dm.type === 3 && dm.recipients?.length ? t("members", { count: dm.recipients.length + 1 }) : (activityLine(dm.recipients?.[0]) || t("private_message"));
-  return <Focusable flow-children="row" style={{ display: "flex", gap: 6, marginBottom: 5 }}>
-    <Tile flex onClick={onOpen} onSecondary={menu}>
+  return <Focusable flow-children="row" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} {...({ resetNavOnEntry: true } as any)} style={{ display: "flex", gap: 6, marginBottom: 5 }}>
+    <Focusable flow-children="row" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} {...({ resetNavOnEntry: true } as any)} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", paddingRight: 6, borderRadius: 9, background: "rgba(255,255,255,.045)" }}>
+    <Tile flex embedded onClick={onOpen} onSecondary={menu}>
       <Avatar dm={dm} />
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{ display: "block", fontWeight: 650, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{dm.name || "MP"}</span>
@@ -97,6 +100,8 @@ function DmRow({ dm, onOpen }: { dm: Dm; onOpen: () => void }) {
       </span>
       <IcChat />
     </Tile>
+    <DmPinButton channel={dm} />
+    </Focusable>
     <Tile onClick={onCall} active={dm.active_call}>
       <span style={{ width: 104, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, fontWeight: 650 }}>{busy ? "…" : <><IcPhone /> {dm.active_call ? t("join") : t("call")}</>}</span>
     </Tile>
@@ -220,26 +225,16 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
       else if (b === 6) navOnce(forward);
     }, true);
   };
-  const [dms, setDms] = useState<Dm[] | null>(null);
+  const { channels: dms, error: dmError } = useDmChannels<Dm>();
   const [events, setEvents] = useState<SCEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    const refresh = () => call<[], any>("get_dm_channels").then((next) => {
-      if (!live) return;
-      // Appels en cours en tête, comme la liste du QAM.
-      const list: Dm[] = Array.isArray(next) ? next : [];
-      setDms([...list].sort((a, b) => (b.active_call ? 1 : 0) - (a.active_call ? 1 : 0)));
-      setError(null);
-    }).catch((e: any) => { if (live) setError(String(e?.message ?? e)); });
     const loadEvents = () => call<[], SCEvent[]>("get_events").then((r) => { if (live) setEvents(Array.isArray(r) ? r : []); }).catch(() => { if (live) setEvents([]); });
-    refresh();
     loadEvents();
     // Un appel qui démarre ou s'arrête pendant que la liste est ouverte doit
     // changer « Appeler » ↔ « Rejoindre » sans rouvrir la vue.
-    const timer = setInterval(refresh, 4000);
     const eventsTimer = setInterval(loadEvents, 60000);
-    return () => { live = false; clearInterval(timer); clearInterval(eventsTimer); };
+    return () => { live = false; clearInterval(eventsTimer); };
   }, []);
   // La liste reste ouverte sous le chat : B ferme d'abord le chat puis rend la
   // même position de navigation, au lieu de renvoyer brutalement au QAM.
@@ -303,9 +298,9 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
             </Focusable>)
           : mode === "call" ? <div style={scroller}>{callContent}</div>
           : mode === "settings" ? <div style={scroller}>{settingsContent || <div style={{ opacity: .6 }}>{t("xv_loading_settings")}</div>}</div>
-          : error ? <div style={{ color: "#ff7474" }}>{error}</div>
-          : dms === null ? <div style={{ opacity: .65 }}>{t("loading")}</div>
-          : <Focusable flow-children="column" style={scroller}>
+          : dms === null ? <div style={{ opacity: .65 }}>{dmError || t("loading")}</div>
+          : <Focusable data-sc-dm-list flow-children="column" style={scroller}>
+            {dmError && <div role="alert">{dmError}</div>}
             {dms.map((dm) => <DmRow key={dm.id} dm={dm} onOpen={() => open(dm.id, dm.name || "MP")} />)}
             {dms.length === 0 && <div style={{ opacity: .6 }}>{t("no_dms")}</div>}
           </Focusable>}

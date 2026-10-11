@@ -1,5 +1,7 @@
 # Steamcord
 
+v1.41.4: Rozmowy prywatne odświeżają się automatycznie i są sortowane według ostatniej wysłanej/odebranej wiadomości. Przypnij rozmowę małą ikoną i zmieniaj kolejność przypiętych rozmów strzałkami. Ustawienia są zapisywane dla konta Discord i wspólne dla głosu, tekstu i Big Screen. Nawigację kontrolerem sprawdzono na Bazzite; mile widziane testy na innych urządzeniach SteamOS.
+
 **Discord w trybie gry Steam** — wtyczka [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) dla Steam Deck / Bazzite / SteamOS.
 
 Czat głosowy, wiadomości prywatne i udostępnianie ekranu z menu szybkiego dostępu — bez wychodzenia z trybu gry i bez drugiego urządzenia.

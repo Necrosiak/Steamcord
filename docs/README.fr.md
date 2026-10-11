@@ -1,5 +1,7 @@
 # Steamcord
 
+v1.41.4 : Les MP s’actualisent automatiquement et suivent le dernier message envoyé/reçu. Épinglez une conversation avec la petite icône, puis utilisez les flèches des MP épinglés pour changer leur ordre. Les épingles et leur ordre sont sauvegardés par compte Discord et partagés entre Vocal, Textuel et Big Screen. Les corrections de navigation manette ont été testées sur Bazzite ; les retours d’autres appareils SteamOS sont les bienvenus.
+
 **Discord en Mode Jeu Steam** — un plugin [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) pour Steam Deck / Bazzite / SteamOS.
 
 Chat vocal, messages privés et partage d'écran depuis le menu d'accès rapide, sans quitter le mode jeu et sans deuxième appareil.

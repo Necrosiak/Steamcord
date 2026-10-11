@@ -11,6 +11,8 @@ import { GuildIcon, TinyIconBtn } from "./ChannelBrowser";
 import { openMediaLightbox, saveAttachment, humanSize } from "./MediaLightbox";
 import { openForward } from "./ForwardModal";
 import { useSteamcordState } from "../hooks/useSteamcordState";
+import { useDmChannels } from "../hooks/useDmChannels";
+import { DmPinButton } from "./DmPinButton";
 
 // Intervalle de polling au niveau module (évite useRef — déconseillé dans le
 // QAM DeckyLoader). Une seule instance de TextChat à la fois (le parent monte
@@ -99,7 +101,7 @@ interface Guild { id: string; name: string; icon: string | null; channels: TextC
 interface DMRecipient { id: string; username: string; avatar: string | null; }
 interface DMChannel {
   id: string; type: number; name: string; icon: string | null;
-  recipients: DMRecipient[]; active_call: boolean;
+  recipients: DMRecipient[]; active_call: boolean; pinned?: boolean;
 }
 export interface MsgImage { url: string; proxy_url: string; w: number; h: number; }
 export interface MsgVideo { url: string; proxy_url: string; w: number; h: number; filename?: string; }
@@ -870,7 +872,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     });
   };
   const [guilds, setGuilds] = useState<Guild[] | null>(null);
-  const [dms, setDms] = useState<DMChannel[] | null>(null);
+  const { channels: dms, error: dmError } = useDmChannels<DMChannel>(source === "dms");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [channel, setChannel] = useState<{ id: string; name: string; dm: boolean } | null>(null);
   const [messages, setMessages] = useState<Message[] | null>(null);
@@ -895,10 +897,6 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     if (source === "servers") {
       call<[boolean], any>("get_text_channels", true)
         .then((res) => setGuilds(Array.isArray(res) ? res : []))
-        .catch((e) => setError(errText(e)));
-    } else {
-      call<[], any>("get_dm_channels")
-        .then((res) => setDms(Array.isArray(res) ? res : []))
         .catch((e) => setError(errText(e)));
     }
   }, [source]);
@@ -1171,21 +1169,22 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   if (source === "dms") {
     return (
       <div>
-        {error && <Notice tone="error">{error}</Notice>}
+        {(error || dmError) && <Notice tone="error">{error || dmError}</Notice>}
         {dms === null && <Notice>{t("loading")}</Notice>}
         {dms && dms.length === 0 && <Notice>{t("no_dms")}</Notice>}
         {dms && dms.length > 0 && (
-          <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll",
+          <div data-sc-dm-list ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll",
             // 3 px intérieurs pour l'anneau de focus des rangées (sinon rogné par le
             // défilement), rendus par la marge négative : la liste reste alignée.
             margin: "4px -3px 0", padding: 3, boxSizing: "border-box", WebkitOverflowScrolling: "touch" } as any}>
             {dms.map((ch) => (
-              <div key={ch.id} style={{ marginBottom: px(4) }}>
-                <RowBtn onClick={() => openChannel(ch.id, ch.name, true)}>
+              <Focusable key={ch.id} flow-children="row" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} {...({ resetNavOnEntry: true } as any)} style={{ display: "flex", alignItems: "center", paddingRight: px(5), borderRadius: px(10), background: "rgba(255,255,255,0.05)", marginBottom: px(4) }}>
+                <RowBtn flex embedded onClick={() => openChannel(ch.id, ch.name, true)}>
                   <DMAvatar ch={ch} />
                   <span style={{ flex: 1, textAlign: "left", fontSize: px(13), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
                 </RowBtn>
-              </div>
+                <DmPinButton channel={ch} />
+              </Focusable>
             ))}
           </div>
         )}

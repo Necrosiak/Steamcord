@@ -38,6 +38,7 @@ class EventHandler:
             "CALL_RING_STOP": self._call_ring_stop,
             "TYPING_START": self._typing_start,
             "CHAT_MESSAGE": self._chat_message,
+            "DM_CHANNELS_CHANGED": self._dm_channels_changed,
         }
         self.loaded = False
         self.logged_in = False
@@ -510,6 +511,9 @@ class EventHandler:
             "emoji": data.get("emoji") or "",
             "me": bool(data.get("me")),
         })
+
+    async def _dm_channels_changed(self, data):
+        await emit("dm_channels_changed", {})
 
     async def _mic_webrtc(self, data):
         # Relay the Discord tab's mic offer/ICE to the SharedJSContext frontend,
