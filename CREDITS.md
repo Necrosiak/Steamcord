@@ -211,3 +211,10 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 ### [@justEhCupcake](https://github.com/justEhCupcake)
 
 - Screen share freezing with Steam's game recording on, with the logs that showed Steam's recorder reading the screen at the moment the share froze ([#69](https://github.com/Necrosiak/Steamcord/issues/69), warning added in v1.40.3)
+
+### [@danlucka](https://github.com/danlucka)
+
+- Asked for the in-game controller shortcut on the Steam Deck's built-in
+  controller, which led to supporting standard gamepads and the Switch 2 Pro
+  Controller too ([#60](https://github.com/Necrosiak/Steamcord/issues/60),
+  added in v1.41.5)

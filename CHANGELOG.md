@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.41.5 — 2026-10-12
+
+### New
+
+- **The controller voice shortcut works in-game with many more controllers.**
+  Besides the Steam Controller (2026), Steamcord now also reads the Steam
+  Deck's built-in controller (A/B/X/Y, D-pad, L4/R4/L5/R5), standard gamepads
+  such as Xbox, DualSense or 8BitDo (A/B/X/Y and D-pad), and controllers that
+  Steam takes over completely, like the Switch 2 Pro Controller (through
+  Steam's virtual gamepad, while a game has focus). Requested by
+  [danlucka](https://github.com/danlucka) in
+  [#60](https://github.com/Necrosiak/Steamcord/issues/60).
+
 ## 1.41.4 — 2026-10-11
 
 ### Live private-conversation lists and pins (#73)

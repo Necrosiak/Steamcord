@@ -34,6 +34,7 @@ jobs:
       - name: Test private conversation ordering and navigation regressions
         run: |
           python3 -m unittest discover -s tests -p test_dm_preferences.py -v
+          python3 -m unittest discover -s tests -p test_controller_input.py -v
           node tests/test-dm-channels.cjs
           node tests/test-dm-pin-navigation.cjs
           node tests/test-notify-audioloader.cjs

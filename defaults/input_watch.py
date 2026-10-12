@@ -36,6 +36,7 @@ import errno
 import fcntl
 import glob
 import os
+import struct
 import re
 
 EV_SYN = 0x00
@@ -581,7 +582,83 @@ HID_TRITON_TO_STEAM = {
     0x00020000: 44,   # L4
     0x00000080: 45,   # R4
 }
-HID_SUPPORTED_BUTTONS = frozenset(HID_TRITON_TO_STEAM.values())
+
+# Manette intégrée du Steam Deck (28de:1205, interface manette). Rapport de
+# 64 octets sans ID : octet 2 = type 0x09 (état), boutons sur 64 bits à
+# l'octet 8. Bits = ceux du pilote Steam Deck de SDL (hidapi_steamdeck.c,
+# STEAMDECK_LBUTTON_* puis STEAMDECK_HBUTTON_* décalés de 32), mappés sur les
+# MÊMES identifiants Steam que la Steam Controller : une liaison enregistrée
+# sur l'une marche sur l'autre.
+HID_DECK_PRODUCTS = {0x1205}
+HID_DECK_STATE = 0x09
+HID_DECK_TO_STEAM = {
+    0x00000080: 0,     # A
+    0x00000020: 1,     # B
+    0x00000040: 2,     # X
+    0x00000010: 3,     # Y
+    0x00000100: 20,    # croix haut
+    0x00000800: 21,    # croix bas
+    0x00000400: 22,    # croix gauche
+    0x00000200: 23,    # croix droite
+    0x00008000: 32,    # L5
+    0x00010000: 33,    # R5
+    1 << 41: 44,       # L4
+    1 << 42: 45,       # R4
+}
+HID_SUPPORTED_BUTTONS = frozenset(HID_TRITON_TO_STEAM.values()) | frozenset(HID_DECK_TO_STEAM.values())
+
+# Manettes classiques (Xbox, DualSense, 8BitDo…) lues en evdev : elles portent
+# BTN_SOUTH (spécification « gamepad » du noyau) et, comme tout joystick, ont
+# l'ACL uaccess. Les manettes Valve physiques sont lues en hidraw ci-dessus.
+# Les manettes VIRTUELLES de Steam (28de:11ff, « X-Box 360 pad N ») sont lues
+# aussi : c'est le seul accès aux manettes que Steam monopolise (Switch 2 Pro
+# en USB, mesuré le 12/10/2026 : plus aucun nœud evdev/hidraw une fois prise
+# par Steam), et Steam ne les alimente que quand un jeu a le focus. Pas de
+# double appui : les boutons tenus de toutes les sources sont réunis (une même
+# touche vue deux fois reste UNE touche tenue). Mêmes identifiants Steam.
+BTN_SOUTH = 0x130
+STEAM_VIRTUAL_GAMEPAD = 0x11FF
+EV_ABS = 0x03
+ABS_HAT0X, ABS_HAT0Y = 0x10, 0x11
+EVDEV_TO_STEAM = {
+    0x130: 0,     # BTN_SOUTH = A
+    0x131: 1,     # BTN_EAST  = B
+    0x134: 2,     # BTN_WEST  = X
+    0x133: 3,     # BTN_NORTH = Y
+    0x220: 20,    # BTN_DPAD_UP
+    0x221: 21,    # BTN_DPAD_DOWN
+    0x222: 22,    # BTN_DPAD_LEFT
+    0x223: 23,    # BTN_DPAD_RIGHT
+}
+_EVENT = struct.Struct("llHHi")
+
+
+def list_evdev_gamepads():
+    """Nœuds /dev/input/event* des manettes non-Valve réellement lisibles."""
+    out = []
+    for path in sorted(glob.glob("/dev/input/event*"), key=_node_num):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+        except OSError:
+            continue
+        try:
+            if not _test_bit(_bits(fd, 0, EV_MAX), EV_KEY):
+                continue
+            if not _test_bit(_bits(fd, EV_KEY, KEY_MAX), BTN_SOUTH):
+                continue
+            _bus, vendor, product = _ident(fd)
+            if vendor == VENDOR_VALVE and product != STEAM_VIRTUAL_GAMEPAD:
+                continue
+            out.append("input/" + os.path.basename(path))
+        except OSError:
+            continue
+        finally:
+            os.close(fd)
+    return out
+
+
+def _steam_buttons(table, raw):
+    return frozenset(steam for bit, steam in table.items() if raw & bit)
 
 
 def list_hid_controllers():
@@ -598,7 +675,8 @@ def list_hid_controllers():
             continue
         if int(m.group(1), 16) != HID_VENDOR_VALVE:
             continue
-        if int(m.group(2), 16) not in HID_TRITON_PRODUCTS:
+        product = int(m.group(2), 16)
+        if product not in HID_TRITON_PRODUCTS and product not in HID_DECK_PRODUCTS:
             continue
         node = os.path.basename(dev)
         # Même règle que pour /dev/input : on NE DEVINE PAS la lisibilité.
@@ -622,7 +700,7 @@ class HidControllerWatcher:
         self._on_change = on_change
         self._log = log
         self._fds = {}                   # fd -> node
-        self._masks = {}                 # fd -> masque des boutons suivis
+        self._masks = {}                 # fd -> boutons Steam tenus (frozenset)
         self._held = frozenset()
         self._closed = False
         self._last_count = -1
@@ -634,7 +712,7 @@ class HidControllerWatcher:
     def rescan(self):
         if self._closed:
             return
-        wanted = set(list_hid_controllers())
+        wanted = set(list_hid_controllers()) | set(list_evdev_gamepads())
         for fd, node in list(self._fds.items()):
             if node not in wanted:
                 self._drop(fd)
@@ -645,7 +723,7 @@ class HidControllerWatcher:
             except OSError:
                 continue
             self._fds[fd] = node
-            self._masks[fd] = 0
+            self._masks[fd] = frozenset()
             try:
                 self._loop.add_reader(fd, self._readable, fd)
             except Exception:
@@ -678,10 +756,11 @@ class HidControllerWatcher:
     def _readable(self, fd):
         if fd not in self._fds:
             return
+        node = self._fds[fd]
         changed = False
         while True:
             try:
-                data = os.read(fd, 64)
+                data = os.read(fd, 64 * _EVENT.size if self._fds[fd].startswith("input/") else 64)
             except BlockingIOError:
                 break
             except OSError:
@@ -694,15 +773,30 @@ class HidControllerWatcher:
                 break
             if not data:
                 break
-            if data[0] in HID_TRITON_STATE_REPORTS and len(data) >= 6:
-                raw = int.from_bytes(data[2:6], "little")
-                mask = 0
-                for bit in HID_TRITON_TO_STEAM:
-                    if raw & bit:
-                        mask |= bit
+            if node.startswith("input/"):
+                # evdev : suite d'input_event ; on suit les boutons tenus.
+                held = set(self._masks.get(fd, frozenset()))
+                for i in range(0, len(data) - _EVENT.size + 1, _EVENT.size):
+                    _s, _us, etype, code, value = _EVENT.unpack_from(data, i)
+                    if etype == EV_KEY and code in EVDEV_TO_STEAM:
+                        (held.add if value else held.discard)(EVDEV_TO_STEAM[code])
+                    elif etype == EV_ABS and code in (ABS_HAT0X, ABS_HAT0Y):
+                        neg, pos = (22, 23) if code == ABS_HAT0X else (20, 21)
+                        held.discard(neg)
+                        held.discard(pos)
+                        if value < 0:
+                            held.add(neg)
+                        elif value > 0:
+                            held.add(pos)
+                mask = frozenset(held)
+            elif len(data) >= 16 and data[0] == 0x01 and data[2] == HID_DECK_STATE:
+                # Steam Deck (aucun rapport Triton ne commence par 0x01).
+                mask = _steam_buttons(HID_DECK_TO_STEAM, int.from_bytes(data[8:16], "little"))
+            elif data[0] in HID_TRITON_STATE_REPORTS and len(data) >= 6:
+                mask = _steam_buttons(HID_TRITON_TO_STEAM, int.from_bytes(data[2:6], "little"))
             elif data[0] == HID_TRITON_WIRELESS and len(data) >= 2 \
                     and data[1] == HID_TRITON_DISCONNECT:
-                mask = 0                 # manette éteinte : plus rien n'est tenu
+                mask = frozenset()       # manette éteinte : plus rien n'est tenu
             else:
                 continue
             if mask != self._masks.get(fd):
@@ -712,12 +806,7 @@ class HidControllerWatcher:
             self._publish()
 
     def _publish(self):
-        held = frozenset(
-            HID_TRITON_TO_STEAM[bit]
-            for mask in self._masks.values()
-            for bit in HID_TRITON_TO_STEAM
-            if mask & bit
-        )
+        held = frozenset().union(*self._masks.values())
         if held == self._held:
             return
         self._held = held
