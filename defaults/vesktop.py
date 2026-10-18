@@ -823,7 +823,7 @@ async def get_discord_tab(client_js) -> Tab:
         await sleep(1)
 
 
-async def kill_for_recovery(tag="[recover]"):
+async def kill_for_recovery(tag="[recover]", relaunch=True):
     """Tue Vesktop pour qu'il soit relancé PROPREMENT par le plugin.
 
     ⛔ Ne JAMAIS passer par `systemctl --user restart steamcord-vesktop` : ça
@@ -855,8 +855,20 @@ async def kill_for_recovery(tag="[recover]"):
     except Exception as e:
         logger.warning(f"{tag} arrêt de Vesktop KO: {e!r}")
         return False
-    logger.info(f"{tag} Vesktop arrêté — le plugin va le relancer et réinjecter")
+    logger.info(f"{tag} Vesktop arrêté" + (" — le plugin va le relancer et réinjecter" if relaunch else " — arrêt volontaire"))
     return True
+
+
+async def stop_managed():
+    """Explicit user stop. Caller must pause recovery before entering here."""
+    process = await create_subprocess_exec(
+        "systemctl", "--user", "stop", VESKTOP_UNIT,
+        stdout=DEVNULL, stderr=DEVNULL, env=_user_env())
+    await process.wait()
+    # A sandboxed child can survive outside the transient unit's cgroup.
+    await kill_for_recovery(tag="[runtime-stop]", relaunch=False)
+    if await _running():
+        raise RuntimeError("Vesktop did not stop")
 
 
 def release_portal_sessions(tag="[portal]"):

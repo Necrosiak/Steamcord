@@ -86,6 +86,7 @@ import { DMBrowser } from "./components/DMBrowser";
 import { ServerHub } from "./components/ServerHub";
 import { useOpenChat } from "./components/ExpandedNav";
 import { TextChat } from "./components/TextChat";
+import { DiscordRuntimeControl } from "./components/DiscordRuntimeControl";
 import { t } from "./i18n";
 import {
   call,
@@ -1459,6 +1460,9 @@ const ContentBody = () => {
   useEffect(() => { setBrowsing(false); }, [inCall]);
   useBackHandler(() => { setBrowsing(false); return true; }, !!(inCall && browsing && topTab === "voice"));
 
+  if (state?.discord_enabled === false) {
+    return <SP><DiscordRuntimeControl /></SP>;
+  }
   if (!state?.loaded) {
     // stand-alone : sans flatpak NI vesktop natif (backend === null), le spinner
     // tournerait pour toujours → afficher la marche à suivre à la place.
@@ -2246,6 +2250,8 @@ const ConfigPanel = () => {
   return (
     <div className="sc-settings">
       <style>{SETTINGS_GAPS}</style>
+      <SR><DiscordRuntimeControl /></SR>
+      <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcController /> {t("config_status")}</div>
       </SR>

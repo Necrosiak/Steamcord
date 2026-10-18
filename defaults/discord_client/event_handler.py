@@ -89,8 +89,9 @@ class EventHandler:
 
     def build_state_dict(self):
         return {
-            "loaded": self.loaded,
-            "logged_in": self.logged_in,
+            "discord_enabled": getattr(self, "discord_enabled", True),
+            "loaded": self.loaded and getattr(self, "discord_enabled", True),
+            "logged_in": self.logged_in and getattr(self, "discord_enabled", True),
             "me": self.me.to_dict(),
             "vc": self._build_vc_dict(),
             "qr_login": self.remote_auth.qr_b64,
@@ -231,11 +232,15 @@ class EventHandler:
         create_task(callback(data)).add_done_callback(_)
 
     async def _loaded(self, data):
+        if not getattr(self, "discord_enabled", True):
+            return
         self.loaded = True
         if not self.logged_in:
             self.remote_auth.start(self.state_changed_event.set)
 
     async def _logged_in(self, data):
+        if not getattr(self, "discord_enabled", True):
+            return
         self.logged_in = True
         self._qr_scanned = False
         self._captcha_needed = False
@@ -263,7 +268,8 @@ class EventHandler:
         self.vc_channel_id = None
         self.vc_members = {}
         self.streaming_users = set()
-        self.remote_auth.start(self.state_changed_event.set)
+        if getattr(self, "discord_enabled", True):
+            self.remote_auth.start(self.state_changed_event.set)
 
     async def _voice_channel_select(self, data):
         new_id = data["channelId"]

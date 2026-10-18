@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.42.0 — 2026-10-18
+
+### New
+
+- **Turn Discord off and on** — a new switch in Steamcord's settings stops
+  Discord completely, with a confirmation first so it can't happen by
+  accident. While it's off, nothing relaunches it in the background and the
+  panel shows a *Start Discord* button instead of your servers. Turning it back
+  on keeps you signed in. Requested by
+  [JerrickLewis7190](https://github.com/JerrickLewis7190) in
+  [#77](https://github.com/Necrosiak/Steamcord/issues/77).
+
+### Changed
+
+- **Text chat layout** — messages now scroll in their own area, with the
+  message box and buttons kept in place below them
+  ([#74](https://github.com/Necrosiak/Steamcord/issues/74)).
+- **In-game voice overlay** — picks the display it shows on more carefully
+  ([#75](https://github.com/Necrosiak/Steamcord/issues/75)).
+- **Sign-in** — the login page no longer waits forever if its preview stalls
+  ([#76](https://github.com/Necrosiak/Steamcord/issues/76)).
+
 ## 1.41.5 — 2026-10-12
 
 ### New

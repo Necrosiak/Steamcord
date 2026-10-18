@@ -66,6 +66,9 @@ _vmod = _ilu.module_from_spec(_vspec)
 sys.modules["vesktop"] = _vmod
 _vspec.loader.exec_module(_vmod)
 
+from discord_client.runtime import DiscordRuntime
+discord_runtime = DiscordRuntime()
+
 logger.setLevel(INFO)
 
 
@@ -123,6 +126,10 @@ def _desktop_session():
 
 
 async def initialize():
+    return await discord_runtime.run_start(_initialize_discord)
+
+
+async def _initialize_discord():
     # NATIVE approach: drive Vesktop (a real Electron Discord, mic works) over CDP
     # instead of a hidden Steam CEF BrowserView (where the mic is impossible).
     import vesktop
@@ -203,6 +210,8 @@ async def _ensure_handshake(tab: Tab):
     reloads = 0
     tries = 30
     while tries > 0:
+        if not discord_runtime.enabled or Plugin.discord_tab is not tab:
+            return
         tries -= 1
         if Plugin.evt_handler.loaded:
             return
@@ -225,6 +234,7 @@ async def _ensure_handshake(tab: Tab):
 async def watchdog(tab: Tab):
     import vesktop
     while True:
+        await discord_runtime.wait_enabled()
         # `tab.websocket.closed` stays False on a half-broken CDP transport (the
         # "Cannot write to closing transport" case seen when Vesktop dies but the
         # socket lingers in a closing state). And probing the CDP endpoint
@@ -237,12 +247,14 @@ async def watchdog(tab: Tab):
         from asyncio import wait_for
         while not tab.websocket.closed:
             await sleep(3)
+            await discord_runtime.wait_enabled()
             try:
                 await wait_for(tab.evaluate("1"), 5)
             except Exception:
                 logger.info("Discord tab stopped answering (Vesktop restarted or CDP bounced) — treating it as dead.")
                 break
 
+        await discord_runtime.wait_enabled()
         logger.info("Discord tab websocket is no longer open. Trying to reconnect...")
 
         try:
@@ -279,6 +291,7 @@ async def watchdog(tab: Tab):
 
     while True:
         try:
+            await discord_runtime.wait_enabled()
             await initialize()
             break
 
@@ -914,7 +927,7 @@ class Plugin:
                     and await vesktop._unit_active(vesktop.VESKTOP_UNIT)):
                 logger.info(f"[multisession] instance sans profil → adoption "
                             f"par le compte {last} + relance")
-                await vesktop.launch()
+                await discord_runtime.run_start(vesktop.launch)
         except Exception as e:
             logger.warning(f"[multisession] adoption initiale: {e!r}")
         while True:
@@ -922,6 +935,7 @@ class Plugin:
             # est la seule part compressible du temps de bascule (le reste =
             # redémarrage Vesktop + chargement Discord, ~15-30 s incompressibles).
             await sleep(5)
+            await discord_runtime.wait_enabled()
             try:
                 acc = vesktop.steam_account_id()
                 if acc != last:
@@ -935,7 +949,7 @@ class Plugin:
                     # profil est déjà loggé, CONNECTION_OPEN reprendra la main.
                     await cls.evt_handler._logout({})
                     cls.evt_handler.state_changed_event.set()
-                    await vesktop.launch()
+                    await discord_runtime.run_start(vesktop.launch)
             except Exception as e:
                 logger.warning(f"[multisession] account watcher: {e!r}")
 
@@ -963,6 +977,7 @@ class Plugin:
           } catch (e) { return 'err:' + e.message; }
         })()"""
         while True:
+            await discord_runtime.wait_enabled()
             try:
                 tab = getattr(cls, "discord_tab", None)
                 if tab is not None:
@@ -1642,6 +1657,63 @@ class Plugin:
         return cls.evt_handler.build_state_dict()
 
     @classmethod
+    async def get_discord_runtime(cls):
+        return {"enabled": discord_runtime.enabled}
+
+    @classmethod
+    async def set_discord_runtime(cls, enabled: bool):
+        async with discord_runtime.transition_lock:
+            return await cls._set_discord_runtime(enabled)
+
+    @classmethod
+    async def _set_discord_runtime(cls, enabled: bool):
+        if not isinstance(enabled, bool):
+            return {"ok": False, "error": "expected boolean"}
+        if enabled:
+            discord_runtime.resume()
+            cls.evt_handler.discord_enabled = True
+            cls.evt_handler.state_changed_event.set()
+            await cls._emit_runtime_state()
+            return {"ok": True, "enabled": True}
+        # Gate/cancel startup BEFORE stopping the process: no watchdog relaunch.
+        await discord_runtime.pause()
+        cls.evt_handler.discord_enabled = False
+        cls.evt_handler.state_changed_event.set()
+        await cls._emit_runtime_state()
+        try:
+            for stop in (cls.stop_game_audio, cls.stop_voice_overlay, cls.stop_pov_overlay):
+                try:
+                    await wait_for(stop(), 5)
+                except Exception:
+                    logger.warning("[runtime] media cleanup failed; stopping Discord anyway")
+            import vesktop
+            await wait_for(vesktop.stop_managed(), 15)
+            tab = cls.discord_tab
+            cls.discord_tab = None
+            if tab is not None:
+                await wait_for(tab.close_websocket(), 5)
+            # Do not call _logout: it starts remote authentication again.
+            handler = cls.evt_handler
+            handler.remote_auth.stop()
+            handler.loaded = False
+            handler.logged_in = False
+            handler.vc_channel_id = None
+            handler.vc_members = {}
+            handler.streaming_users.clear()
+            handler.state_changed_event.set()
+            return {"ok": True, "enabled": False}
+        except Exception:
+            logger.warning("[runtime] Discord stop failed; recovery remains paused")
+            return {"ok": False, "enabled": False, "error": "discord-stop-failed"}
+
+    @classmethod
+    async def _emit_runtime_state(cls):
+        try:
+            await wait_for(emit("state", cls.evt_handler.build_state_dict()), 3)
+        except Exception:
+            logger.warning("[runtime] state broadcast unavailable; control reply carries runtime state")
+
+    @classmethod
     async def login_with_token(cls, token: str):
         from tab_utils.cdp import get_tab
         tab = await get_tab("discord")
@@ -2200,6 +2272,17 @@ class Plugin:
 
     @classmethod
     async def captcha_frame(cls, full: bool = False):
+        # A stuck CDP screenshot used to leave the frontend on "Mirroring…"
+        # forever because its next poll was only scheduled after this RPC.
+        import asyncio
+        try:
+            return await wait_for(cls._captcha_frame(full), 12)
+        except asyncio.TimeoutError:
+            logger.warning("[captcha] frame timed out; mirror can retry")
+            return None
+
+    @classmethod
+    async def _captcha_frame(cls, full: bool = False):
         """Une image du défi — ou de toute la page de login si `full` — avec le
         rectangle de PAGE qu'elle couvre, pour que le frontend retraduise ses
         clics en coordonnées de page."""
@@ -5548,9 +5631,8 @@ class Plugin:
                 env.update(await vesktop._show_env())
             except Exception:
                 pass
-            env.setdefault("DISPLAY", ":0")
-            if "/tmp/_MEI" in env.get("LD_LIBRARY_PATH", ""):
-                env.pop("LD_LIBRARY_PATH", None)
+            from discord_client.overlay_environment import overlay_environment
+            env = overlay_environment(env, {}, vesktop._steam_display_env(), _desktop_session())
             cls._overlay_proc = await create_subprocess_exec(
                 sys_python(), str(script), "--state-dir", cls._overlay_dir(),
                 *cls._overlay_backend_args(),

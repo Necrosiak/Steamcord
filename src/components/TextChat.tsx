@@ -3,6 +3,7 @@ import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
 import { useFillHeight, focusHalo, ACCENT, MiniBtn, Notice, Rail, RowBtn } from "./Styled";
+import { useChatPanelHeight } from "../chatPanelLayout";
 import { useQamUi } from "../qamUi";
 import { useBackHandler } from "../backNav";
 import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
@@ -837,9 +838,8 @@ const scrollPreviewBottom = (el: HTMLElement | null) => setTimeout(() => {
 export function TextChat({ source }: { source: "servers" | "dms" }) {
   const fillList = useFillHeight();
   const { px } = useQamUi();
-  // Réserve sous la liste : composer rapide (TextField + rangée Envoyer/plein
-  // écran) en plus de la marge d'origine.
-  const fillPreview = useFillHeight(180, 108);
+  // Borner le panneau entier : seule la liste rétrécit/défile, pas la saisie.
+  const chatPanel = useChatPanelHeight();
   // On garde le nœud du scroller d'aperçu : voir isPreviewNearBottom.
   const previewElRef = useRef<HTMLDivElement | null>(null);
   // Descendre depuis la liste des salons doit arriver DIRECTEMENT sur la zone de
@@ -853,7 +853,6 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   // renvoie le focus sur la saisie.
   const previewRef = (el: HTMLDivElement | null) => {
     previewElRef.current = el;
-    fillPreview.ref(el);
     if (!el || (el as any).__scNavFwd) return;
     (el as any).__scNavFwd = true;
     el.addEventListener("focusin", (e: any) => {
@@ -1068,8 +1067,8 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
     const chId = channel.id;
     const preview = (messages ?? []).slice(-15);
     return (
-      <div>
-        <Btn onClick={closeChannel} style={{ width: "100%", padding: `${px(6)}px ${px(8)}px`, fontSize: px(13), marginBottom: 6, display: "flex", gap: 6, minHeight: px(36) }}>
+      <div data-sc-chat-panel ref={chatPanel.ref} style={{ height: chatPanel.height, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <Btn onClick={closeChannel} style={{ flexShrink: 0, width: "100%", padding: `${px(6)}px ${px(8)}px`, fontSize: px(13), marginBottom: 6, display: "flex", gap: 6, minHeight: px(36) }}>
           <span>←</span><span style={{ flex: 1, textAlign: "left" }}>{channel.dm ? channel.name : `#${channel.name}`}</span>
         </Btn>
 
@@ -1089,9 +1088,11 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
             entrée sur le dernier message. */}
         <div
           id={PREVIEW_LIST_ID}
+          data-sc-chat-messages
           ref={previewRef}
           style={{
-            maxHeight: fillPreview.height, overflowY: "scroll", marginBottom: 6,
+            flex: "1 1 0", minHeight: 0, overflowY: "auto", marginBottom: 6,
+            overscrollBehavior: "contain",
             display: "flex", flexDirection: "column-reverse", overflowAnchor: "none",
             WebkitOverflowScrolling: "touch" as any,
           }}
@@ -1124,6 +1125,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
           </div>
         )}
 
+        <div data-sc-chat-composer style={{ flexShrink: 0 }}>
         <TextField
           value={draft}
           placeholder={t("message_placeholder")}
@@ -1161,6 +1163,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
         </Focusable>
         {sendError && <div style={{ color: "#ff6b6b", fontSize: 10, marginTop: 4 }}>{sendError}</div>}
         {error && <div style={{ color: "#ff6b6b", fontSize: 10, marginTop: 4 }}>{error}</div>}
+        </div>
       </div>
     );
   }

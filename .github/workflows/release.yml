@@ -38,6 +38,9 @@ jobs:
           node tests/test-dm-channels.cjs
           node tests/test-dm-pin-navigation.cjs
           node tests/test-notify-audioloader.cjs
+          python3 -m unittest discover -s tests -p test_discord_runtime.py -v
+          python3 -m unittest discover -s tests -p test_overlay_environment.py -v
+          node --test tests/test-chat-panel-layout.cjs tests/test-runtime-control.cjs tests/test-runtime-state.cjs
 
       - name: Download Decky Plugin CLI
         run: |

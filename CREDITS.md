@@ -218,3 +218,19 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
   controller, which led to supporting standard gamepads and the Switch 2 Pro
   Controller too ([#60](https://github.com/Necrosiak/Steamcord/issues/60),
   added in v1.41.5)
+
+### [@JerrickLewis7190](https://github.com/JerrickLewis7190)
+
+- The request for an On/Off switch for Discord, with measurements of what the
+  watchdog's relaunches cost ([#77](https://github.com/Necrosiak/Steamcord/issues/77),
+  added in v1.42.0)
+
+### [@TheAwesomeGcdm](https://github.com/TheAwesomeGcdm)
+
+- The chat box and buttons scrolling away while typing, with the screenshot
+  that showed it ([#74](https://github.com/Necrosiak/Steamcord/issues/74))
+
+### [@zorp-mWo](https://github.com/zorp-mWo)
+
+- A rough first sign-in, and the push to look deeper even once it worked
+  ([#76](https://github.com/Necrosiak/Steamcord/issues/76))
