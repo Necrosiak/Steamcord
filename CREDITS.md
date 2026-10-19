@@ -234,3 +234,10 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 - A rough first sign-in, and the push to look deeper even once it worked
   ([#76](https://github.com/Necrosiak/Steamcord/issues/76))
+
+### [@mafiosnik777](https://github.com/mafiosnik777)
+
+- The in-game overlay not showing on Anatase, checked on two devices, with the
+  log that also revealed the screen-sharing library breaking on Python 3.15
+  ([#75](https://github.com/Necrosiak/Steamcord/issues/75), Python 3.15 fixed in
+  v1.42.1)

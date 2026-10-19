@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.42.1 — 2026-10-19
+
+### Fixed
+
+- **Screen sharing on systems with Python 3.15** (such as Anatase) — the
+  library Steamcord uses to talk to the screen-sharing portal failed to load
+  there, because Python 3.15 removed something it relied on. Spotted in the
+  log shared by [mafiosnik777](https://github.com/mafiosnik777) in
+  [#75](https://github.com/Necrosiak/Steamcord/issues/75).
+
 ## 1.42.0 — 2026-10-18
 
 ### New

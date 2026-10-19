@@ -6,7 +6,12 @@ from ._private.util import signature_contains_type, replace_fds_with_idx, replac
 
 from functools import wraps
 import inspect
-from typing import no_type_check_decorator, Dict, List, Any
+from typing import Dict, List, Any
+try:
+    from typing import no_type_check_decorator
+except ImportError:  # removed in Python 3.15; it only marked decorators for type checkers
+    def no_type_check_decorator(decorator):
+        return decorator
 import copy
 import asyncio
 
