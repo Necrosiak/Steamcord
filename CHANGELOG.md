@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.42.2 — 2026-10-21
+
+### Fixed
+
+- **In-game voice overlay not showing on some systems** (such as Anatase) —
+  Steamcord looks up the display Steam runs on so the overlay appears above
+  your game. When Steam's process file couldn't be used, the overlay ended up
+  on the game's display, where gamescope doesn't show overlays. Steamcord now
+  finds Steam's process directly in that case. Diagnosed thanks to the detailed
+  output shared by [mafiosnik777](https://github.com/mafiosnik777) in
+  [#75](https://github.com/Necrosiak/Steamcord/issues/75).
+
 ## 1.42.1 — 2026-10-19
 
 ### Fixed

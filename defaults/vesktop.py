@@ -463,16 +463,43 @@ def _steam_display_env():
     et Steam peut être sur un autre écran ou exiger un cookie : Electron n'a
     alors aucun affichage, le port CDP ne s'ouvre jamais et le QAM reste sur
     « Initialisation ». L'écran de Steam, lui, est utilisable par définition."""
-    out = {}
+    # ~/.steampid peut manquer ou être périmé (issue #75, Anatase : steam.DISPLAY
+    # vide → overlay lancé avec le DISPLAY de plugin_loader, :1, invisible) :
+    # on retombe alors sur les processus « steam » de notre uid.
+    pids = []
     try:
-        pid = Path(os.path.expanduser("~/.steampid")).read_text().strip()
-        for item in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0"):
-            k, _, v = item.partition(b"=")
-            if k in (b"DISPLAY", b"XAUTHORITY"):
-                out[k.decode()] = v.decode(errors="ignore")
+        pids.append(Path(os.path.expanduser("~/.steampid")).read_text().strip())
     except Exception:
         pass
-    return out
+    pids += _steam_pids()
+    for pid in pids:
+        out = {}
+        try:
+            for item in Path(f"/proc/{pid}/environ").read_bytes().split(b"\0"):
+                k, _, v = item.partition(b"=")
+                if k in (b"DISPLAY", b"XAUTHORITY"):
+                    out[k.decode()] = v.decode(errors="ignore")
+        except Exception:
+            continue
+        if out.get("DISPLAY"):
+            return out
+    return {}
+
+
+def _steam_pids():
+    """PIDs of our uid's processes named exactly « steam », oldest first."""
+    uid = os.getuid()
+    found = []
+    for p in Path("/proc").iterdir():
+        if not p.name.isdigit():
+            continue
+        try:
+            if p.stat().st_uid != uid or (p / "comm").read_text().strip() != "steam":
+                continue
+            found.append((p.stat().st_mtime, p.name))
+        except Exception:
+            continue
+    return [pid for _, pid in sorted(found)]
 
 
 def _x11_sockets():

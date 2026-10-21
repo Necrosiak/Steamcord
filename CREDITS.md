@@ -241,3 +241,6 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
   log that also revealed the screen-sharing library breaking on Python 3.15
   ([#75](https://github.com/Necrosiak/Steamcord/issues/75), Python 3.15 fixed in
   v1.42.1)
+- The display check that showed the overlay running on the game's display
+  instead of Steam's ([#75](https://github.com/Necrosiak/Steamcord/issues/75),
+  fixed in v1.42.2)
