@@ -77,6 +77,12 @@ Going native fixes the hard problems of the old hidden-browser approach: **your 
   <img src="docs/img/steamcord-expanded-call.jpg" width="49%" alt="Expanded view, current call"/>
 </p>
 
+## 📺 Featured in
+
+[![Gaming On Steam — Steamcord](https://i.ytimg.com/vi/lTR5N7Zerls/hqdefault.jpg)](https://www.youtube.com/watch?v=lTR5N7Zerls)
+
+Video review and written guide by **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [watch the video](https://www.youtube.com/watch?v=lTR5N7Zerls) · [read the guide](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode). Thank you!
+
 ## Installation
 
 > **Not yet on the Decky Store.** Install manually via Developer Mode.

@@ -76,6 +76,12 @@ Przejście na natywność rozwiązuje trudne problemy starego podejścia z ukryt
   <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Widok rozszerzony, bieżące połączenie"/>
 </p>
 
+## 📺 Piszą o nas
+
+[![Gaming On Steam — Steamcord](https://i.ytimg.com/vi/lTR5N7Zerls/hqdefault.jpg)](https://www.youtube.com/watch?v=lTR5N7Zerls)
+
+Film i poradnik od **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [obejrzyj film](https://www.youtube.com/watch?v=lTR5N7Zerls) · [przeczytaj poradnik](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode). Dziękujemy!
+
 ## Instalacja
 
 > **Jeszcze nie ma w Decky Store.** Instalacja ręczna w trybie deweloperskim.

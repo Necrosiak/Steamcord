@@ -76,6 +76,12 @@ Il passaggio al nativo risolve i problemi difficili del vecchio approccio a brow
   <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Vista estesa, chiamata in corso"/>
 </p>
 
+## 📺 Ne parlano
+
+[![Gaming On Steam — Steamcord](https://i.ytimg.com/vi/lTR5N7Zerls/hqdefault.jpg)](https://www.youtube.com/watch?v=lTR5N7Zerls)
+
+Video e guida scritta di **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [guarda il video](https://www.youtube.com/watch?v=lTR5N7Zerls) · [leggi la guida](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode). Grazie!
+
 ## Installazione
 
 > **Non ancora sul Decky Store.** Installazione manuale tramite la modalità sviluppatore.

@@ -76,6 +76,12 @@ Overstappen op native lost de moeilijke problemen van de oude verborgen-browsera
   <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Uitgebreide weergave, huidig gesprek"/>
 </p>
 
+## 📺 In de media
+
+[![Gaming On Steam — Steamcord](https://i.ytimg.com/vi/lTR5N7Zerls/hqdefault.jpg)](https://www.youtube.com/watch?v=lTR5N7Zerls)
+
+Video en geschreven gids door **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [video bekijken](https://www.youtube.com/watch?v=lTR5N7Zerls) · [gids lezen](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode). Bedankt!
+
 ## Installatie
 
 > **Nog niet in de Decky Store.** Handmatige installatie via de ontwikkelaarsmodus.

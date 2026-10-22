@@ -76,6 +76,12 @@ Pasar a nativo resuelve los problemas difíciles del antiguo enfoque de navegado
   <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Vista ampliada, llamada en curso"/>
 </p>
 
+## 📺 Hablan de nosotros
+
+[![Gaming On Steam — Steamcord](https://i.ytimg.com/vi/lTR5N7Zerls/hqdefault.jpg)](https://www.youtube.com/watch?v=lTR5N7Zerls)
+
+Vídeo y guía escrita de **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [ver el vídeo](https://www.youtube.com/watch?v=lTR5N7Zerls) · [leer la guía](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode). ¡Gracias!
+
 ## Instalación
 
 > **Aún no está en la Decky Store.** Instalación manual mediante el modo desarrollador.

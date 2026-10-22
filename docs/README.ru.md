@@ -76,6 +76,12 @@ Steamcord запускает **[Vesktop](https://github.com/Vencord/Vesktop)** �
   <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Расширенный вид, текущий звонок"/>
 </p>
 
+## 📺 О нас пишут
+
+[![Gaming On Steam — Steamcord](https://i.ytimg.com/vi/lTR5N7Zerls/hqdefault.jpg)](https://www.youtube.com/watch?v=lTR5N7Zerls)
+
+Видео и текстовый гайд от **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [смотреть видео](https://www.youtube.com/watch?v=lTR5N7Zerls) · [читать гайд](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode). Спасибо!
+
 ## Установка
 
 > **Пока нет в Decky Store.** Ручная установка через режим разработчика.

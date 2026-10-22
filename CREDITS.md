@@ -1,3 +1,7 @@
+# Coverage
+
+- **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [video review](https://www.youtube.com/watch?v=lTR5N7Zerls) and [written guide](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode) (October 2026). Thank you for spreading the word!
+
 # Community bug hunters
 
 People who reported, diagnosed or helped fix bugs in Steamcord — thank you!

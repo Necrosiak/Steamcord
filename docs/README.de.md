@@ -76,6 +76,12 @@ Der Wechsel zu nativem Code löst die schwierigen Probleme des alten Ansatzes mi
   <img src="img/steamcord-expanded-call.jpg" width="49%" alt="Erweiterte Ansicht, aktueller Anruf"/>
 </p>
 
+## 📺 Vorgestellt bei
+
+[![Gaming On Steam — Steamcord](https://i.ytimg.com/vi/lTR5N7Zerls/hqdefault.jpg)](https://www.youtube.com/watch?v=lTR5N7Zerls)
+
+Video und schriftlicher Guide von **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)** — [Video ansehen](https://www.youtube.com/watch?v=lTR5N7Zerls) · [Guide lesen](https://gamingonsteam.com/2026/10/21/steam-deck-guide-steamcord-discord-gaming-mode). Danke!
+
 ## Installation
 
 > **Noch nicht im Decky Store.** Manuelle Installation über den Entwicklermodus.
