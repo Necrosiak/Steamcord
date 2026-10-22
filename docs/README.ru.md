@@ -90,6 +90,7 @@ Steamcord запускает **[Vesktop](https://github.com/Vencord/Vesktop)** �
 2. Перейдите в **Разработчик** в настройках Decky
 3. Установите по URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
+   > ⚠️ Начиная с Decky Loader 3.3 здесь появляется предупреждение *Third-Party Plugin Installation*, потому что плагин не из Decky Store. Это нормально: подождите 5 секунд и подтвердите. Оно появляется только один раз, дальше обновления ставятся сами.
 
 Vesktop устанавливается и запускается плагином автоматически при первом запуске. Достаточно войти один раз (QR-код или Vesktop в режиме рабочего стола) — и вы останетесь в системе.
 

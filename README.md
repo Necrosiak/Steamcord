@@ -91,6 +91,7 @@ Video review and written guide by **[Gaming On Steam](https://www.youtube.com/@g
 2. Go to **Developer** in Decky settings
 3. Install from URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
+   > ⚠️ Decky Loader 3.3 and newer shows a *Third-Party Plugin Installation* warning here, because the plugin is not from the Decky Store. That is expected: wait 5 seconds and confirm. It only appears once, and updates install by themselves afterwards.
 
 > **A note on automatic updates.** Decky owns the plugin's top-level directory,
 > so the built-in updater can rewrite existing files but cannot create new ones.

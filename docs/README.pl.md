@@ -90,6 +90,7 @@ Film i poradnik od **[Gaming On Steam](https://www.youtube.com/@gaming_onsteam)*
 2. Przejdź do **Deweloper** w ustawieniach Decky
 3. Zainstaluj z adresu URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
+   > ⚠️ Od Decky Loader 3.3 pojawia się tu ostrzeżenie *Third-Party Plugin Installation*, bo wtyczka nie pochodzi z Decky Store. To normalne: odczekaj 5 sekund i potwierdź. Pojawia się tylko raz, a aktualizacje instalują się potem same.
 
 Vesktop jest instalowany i uruchamiany automatycznie przez wtyczkę przy pierwszym uruchomieniu. Wystarczy zalogować się raz (kod QR lub Vesktop w Trybie Pulpitu) i pozostajesz zalogowany.
 
