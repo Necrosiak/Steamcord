@@ -38,6 +38,7 @@ jobs:
           node tests/test-dm-channels.cjs
           node tests/test-dm-pin-navigation.cjs
           node tests/test-notify-audioloader.cjs
+          node tests/test-notify-isolation.cjs
           python3 -m unittest discover -s tests -p test_discord_runtime.py -v
           python3 -m unittest discover -s tests -p test_overlay_environment.py -v
           python3 -m unittest discover -s tests -p test_dbus_next_py315.py -v

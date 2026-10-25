@@ -2202,11 +2202,7 @@ class Plugin:
         if r:
             return True
 
-        payload = dumps({"title": "Steamcord", "body": "Error while posting screenshot"})
-        await cls.shared_js_tab.ensure_open()
-        await cls.shared_js_tab.evaluate(
-            f"DeckyPluginLoader.toaster.toast(JSON.parse('{payload}'));"
-        )
+        await cls._toast("Steamcord", "Error while posting screenshot")
 
     @classmethod
     async def get_screen_bounds(cls):
