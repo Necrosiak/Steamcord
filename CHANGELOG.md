@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.42.3 — 2026-10-25
+
+### Fixed
+
+- **Notifications from other plugins** — Steamcord replaced Decky's shared
+  notification system, so other plugins could not dismiss the notifications
+  they showed, and an old workaround removed Decky's wrapper around Steam's
+  notification renderer. Steamcord now leaves both alone and uses Decky's own
+  API for its native notification mode. Its chat-style notifications, click
+  actions, sounds and streamer mode are unchanged. Thanks to
+  [deathtenk](https://github.com/deathtenk) for the fix and the tests
+  ([#78](https://github.com/Necrosiak/Steamcord/pull/78)).
+
 ## 1.42.2 — 2026-10-21
 
 ### Fixed

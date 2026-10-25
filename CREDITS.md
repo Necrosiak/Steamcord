@@ -171,6 +171,13 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 # Code contributions
 
+### [@deathtenk](https://github.com/deathtenk)
+
+- Steamcord no longer replaces Decky's shared notification system: other
+  plugins' notifications show and dismiss again, and Decky's renderer is left
+  untouched — found while testing Decktation on Decky 3.3.0, with regression
+  tests ([#78](https://github.com/Necrosiak/Steamcord/pull/78), v1.42.3)
+
 ### [@azizzidi](https://github.com/azizzidi)
 
 - Native Go Live in Gaming Mode via the gamescope ScreenCast portal shim
