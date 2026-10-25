@@ -12,7 +12,6 @@ import {
   SliderField,
   Dropdown,
   TextField,
-  findModuleExport,
   SteamSpinner,
   showModal,
   useQuickAccessVisible,
@@ -2310,58 +2309,8 @@ const ConfigPanel = () => {
 };
 
 export default definePlugin(() => {
-  // Workaround for DeckyLoader v3.2.4 + Steam update (24/06/2026) incompatibility:
-  // After Steam update, some components (e.g. ValveToastRenderer) changed from class to
-  // function components. FCTrampoline incorrectly sets isReactComponent=true on them,
-  // causing React to call `new fn()` → fn returns JSX → `instance.render` crashes.
-  //
-  // Fix 1: scan webpack modules and remove FCTrampoline wrapping from any function
-  // component it incorrectly wrapped (function components have Object.prototype as their
-  // prototype's parent, not React.Component.prototype).
-  try {
-    const broken: any[] = [];
-    findModuleExport((e: any) => {
-      if (typeof e === 'function' &&
-          e.prototype?.isReactComponent === true &&
-          Object.getPrototypeOf(e.prototype) === Object.prototype) {
-        broken.push(e);
-      }
-      return false; // scan all modules
-    });
-    broken.forEach((fn: any) => {
-      delete fn.prototype.render;
-      delete fn.prototype.isReactComponent;
-      try { delete fn.prototype.updater; } catch (_) {}
-      try { delete fn.prototype.getDerivedStateFromProps; } catch (_) {}
-      try { delete (fn as any).contextType; } catch (_) {}
-      console.log('[Steamcord] FCTrampoline unwrapped from function component:', fn.name || '(anon)');
-    });
-    if (broken.length > 0)
-      console.log('[Steamcord] Fixed ' + broken.length + ' bad FCTrampoline wrapping(s)');
-  } catch (e) {
-    console.warn('[Steamcord] FCTrampoline unwrap scan failed:', e);
-  }
-
-  // Fix 2: prevent createElement from being stubbed (belt-and-suspenders)
-  // If any wrapped function component was missed by the scan, the stub would
-  // still crash React. This ensures createElement always returns the real implementation.
-  try {
-    const _origCE = (window as any).SP_REACT?.createElement;
-    if (_origCE) {
-      Object.defineProperty((window as any).SP_REACT, 'createElement', {
-        get: () => _origCE, set: () => {}, configurable: true,
-      });
-    }
-    const _jsx = (window as any).SP_JSX;
-    if (_jsx) {
-      const _origJsx = _jsx.jsx;
-      const _origJsxs = _jsx.jsxs;
-      if (_origJsx) Object.defineProperty(_jsx, 'jsx', { get: () => _origJsx, set: () => {}, configurable: true });
-      if (_origJsxs) Object.defineProperty(_jsx, 'jsxs', { get: () => _origJsxs, set: () => {}, configurable: true });
-    }
-  } catch (e) {
-    console.warn('[Steamcord] createElement guard failed:', e);
-  }
+  // Decky owns React instrumentation, including its notification renderer.
+  // Do not unwrap its components or lock shared React/JSX factory properties.
 
   // Diagnostic: which @decky/ui components are defined after Steam update?
   console.log('[Steamcord] PanelSection=' + !!PanelSection + ' PanelSectionRow=' + !!PanelSectionRow +

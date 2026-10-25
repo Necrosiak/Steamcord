@@ -77,3 +77,9 @@ const backend = fs.readFileSync('main.py', 'utf8');
 const screenshot = backend.slice(backend.indexOf('async def post_screenshot'), backend.indexOf('async def get_screen_bounds'));
 assert.match(screenshot, /await cls\._toast\("Steamcord", "Error while posting screenshot"\)/);
 console.log('Steamcord routing preserves the shared toaster, unrelated handles and history');
+
+// Steamcord must not dismantle Decky's renderer wrapper or prevent React patches.
+const entry = fs.readFileSync('src/index.tsx', 'utf8');
+assert.doesNotMatch(entry, /delete\s+\w+\.prototype\.(?:render|isReactComponent|updater)/);
+assert.doesNotMatch(entry, /Object\.defineProperty\([^;]*(?:createElement|['"]jsx['"]|['"]jsxs['"])/);
+console.log("Steamcord leaves Decky's React renderer instrumentation intact");
