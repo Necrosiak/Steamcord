@@ -41,7 +41,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { patchMenu } from "./patches/menuPatch";
-import { notify, patchDeckyToaster, installClickHook, uninstallClickHook, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
+import { notify, installClickHook, uninstallClickHook, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
 import { ACCENT, DANGER, ONLINE, focusHalo, setVeilAlpha } from "./components/Styled";
 
 // Même contournement que dans VoiceChatViews : les types publiés par @decky/ui
@@ -2534,9 +2534,6 @@ export default definePlugin(() => {
   initKeepAwake();
   initVoiceShortcut();
 
-  // Anti-crash panneau de notifs Steam : sécurise le toaster Decky partagé
-  // (Decky + plugins tiers) qui crée des entrées sans notification_type.
-  patchDeckyToaster();
   installClickHook();
 
   // Mode streamer : notre Go Live est une source de live (voir notify.ts).

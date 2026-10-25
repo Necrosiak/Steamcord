@@ -1,26 +1,10 @@
-// Notifications Steamcord + garde anti-crash du panneau de notifs Steam.
-//
-// CE QU'ON SAIT (root cause prouvée en live le 2026-07-16 sur le bundle steamui
-// 10789616) : un toast Decky d'origine (eType 31) est routé par le sélecteur de
-// renderer via une map eType→notification_type (ici 31→10) vers les composants
-// « Steam notification » (Xt & co) qui lisent data.item.notification_type /
-// data.type / data.rgunread — champs absents des toasts Decky → TypeError
-// « Cannot read properties of undefined (reading 'notification_type') » : écran
-// d'erreur Decky au rendu du POPUP, et crash du panneau de notifs pour l'entrée
-// tray. Sur d'autres builds Steam (mapping différent), le rendu natif marche.
-// Aucune sonde runtime ne peut prouver qu'un build est sain sans déclencher le
-// crash lui-même → le choix est laissé à l'utilisateur :
-//
-// - défaut = REROUTAGE sûr : DisplayClientNotification type 1 (GroupChatMessage,
-//   seul renderer générique titre+corps du bundle actuel — vérifié). Zéro crash
-//   partout, mais les notifs ressemblent à un message de chat (issue #2).
-// - opt-in « notifications natives » (toggle QAM, localStorage) : passthrough
-//   intégral vers le toaster Decky d'origine pour les builds qui savent les
-//   rendre. Si l'écran d'erreur apparaît, l'utilisateur désactive et le
-//   balayage du tray au chargement suivant purge les entrées empoisonnées.
+// Steamcord notifications only. Native mode uses Decky's public toaster API;
+// chat-style mode retains Steamcord's persona, click, sound and streamer behavior.
+// Never replace the shared Decky toaster or remove other plugins' notifications.
 
 import { findModuleExport, Navigation } from "@decky/ui";
 import { t } from "./i18n";
+import { toaster } from "@decky/api";
 
 // ── Mode streamer ──────────────────────────────────────────────────────────
 // Pendant un live (Go Live Discord, stream ou enregistrement BoneCast), un toast
@@ -140,22 +124,6 @@ function markToastSilent(sid: string) {
   if (e && e.exp > Date.now()) { e.n++; e.exp = exp; } else silentToasts.set(sid, { n: 1, exp });
 }
 
-// Un toast Decky rerouté ne doit pas jouer le son de MESSAGE Steam (#68), mais
-// ne doit pas devenir muet non plus (#72). Passer par le lecteur audio Steam
-// permet à AudioLoader de remplacer deck_ui_toast.wav avec le pack choisi.
-// Le préfixe /sounds/ (avec / initial) est requis par son mapping slice(8).
-let pluginToastAudioManager: any;
-function playPluginToastSound() {
-  try {
-    pluginToastAudioManager ??= findModuleExport((e: any) =>
-      typeof e?.GamepadUIAudio?.m_AudioPlaybackManager?.PlayAudioURL === "function")
-      ?.GamepadUIAudio?.m_AudioPlaybackManager;
-    pluginToastAudioManager?.PlayAudioURL?.("/sounds/deck_ui_toast.wav");
-  } catch (e) {
-    console.warn("[Steamcord] son du toast Decky indisponible", e);
-  }
-}
-
 const NATIVE_TOASTS_KEY = "steamcord_native_toasts";
 export const getNativeToasts = (): boolean => {
   try { return localStorage.getItem(NATIVE_TOASTS_KEY) === "1"; } catch { return false; } // défaut OFF
@@ -171,25 +139,7 @@ const inGamepadUi = (): boolean => {
 const useNativeToasts = (): boolean => getNativeToasts() && inGamepadUi();
 export const setNativeToasts = (v: boolean) => {
   try { localStorage.setItem(NATIVE_TOASTS_KEY, v ? "1" : "0"); } catch {}
-  if (!v) sweepDeckyTrayGroups(); // purge immédiate des entrées natives restantes
 };
-
-// Retire du tray tout groupe créé par le toaster Decky (marqueur `decky: true`
-// posé par decky-loader sur ses toastData). RemoveGroupFromTray est l'API que
-// Decky utilise lui-même dans dismiss() — pas d'accès privé supplémentaire.
-function sweepDeckyTrayGroups() {
-  try {
-    const ns = (window as any).NotificationStore;
-    if (!ns?.m_rgNotificationTray || !ns.RemoveGroupFromTray) return;
-    for (const g of [...ns.m_rgNotificationTray]) {
-      if ((g?.notifications || []).some((n: any) => n?.decky)) {
-        try {
-          ns.RemoveGroupFromTray(g);
-        } catch {}
-      }
-    }
-  } catch {}
-}
 
 // Rendu chat-style avec PERSONA FACTICE (demande user : « pseudo de l'expéditeur
 // + image Discord », pas mon propre profil). Le renderer GroupChatMessage tire
@@ -202,9 +152,6 @@ function sweepDeckyTrayGroups() {
 // re-maquillé à chaque notif au cas où Steam rafraîchirait l'entrée.
 // Avatar par défaut d'un évènement DISCORD sans avatar connu = logo Discord.
 const DEFAULT_AVATAR = "https://cdn.discordapp.com/embed/avatars/0.png";
-// Avatar des toasts REROUTÉS des autres plugins Decky : le « ? » Steam neutre —
-// un toast AutoFlatpaks avec le logo Discord était trompeur (issue #4).
-const NEUTRAL_AVATAR = "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg";
 const STEAMID_BASE = BigInt("76561197960265728");
 
 const FAKE_ACCOUNT_BASE = 0xde000000;
@@ -381,12 +328,9 @@ function verifyFirstToastRendered(resend: () => void) {
 type ChatNotif = {
   title: string; body: string; sender?: string; avatar?: string; dm?: boolean;
   // `message: true` = Discord joue DÉJÀ son propre son pour cet évènement (un
-  // message reçu). Seules ces notifications-là peuvent voir leur son Steam
-  // coupé par le réglage : un avis du plugin ou un toast rerouté d'un autre
-  // plugin Decky n'a pas de son Discord en face, il garderait le silence.
+  // message reçu). Les avis du plugin conservent leur son Steam.
   message?: boolean;
-  // `quiet: true` = pas de son de message de chat (#68). Le reroutage joue
-  // séparément deck_ui_toast.wav pour conserver le son AudioLoader (#72).
+  // `quiet: true` = pas de son de message de chat pour cette notification.
   quiet?: boolean;
   onClick?: () => void;
   // Clé du persona factice, si elle doit différer du nom affiché : un appel et
@@ -395,8 +339,7 @@ type ChatNotif = {
 };
 
 function chatStyleNotification(n: ChatNotif) {
-  // Point de passage de TOUT ce qui s'affiche en mode sûr (nos notifs et les
-  // toasts reroutés des autres plugins Decky) → une seule garde suffit.
+  // Garde limitée aux notifications émises par Steamcord.
   if (streamerActive()) { holdForStream(() => chatStyleNotification(n)); return; }
   const { title, body, sender, avatar, dm, message, quiet, onClick, personaKey } = n;
   try {
@@ -439,66 +382,13 @@ function chatStyleNotification(n: ChatNotif) {
 export function notify(payload: ChatNotif) {
   if (streamerActive()) { holdForStream(() => notify(payload)); return; }
   try {
-    const dpl: any = (window as any).DeckyPluginLoader;
     // ⚠️ Mode « notifications natives » (opt-in) : le toast part par le toaster
     // Decky, sans notre persona factice — le réglage du son ne peut donc pas le
     // reconnaître et ne s'applique pas à ce chemin-là.
-    if (useNativeToasts() && typeof dpl?.toaster?.toast === "function") {
-      dpl.toaster.toast({ title: payload.sender || payload.title, body: payload.body, onClick: payload.onClick });
+    if (useNativeToasts()) {
+      toaster.toast({ title: payload.sender || payload.title, body: payload.body, onClick: payload.onClick });
       return;
     }
   } catch {}
   chatStyleNotification(payload);
-}
-
-// Enrobe toaster.toast (Decky + tous les plugins) selon le mode. Marqueur
-// versionné (=== 2) : un plugin mis à jour à chaud doit remplacer l'ancien
-// reroutage v1 (qui posait `__steamcordSafe = true`).
-export function patchDeckyToaster(_tries = 0) {
-  try {
-    const dpl: any = (window as any).DeckyPluginLoader;
-    // Le toaster peut ne pas être prêt à l'init (surtout après un restart Steam) →
-    // on réessaie quelques secondes pour ne jamais manquer la fenêtre de patch.
-    if (!dpl?.toaster) {
-      if (_tries < 40) setTimeout(() => patchDeckyToaster(_tries + 1), 500);
-      return;
-    }
-    if (dpl.toaster.__steamcordSafe === 2) return;
-    // L'implémentation d'origine vit sur le prototype du toaster Decky ; la
-    // propriété propre `toast`, si elle existe et que le marqueur v1 est posé,
-    // est notre ancien patch → à écraser.
-    const proto = Object.getPrototypeOf(dpl.toaster);
-    const own = Object.prototype.hasOwnProperty.call(dpl.toaster, "toast");
-    const orig = own && !dpl.toaster.__steamcordSafe ? dpl.toaster.toast : proto?.toast;
-    if (typeof orig !== "function") return;
-    dpl.toaster.__steamcordSafe = 2;
-    dpl.toaster.toast = (toast: any) => {
-      if (streamerActive()) { holdForStream(() => dpl.toaster.toast(toast)); return; }
-      if (useNativeToasts()) {
-        return orig.call(dpl.toaster, toast);
-      }
-      try {
-        const str = (v: any) => (typeof v === "string" ? v : v == null ? "" : "Notification");
-        // Toast d'un plugin quelconque → avatar « ? » Steam neutre, PAS le logo
-        // Discord (issue #4 : AutoFlatpaks passait pour un message Discord).
-        // quiet coupe le son de MESSAGE (#68), puis on joue le vrai son de
-        // toast via Steam (et donc via AudioLoader si présent, #72). Le style
-        // « chat » reste le seul rendu sûr sur ce build SteamUI.
-        chatStyleNotification({ title: str(toast?.title) || "Decky", body: str(toast?.body), avatar: NEUTRAL_AVATAR, quiet: true });
-        // Certains plugins demandent explicitement un toast silencieux.
-        if (toast?.playSound !== false) playPluginToastSound();
-      } catch (e) {
-        console.error("[Steamcord] safe toaster failed", e);
-      }
-    };
-    // Purge SYSTÉMATIQUE au chargement des entrées Decky natives restantes
-    // (toasts d'avant le patch, ou session native précédente) : sur un build
-    // qui plante, une entrée empoisonnée dans le tray tue le panneau de notifs
-    // pour toute la session, même notifs OK par ailleurs (issue #4). Les toasts
-    // Decky d'une session précédente sont périmés de toute façon.
-    sweepDeckyTrayGroups();
-    console.log("[Steamcord] Decky toaster sécurisé (mode " + (getNativeToasts() ? "natif" : "sûr") + ")");
-  } catch (e) {
-    console.error("[Steamcord] patchDeckyToaster failed", e);
-  }
 }
