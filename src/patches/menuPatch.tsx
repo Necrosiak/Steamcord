@@ -50,8 +50,8 @@ const tryApplyPatch = (): (() => void) | null => {
             // that DeckyLoader installs on Steam component classes via contextType
             origInnerType = elt.type;
             elt.type = function (this: any, ...args: any[]) {
-                // L'entrée n'a de sens que connecté : la vue agrandie n'a pas
-                // d'écran de connexion (celui-ci vit dans le panneau QAM).
+                // Only meaningful when logged in: the expanded view has no login
+                // screen (that lives in the QAM panel).
                 const steamcordState = useSteamcordState();
                 const innerRet = origInnerType.apply(this, args);
                 if (!(steamcordState?.loaded && steamcordState?.logged_in)) return innerRet;
