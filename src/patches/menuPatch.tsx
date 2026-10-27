@@ -3,6 +3,7 @@
 import { Dropdown, findInReactTree, FooterLegendProps, getReactRoot } from "@decky/ui"
 import { FC, ReactElement, ReactNode } from "react"
 import { FaDiscord } from "react-icons/fa"
+import { useSteamcordState } from "../hooks/useSteamcordState"
 
 interface MainMenuItemPropsBase {
     route: string
@@ -49,7 +50,11 @@ const tryApplyPatch = (): (() => void) | null => {
             // that DeckyLoader installs on Steam component classes via contextType
             origInnerType = elt.type;
             elt.type = function (this: any, ...args: any[]) {
+                // L'entrée n'a de sens que connecté : la vue agrandie n'a pas
+                // d'écran de connexion (celui-ci vit dans le panneau QAM).
+                const steamcordState = useSteamcordState();
                 const innerRet = origInnerType.apply(this, args);
+                if (!(steamcordState?.loaded && steamcordState?.logged_in)) return innerRet;
                 const isMenuItemElt = (e: any) => e.props?.label && (e.props.onGamepadFocus || e.props.onFocus) && e.props.route && e.type?.toString;
                 const menuItems = findInReactTree(innerRet, (node: any[]) => Array.isArray(node) && node.some(isMenuItemElt)) as Array<any>;
 
