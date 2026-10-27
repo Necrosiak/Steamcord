@@ -7,7 +7,9 @@ import { FaDiscord } from "react-icons/fa"
 interface MainMenuItemPropsBase {
     route: string
     label: ReactNode
-    onFocus: () => void
+    onFocus?: () => void
+    onGamepadFocus?: () => void
+    active?: boolean
     icon?: ReactElement
     onActivate?: () => void
 }
@@ -48,7 +50,7 @@ const tryApplyPatch = (): (() => void) | null => {
             origInnerType = elt.type;
             elt.type = function (this: any, ...args: any[]) {
                 const innerRet = origInnerType.apply(this, args);
-                const isMenuItemElt = (e: any) => e.props?.label && e.props.onFocus && e.props.route && e.type?.toString;
+                const isMenuItemElt = (e: any) => e.props?.label && (e.props.onGamepadFocus || e.props.onFocus) && e.props.route && e.type?.toString;
                 const menuItems = findInReactTree(innerRet, (node: any[]) => Array.isArray(node) && node.some(isMenuItemElt)) as Array<any>;
 
                 if (!menuItems) {
@@ -64,7 +66,9 @@ const tryApplyPatch = (): (() => void) | null => {
                         key={'steamcord'}
                         route={'/discord'}
                         label='Discord'
+                        active={false}
                         onFocus={menuItem.props.onFocus}
+                        onGamepadFocus={menuItem.props.onGamepadFocus}
                         useIconAsProp={!!menuItem.props.icon}
                         MenuItemComponent={menuItem.type}
                     />
