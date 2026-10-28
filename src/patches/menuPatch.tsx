@@ -3,11 +3,14 @@
 import { Dropdown, findInReactTree, FooterLegendProps, getReactRoot } from "@decky/ui"
 import { FC, ReactElement, ReactNode } from "react"
 import { FaDiscord } from "react-icons/fa"
+import { useSteamcordState } from "../hooks/useSteamcordState"
 
 interface MainMenuItemPropsBase {
     route: string
     label: ReactNode
-    onFocus: () => void
+    onFocus?: () => void
+    onGamepadFocus?: () => void
+    active?: boolean
     icon?: ReactElement
     onActivate?: () => void
 }
@@ -47,8 +50,12 @@ const tryApplyPatch = (): (() => void) | null => {
             // that DeckyLoader installs on Steam component classes via contextType
             origInnerType = elt.type;
             elt.type = function (this: any, ...args: any[]) {
+                // Only meaningful when logged in: the expanded view has no login
+                // screen (that lives in the QAM panel).
+                const steamcordState = useSteamcordState();
                 const innerRet = origInnerType.apply(this, args);
-                const isMenuItemElt = (e: any) => e.props?.label && e.props.onFocus && e.props.route && e.type?.toString;
+                if (!(steamcordState?.loaded && steamcordState?.logged_in)) return innerRet;
+                const isMenuItemElt = (e: any) => e.props?.label && (e.props.onGamepadFocus || e.props.onFocus) && e.props.route && e.type?.toString;
                 const menuItems = findInReactTree(innerRet, (node: any[]) => Array.isArray(node) && node.some(isMenuItemElt)) as Array<any>;
 
                 if (!menuItems) {
@@ -64,7 +71,9 @@ const tryApplyPatch = (): (() => void) | null => {
                         key={'steamcord'}
                         route={'/discord'}
                         label='Discord'
+                        active={false}
                         onFocus={menuItem.props.onFocus}
+                        onGamepadFocus={menuItem.props.onGamepadFocus}
                         useIconAsProp={!!menuItem.props.icon}
                         MenuItemComponent={menuItem.type}
                     />

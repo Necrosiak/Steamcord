@@ -4,6 +4,7 @@ import {
   PanelSectionRow,
   staticClasses,
   Router,
+  Navigation,
   sleep,
   Focusable,
   DialogButton,
@@ -91,6 +92,7 @@ import {
   call,
   addEventListener,
   removeEventListener,
+  routerHook,
 } from "@decky/api";
 
 declare global {
@@ -1340,6 +1342,62 @@ const VoiceDesktopDisabled = () => (
   </div>
 );
 
+// "Call" content of the expanded view. Computes voice availability itself:
+// the view can be opened outside the panel (Steam menu), where the panel's
+// hooks do not run.
+const ExpandedCallSlot = () => {
+  const shareEnv = useShareEnv();
+  const gamescopeOnly = useVoiceGamescopeOnly();
+  const voiceAvailable = !gamescopeOnly || shareEnv !== "desktop";
+  return voiceAvailable ? <ExpandedCallPanel /> : <VoiceDesktopDisabled />;
+};
+
+// Window of Steam's main menu (Steam button / Alt+Tab), found through its
+// gamepad navigation tree: same technique as useQuickAccessVisible for the QAM.
+const getMainMenuWindow = (): Window | null => {
+  const nav: any = (window as any).FocusNavController;
+  const ctx = nav?.m_ActiveContext || nav?.m_LastActiveContext;
+  const tree = ctx?.m_rgGamepadNavigationTrees?.find((t: any) => (t.m_ID || t.id) === "MainNavMenuContainer");
+  return (tree?.Root?.Element || tree?.m_Root?.m_element)?.ownerDocument?.defaultView ?? null;
+};
+
+// Opens the expanded view from anywhere (QAM panel, Steam main menu).
+// Not exported: the rollup entry (exports: "default") only allows the default export.
+const openExpandedView = () => {
+  if (bigOpen) return;
+  bigOpen = true;
+  bigSuppress = false;
+  // The Steam button opens the main menu ON TOP of the view: close the view so
+  // the menu is shown alone; a second press then returns to the game.
+  let unwatch = () => {};
+  const menuWin = getMainMenuWindow();
+  const modal = showModal(
+    <DiscordExpandedModal
+      serverContent={<ServerHub />}
+      settingsContent={<ConfigPanel />}
+      callContent={<ExpandedCallSlot />}
+      // Closed (B, button, or Steam closing it): hand control back to the
+      // panel and do not reopen it on our own.
+      onClosed={() => { unwatch(); bigOpen = false; bigSuppress = true; }}
+    />
+  );
+  if (menuWin) {
+    const onVisible = () => { if (!menuWin.document.hidden) modal.Close(); };
+    menuWin.addEventListener("visibilitychange", onVisible);
+    unwatch = () => menuWin.removeEventListener("visibilitychange", onVisible);
+  }
+};
+
+// Target of the /discord route: go back to the previous page, then open the view.
+const DiscordRouteOpener = () => {
+  useEffect(() => {
+    try { Navigation.NavigateBack(); } catch {}
+    const id = setTimeout(openExpandedView, 100);
+    return () => clearTimeout(id);
+  }, []);
+  return null;
+};
+
 // Vue agrandie : l'appel en cours est lu dans l'état VIVANT, pas figé à
 // l'ouverture de la modale — il apparaît dès qu'un salon est rejoint depuis
 // Serveurs ou Messages privés. Fermer la vue ne touche pas à l'appel.
@@ -1421,20 +1479,7 @@ const ContentBody = () => {
     }
   }, [voiceAvailable, topTab]);
   // #43 : vue agrandie native Steam (jamais l'ancienne BrowserView pré-Vesktop).
-  const openExpanded = () => {
-    bigOpen = true;
-    bigSuppress = false;
-    showModal(
-      <DiscordExpandedModal
-        serverContent={<ServerHub />}
-        settingsContent={<ConfigPanel />}
-        callContent={voiceAvailable ? <ExpandedCallPanel /> : <VoiceDesktopDisabled />}
-        // Refermée (B, bouton, ou Steam qui la ferme) : on rend la main au
-        // panneau et on ne la rouvre pas d'office.
-        onClosed={() => { bigOpen = false; bigSuppress = true; }}
-      />
-    );
-  };
+  const openExpanded = openExpandedView;
   // Réglage « ouvrir sur » : la vue agrandie s'ouvre d'elle-même à l'ouverture
   // du QAM, et PLUS tant qu'on ne l'a pas refermé — sinon B et le bouton
   // « Retour au panneau » n'ont aucun effet visible, la vue se rouvre aussitôt.
@@ -2520,6 +2565,9 @@ export default definePlugin(() => {
       setPlaying();
     }).unregister;
   const unpatchMenu = patchMenu();
+  // The Steam menu's "Discord" entry navigates to /discord (Steam ignores
+  // onActivate on these entries): the route opens the expanded view and goes back.
+  routerHook.addRoute("/discord", DiscordRouteOpener);
 
   const setPlaying = () => {
     const app = Router.MainRunningApp;
@@ -2565,6 +2613,7 @@ export default definePlugin(() => {
     icon: <FaDiscord />,
     onDismount() {
       unpatchMenu();
+      routerHook.removeRoute("/discord");
       uninstallClickHook();
       stopStatusSync();
       releaseKeepAwake();
