@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.42.4 — 2026-10-28
+
+### Fixed
+
+- **Discord entry in the Steam menu** — the "Discord" item of Steam's main
+  menu (Steam button) no longer appeared, because Steam changed how its menu
+  items are built. It is back, shows once you are signed in, and opens
+  Steamcord's expanded view. Opening the Steam menu while that view is open
+  closes it, and a second press returns to your game. Thanks to
+  [theupriser](https://github.com/theupriser) for the fix and the tests
+  ([#80](https://github.com/Necrosiak/Steamcord/pull/80)).
+- **Games started from Battle.net** — a Proton game launched through
+  Battle.net showed only "Battle.net" without artwork in your Discord status.
+  Steamcord now treats Battle.net as a launcher, reads Windows paths correctly,
+  and tells apart games that share an executable, so World of Warcraft,
+  World of Warcraft Classic and World of Warcraft: Forever each show under
+  their own name. The path fix also helps other Proton games started from a
+  launcher. Thanks to [mweitl](https://github.com/mweitl) for the analysis and
+  the patch ([#81](https://github.com/Necrosiak/Steamcord/issues/81)).
+
 ## 1.42.3 — 2026-10-25
 
 ### Fixed

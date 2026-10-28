@@ -171,6 +171,18 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 # Code contributions
 
+### [@theupriser](https://github.com/theupriser)
+
+- The "Discord" entry back in Steam's main menu, opening the expanded view,
+  tested on a Steam Machine running CachyOS
+  ([#80](https://github.com/Necrosiak/Steamcord/pull/80), v1.42.4)
+
+### [@mweitl](https://github.com/mweitl)
+
+- Discord status for games started from Battle.net under Proton: the three
+  causes pinned down, a ready-made patch, and the results checked against
+  Discord's game list ([#81](https://github.com/Necrosiak/Steamcord/issues/81), v1.42.4)
+
 ### [@deathtenk](https://github.com/deathtenk)
 
 - Steamcord no longer replaces Decky's shared notification system: other
