@@ -71,6 +71,15 @@ window.rpcNormNameLoose = (s) => String(s)
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
 
+// « dossier/fichier » d'un chemin win32 ou unix, en minuscules :
+// "C:\...\_forever_\Wow.exe" → "_forever_/wow.exe". Un nom seul reste tel quel.
+window.rpcExecTail = (s) => String(s || "")
+    .toLowerCase()
+    .split(/[\\/]/)
+    .filter(Boolean)
+    .slice(-2)
+    .join("/");
+
 // ── Mapping message Discord → forme attendue par le frontend QAM ─────────────
 // Partagé entre $get_messages (chargement/pagination) et l'intercepteur Flux
 // MESSAGE_CREATE/UPDATE (push temps réel du salon suivi) — même forme des deux
@@ -1672,7 +1681,13 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         // pas se faire remplacer par une app de fond détectable.
                                         const SC_LAUNCHERS = new Set(["heroic", "heroicgameslauncher",
                                             "lutris", "bottles", "playnite", "goggalaxy",
-                                            "epicgameslauncher", "itch", "amazongames", "minigalaxy"]);
+                                            "epicgameslauncher", "itch", "amazongames", "minigalaxy",
+                                            "battlenet"]);
+                                        // « dossier/fichier » (minuscules) → titre exact de la base
+                                        // Discord, pour les jeux que la base ne sait pas séparer.
+                                        const SC_PATH_ALIASES = {
+                                            "_forever_/wow.exe": "World of Warcraft: Forever",
+                                        };
                                         if (data.game) {
                                             try {
                                                 // On exige aussi le dernier index : après une mise
@@ -1680,9 +1695,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                 // cache exact d'avant mais aucun des deux nouveaux
                                                 // — sans ce test le correctif n'arriverait qu'au
                                                 // prochain rechargement de Vesktop.
-                                                if (!window.__sc_rpcAppIds || !window.__sc_rpcAppIdsLoose || !window.__sc_rpcExecs) {
+                                                if (!window.__sc_rpcAppIds || !window.__sc_rpcAppIdsLoose || !window.__sc_rpcExecs || !window.__sc_rpcPaths) {
                                                     const res = await Vencord.Webpack.Common.RestAPI.get({ url: "/applications/detectable" });
-                                                    const map = new Map(), norm = new Map(), loose = new Map(), execs = new Map();
+                                                    const map = new Map(), norm = new Map(), loose = new Map(), execs = new Map(), paths = new Map();
                                                     if (res.ok) for (const e of res.body) {
                                                         const n = String(e.name);
                                                         map.set(n.toLowerCase(), e.id);
@@ -1720,12 +1735,20 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                             if (!b) continue;
                                                             if (!execs.has(b)) execs.set(b, { id: e.id, name: n });
                                                             else if (execs.get(b)?.id !== e.id) execs.set(b, null);
+                                                            // Les entrées avec dossier (« _retail_/wow.exe »)
+                                                            // distinguent des jeux au MÊME exécutable : on les
+                                                            // indexe aussi par « dossier/fichier ».
+                                                            const p = window.rpcExecTail(x?.name);
+                                                            if (!p.includes("/")) continue;
+                                                            if (!paths.has(p)) paths.set(p, { id: e.id, name: n });
+                                                            else if (paths.get(p)?.id !== e.id) paths.set(p, null);
                                                         }
                                                     }
                                                     window.__sc_rpcAppIds = map;
                                                     window.__sc_rpcAppIdsNorm = norm;
                                                     window.__sc_rpcAppIdsLoose = loose;
                                                     window.__sc_rpcExecs = execs;
+                                                    window.__sc_rpcPaths = paths;
                                                 }
                                                 const raw = String(data.game);
                                                 appId = window.__sc_rpcAppIds.get(raw.toLowerCase())
@@ -1752,8 +1775,21 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                 const isLauncher = SC_LAUNCHERS.has(window.rpcNormNameLoose(raw));
                                                 if (!forced && data.detect !== false && (isLauncher || appId === "0")) {
                                                     const titleKey = window.rpcNormNameLoose(raw);
-                                                    for (const proc of (data.procs || [])) {
-                                                        const hit = window.__sc_rpcExecs?.get(String(proc).toLowerCase());
+                                                    for (const rawProc of (data.procs || [])) {
+                                                        // Sous Wine, argv[0] est un chemin Windows complet
+                                                        // (C:\...\Wow.exe) : basename() côté Python ne coupe
+                                                        // qu'au « / », on coupe donc aussi au « \ » ici.
+                                                        const proc = String(rawProc).split(/[\\/]/).pop();
+                                                        // Dossier + fichier d'abord : WoW Forever tourne en
+                                                        // _forever_\Wow.exe, le même nom que le WoW moderne.
+                                                        // La base Discord ne connaît pas ce dossier, d'où
+                                                        // SC_PATH_ALIASES, résolu par le nom du jeu.
+                                                        const tail = window.rpcExecTail(rawProc);
+                                                        const alias = SC_PATH_ALIASES[tail];
+                                                        const aliasId = alias && window.__sc_rpcAppIds.get(alias.toLowerCase());
+                                                        const hit = (aliasId ? { id: aliasId, name: alias } : null)
+                                                            || window.__sc_rpcPaths?.get(tail)
+                                                            || window.__sc_rpcExecs?.get(String(proc).toLowerCase());
                                                         if (!hit || hit.id === appId) continue;
                                                         // Titre NON résolu : exiger que l'exécutable ait un
                                                         // rapport avec ce que Steam annonce. Sans ce test,
