@@ -709,30 +709,7 @@ class Plugin:
     _mix_healed = set()
 
     @classmethod
-    async def _main(cls):
-        logger.info("Starting Steamcord backend")
-        # Fenêtre d'overlay orpheline : après un rechargement du backend
-        # (mise à jour, déploiement) l'ancien overlay.py survit, mais
-        # _overlay_proc repart à None → plus aucune écriture de l'état, et
-        # l'overlay reste affiché avec un roster figé (mesuré 06/10 : fenêtre
-        # de 08:17, état gelé à 08:19, un membre arrivé ensuite jamais montré).
-        # Les interrupteurs d'overlay repartent éteints : rien ne doit rester.
-        try:
-            import vesktop, signal as _sig
-            # Filtre strict : un python qui exécute overlay.py avec SES
-            # arguments. Le seul motif « game_overlay/overlay.py » tuait aussi
-            # tout terminal ou éditeur dont la commande le contient (vécu 06/10).
-            pids = vesktop.proc_pids(comm=r"python3?(\.\d+)?",
-                                     cmdline=r"game_overlay/overlay\.py --state-dir")
-            for pid in pids:
-                try:
-                    os.kill(pid, _sig.SIGTERM)
-                except OSError:
-                    pass
-            if pids:
-                logger.info("[overlay] fenêtre orpheline d'avant le rechargement fermée")
-        except Exception as e:
-            logger.warning(f"[overlay] nettoyage orphelin: {e!r}")
+    async def _initialize_until_up(cls):
         # CEF (SharedJSContext) can disconnect/reload during startup, which throws
         # mid-evaluate and would otherwise kill _main permanently (watchdog never
         # starts). Retry until the Discord tab is successfully created.
@@ -757,6 +734,47 @@ class Plugin:
                     logger.warning(f"initialize() failed ({e!r}); retrying in 2s")
                     await sleep(2)
         logger.info("Discord initialized")
+
+    @classmethod
+    async def _main(cls):
+        logger.info("Starting Steamcord backend")
+        # Fenêtre d'overlay orpheline : après un rechargement du backend
+        # (mise à jour, déploiement) l'ancien overlay.py survit, mais
+        # _overlay_proc repart à None → plus aucune écriture de l'état, et
+        # l'overlay reste affiché avec un roster figé (mesuré 06/10 : fenêtre
+        # de 08:17, état gelé à 08:19, un membre arrivé ensuite jamais montré).
+        # Les interrupteurs d'overlay repartent éteints : rien ne doit rester.
+        try:
+            import vesktop, signal as _sig
+            # Filtre strict : un python qui exécute overlay.py avec SES
+            # arguments. Le seul motif « game_overlay/overlay.py » tuait aussi
+            # tout terminal ou éditeur dont la commande le contient (vécu 06/10).
+            pids = vesktop.proc_pids(comm=r"python3?(\.\d+)?",
+                                     cmdline=r"game_overlay/overlay\.py --state-dir")
+            for pid in pids:
+                try:
+                    os.kill(pid, _sig.SIGTERM)
+                except OSError:
+                    pass
+            if pids:
+                logger.info("[overlay] fenêtre orpheline d'avant le rechargement fermée")
+        except Exception as e:
+            logger.warning(f"[overlay] nettoyage orphelin: {e!r}")
+        # Discord coupé par l'interrupteur On/Off (#82) : il le reste après un
+        # redémarrage. initialize() attendrait la reprise, donc il part en
+        # tâche de fond pour que le reste du backend démarre quand même.
+        if cls._voice_env_cfg().get("discord_off") is True:
+            logger.info("[runtime] Discord left off by the user — not starting Vesktop")
+            await discord_runtime.pause()
+            cls.evt_handler.discord_enabled = False
+            try:
+                import vesktop
+                await wait_for(vesktop.stop_managed(), 15)
+            except Exception as e:
+                logger.warning(f"[runtime] stopping Vesktop at startup: {e!r}")
+            create_task(cls._initialize_until_up())
+        else:
+            await cls._initialize_until_up()
 
         cls.server.add_routes(
             [
@@ -1669,6 +1687,7 @@ class Plugin:
     async def _set_discord_runtime(cls, enabled: bool):
         if not isinstance(enabled, bool):
             return {"ok": False, "error": "expected boolean"}
+        cls._save_voice_env({"discord_off": not enabled})
         if enabled:
             discord_runtime.resume()
             cls.evt_handler.discord_enabled = True
@@ -1702,8 +1721,8 @@ class Plugin:
             handler.streaming_users.clear()
             handler.state_changed_event.set()
             return {"ok": True, "enabled": False}
-        except Exception:
-            logger.warning("[runtime] Discord stop failed; recovery remains paused")
+        except Exception as e:
+            logger.warning(f"[runtime] Discord stop failed ({e!r}); recovery remains paused")
             return {"ok": False, "enabled": False, "error": "discord-stop-failed"}
 
     @classmethod
@@ -5110,12 +5129,11 @@ class Plugin:
         return {"off": cls._vesktop_desktop_off()}
 
     @classmethod
-    async def set_vesktop_desktop_off(cls, off=False):
-        if not isinstance(off, bool):
-            return {"ok": False, "error": "expected boolean"}
+    def _save_voice_env(cls, changes):
+        """Fusionne `changes` dans le fichier ; None si OK, sinon l'erreur."""
         from json import dump as _dump
         cfg = cls._voice_env_cfg()
-        cfg["vesktop_desktop_off"] = off
+        cfg.update(changes)
         tmp = cls._VOICE_ENV_CFG + ".tmp"
         try:
             os.makedirs(os.path.dirname(cls._VOICE_ENV_CFG), exist_ok=True)
@@ -5124,7 +5142,16 @@ class Plugin:
             os.replace(tmp, cls._VOICE_ENV_CFG)
         except Exception as e:
             logger.warning(f"save {cls._VOICE_ENV_CFG} failed: {e!r}")
-            return {"ok": False, "error": str(e)}
+            return str(e)
+        return None
+
+    @classmethod
+    async def set_vesktop_desktop_off(cls, off=False):
+        if not isinstance(off, bool):
+            return {"ok": False, "error": "expected boolean"}
+        error = cls._save_voice_env({"vesktop_desktop_off": off})
+        if error:
+            return {"ok": False, "error": error}
         return {"ok": True, "off": off}
 
     @classmethod

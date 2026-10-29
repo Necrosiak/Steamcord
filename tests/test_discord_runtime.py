@@ -1,3 +1,4 @@
+import os
 import ast
 import asyncio
 import importlib.util
@@ -105,7 +106,44 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         methods = [n for n in plugin.body if isinstance(n, ast.AsyncFunctionDef) and n.name in names]
         isolated = ast.Module(body=[ast.ClassDef(name='Plugin', bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
         exec(compile(ast.fix_missing_locations(isolated), '<actual-plugin-methods>', 'exec'), namespace)
+        if 'set_discord_runtime' in names:
+            # Never write the real ~/.config file from a test.
+            namespace['Plugin']._save_voice_env = Mock(return_value=None)
         return namespace['Plugin']
+
+    async def test_switch_is_remembered_across_restarts(self):
+        runtime = module.DiscordRuntime()
+        vesktop = types.SimpleNamespace(stop_managed=AsyncMock())
+        plugin = self.methods({'set_discord_runtime'}, {'discord_runtime': runtime, 'logger': Mock()})
+        plugin.evt_handler = types.SimpleNamespace(state_changed_event=Mock(), streaming_users=set(), remote_auth=Mock())
+        plugin.discord_tab = None
+        for name in ('stop_game_audio', 'stop_voice_overlay', 'stop_pov_overlay'):
+            setattr(plugin, name, AsyncMock())
+        with patch.dict(sys.modules, {'vesktop': vesktop}):
+            await plugin.set_discord_runtime(False)
+        plugin._save_voice_env.assert_called_with({'discord_off': True})
+        await plugin.set_discord_runtime(True)
+        plugin._save_voice_env.assert_called_with({'discord_off': False})
+        await plugin.set_discord_runtime('false')
+        self.assertEqual(plugin._save_voice_env.call_count, 2)
+
+    def test_saving_keeps_the_other_settings(self):
+        import tempfile, json
+        tree = ast.parse((ROOT / 'main.py').read_text(encoding='utf-8'))
+        plugin = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Plugin')
+        methods = [n for n in plugin.body if isinstance(n, ast.FunctionDef)
+                   and n.name in ('_save_voice_env', '_voice_env_cfg')]
+        namespace = {'os': os, 'logger': Mock()}
+        isolated = ast.Module(body=[ast.ClassDef(name='Plugin', bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
+        exec(compile(ast.fix_missing_locations(isolated), '<actual-plugin-methods>', 'exec'), namespace)
+        Plugin = namespace['Plugin']
+        with tempfile.TemporaryDirectory() as tmp:
+            Plugin._VOICE_ENV_CFG = os.path.join(tmp, 'steamcord-voice-env.json')
+            self.assertIsNone(Plugin._save_voice_env({'vesktop_desktop_off': True}))
+            self.assertIsNone(Plugin._save_voice_env({'discord_off': True}))
+            with open(Plugin._VOICE_ENV_CFG) as f:
+                self.assertEqual(json.load(f), {'vesktop_desktop_off': True, 'discord_off': True})
+            self.assertTrue(Plugin._voice_env_cfg()['discord_off'])
 
     async def test_stop_gates_recovery_before_process_and_keeps_login_storage(self):
         order = []

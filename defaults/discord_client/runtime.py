@@ -1,6 +1,7 @@
-"""Session-only Discord pause gate, shared by startup and recovery paths.
+"""Discord pause gate, shared by startup and recovery paths.
 
-No credentials or persistent setting: a backend restart defaults to On.
+No credentials here. The On/Off choice itself is saved by main.py
+(steamcord-voice-env.json, #82) and applied again at backend start.
 """
 import asyncio
 
