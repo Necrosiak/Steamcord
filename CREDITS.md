@@ -267,3 +267,9 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - The display check that showed the overlay running on the game's display
   instead of Steam's ([#75](https://github.com/Necrosiak/Steamcord/issues/75),
   fixed in v1.42.2)
+
+### [@prozac192](https://github.com/prozac192)
+
+- The microphone kept busy by a Vesktop that never closed, and the request to
+  keep Discord off across restarts
+  ([#82](https://github.com/Necrosiak/Steamcord/issues/82), fixed in v1.42.5)

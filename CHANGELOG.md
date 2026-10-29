@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.42.5 — 2026-10-29
+
+### Fixed
+
+- **Discord stays off after a restart** — turning Discord off from
+  Steamcord's settings only lasted until the next reboot, then Vesktop
+  started again on its own. Steamcord now remembers the switch: Discord
+  stays off until you turn it back on, and the rest of Steamcord starts
+  normally meanwhile. Thanks to [prozac192](https://github.com/prozac192) for
+  the report ([#82](https://github.com/Necrosiak/Steamcord/issues/82)).
+
 ## 1.42.4 — 2026-10-28
 
 ### Fixed
