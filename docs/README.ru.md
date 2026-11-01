@@ -1,6 +1,6 @@
 # Steamcord
 
-**Новое: Windows** — Steamcord теперь работает и в Steam Big Picture на Windows, с Decky через Playhub или с Decky Loader for Windows от musika08. Подробнее: [Steamcord в Windows](WINDOWS.md) (на английском).
+**Новое: Windows** — Steamcord теперь работает и в Steam Big Picture на Windows, с Decky через Playhub или с Decky Loader for Windows от musika08. Подробнее: [Steamcord в Windows](WINDOWS.md) (на английском). Спасибо [@SilvertongueRED](https://github.com/SilvertongueRED) за форк для Windows, который указал путь.
 
 <!-- expanded-navigation -->
 **Расширенный вид** — Пункт главного меню Steam теперь называется **Steamcord**. Он открывает существующий расширенный вид Discord; панель быстрого доступа остаётся доступна.

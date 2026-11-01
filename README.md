@@ -1,6 +1,6 @@
 # Steamcord
 
-**New: Windows support** — Steamcord now also runs in Steam Big Picture on Windows, with Decky from Playhub or musika08's Decky Loader for Windows. See [Steamcord on Windows](docs/WINDOWS.md).
+**New: Windows support** — Steamcord now also runs in Steam Big Picture on Windows, with Decky from Playhub or musika08's Decky Loader for Windows. See [Steamcord on Windows](docs/WINDOWS.md). Thanks to [@SilvertongueRED](https://github.com/SilvertongueRED) for the Windows fork that showed the way.
 
 <!-- expanded-navigation -->
 **Expanded view** — The Steam main menu entry is now named **Steamcord**. It opens the existing expanded Discord view; the Quick Access panel remains available.
