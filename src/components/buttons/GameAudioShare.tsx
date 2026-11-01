@@ -13,7 +13,14 @@ const Slider = SliderField as any;
 // un sink virtuel que Vesktop capture à la place du micro (voir start_game_audio,
 // main.py). Les deux jauges règlent le volume de chaque branche du mix — ce que
 // les AUTRES entendent, pas le volume local.
+import { hasCap } from "../../platform";
+
+// Mixing game audio into the call needs PipeWire/PulseAudio virtual sinks: Linux only.
 export function GameAudioShare() {
+  return hasCap("game_audio_share") ? <GameAudioShareInner /> : null;
+}
+
+function GameAudioShareInner() {
   const sliderFix = useSliderClipFix();
   const state = useSteamcordState();
   const [on, setOn] = useState(false);

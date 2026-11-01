@@ -8,6 +8,9 @@ v1.41.4: Private conversations refresh automatically and follow the latest sent/
 
 **Discord in Steam Gaming Mode** — a [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin for Steam Deck / Bazzite / SteamOS.
 
+> ### 🪟 New: Windows (Steam Big Picture)
+> **One zip, two hosts.** The same release also runs on **Windows 10 / 11** inside Steam **Big Picture**, with [Decky Loader for Windows](https://github.com/musika08/decky-loader-windows) (3.3+). Steamcord detects the host by itself - the Steam Deck build is unchanged. Voice, DMs, text chat, QR login, notifications, the soundboard and Go Live (video) are built for Windows (QR login and voice chat tested on a Windows 11 PC); PipeWire-only extras (game-audio share, audio routing, virtual camera, overlays, controller shortcut) are Steam Deck / Linux only and are hidden on Windows. Read [docs/WINDOWS.md](docs/WINDOWS.md). *The Windows port is new - please report what you find.*
+
 Voice chat, private messages and screen sharing from the Quick Access Menu, without leaving Game Mode and without a second device.
 
 The experimental in-game POV overlay can render through GStreamer VP8/WebM on SteamOS without WebKitGTK, when the required system plugins are installed. See [issue #70](https://github.com/Necrosiak/Steamcord/issues/70) for testing progress.
@@ -91,10 +94,13 @@ Video review and written guide by **[Gaming On Steam](https://www.youtube.com/@g
 
 > **Not yet on the Decky Store.** Install manually via Developer Mode.
 
+The **same zip** installs on the Steam Deck / Linux and on Windows.
+
 1. Enable **Developer Mode** in Decky → General settings
 2. Go to **Developer** in Decky settings
 3. Install from URL:
    `https://github.com/Necrosiak/Steamcord/releases/latest/download/Steamcord.zip`
+   (or download it and use *Install Plugin from ZIP File*).
    > ⚠️ Decky Loader 3.3 and newer shows a *Third-Party Plugin Installation* warning here, because the plugin is not from the Decky Store. That is expected: wait 5 seconds and confirm. It only appears once, and updates install by themselves afterwards.
 
 > **A note on automatic updates.** Decky owns the plugin's top-level directory,
@@ -104,6 +110,14 @@ Video review and written guide by **[Gaming On Steam](https://www.youtube.com/@g
 > automatic update. The release notes say so whenever that is the case.
 
 Vesktop is installed and launched automatically by the plugin the first time it runs. Just log in once (QR code, or Vesktop in Desktop Mode) and you stay logged in.
+
+### Windows
+
+1. Install **[Decky Loader for Windows](https://github.com/musika08/decky-loader-windows)** (3.3 or newer) and restart Steam once - it turns on Steam's remote debugging.
+2. Open Steam in **Big Picture**, then follow the three install steps above in the Decky tab.
+3. Open Steamcord: the first start installs **Vesktop** for your user (`winget`, or the official installer, silently), then shows the QR code to scan with the Discord mobile app.
+
+Steamcord runs its own minimised Vesktop with a separate profile per Steam account and never touches a Vesktop you use on the desktop. Windows has no PipeWire, so game-audio share, the game ↔ Discord mix, audio-device routing, the virtual camera, the in-game overlays and the controller push-to-talk shortcut are not available there; the QAM hides them. Full details, the feature table and troubleshooting: **[docs/WINDOWS.md](docs/WINDOWS.md)**.
 
 Nothing else is required: the Python dependencies are vendored, and the handful of system tools some features shell out to (`pw-dump`, `pactl`, `ffmpeg`, `gamescopectl`) are optional — each one only costs the feature it powers, and the backend logs a `[deps]` line at startup naming any that are missing. See **[docs/OS-NOTES.md](docs/OS-NOTES.md)** for the full table and per-distro packages, including NixOS, Gentoo, Alpine and Void.
 
@@ -146,6 +160,8 @@ pnpm run build
 # copy dist/, main.py, defaults/, plugin.json, package.json to ~/homebrew/plugins/Steamcord/
 sudo systemctl restart plugin_loader
 ```
+
+On Windows copy the same files into the Decky for Windows plugins folder (`%USERPROFILE%\homebrew\plugins\Steamcord` in portable mode) and reload the plugin from Decky. The release zip is built by the `release` workflow with the Decky CLI; it carries both the Steam Deck files and the Windows layer.
 
 ---
 

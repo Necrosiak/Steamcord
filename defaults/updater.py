@@ -17,6 +17,7 @@ Network/disk work runs in a thread executor so the asyncio loop never blocks.
 import asyncio
 import json
 import os
+import sys
 import shutil
 import ssl
 import subprocess
@@ -65,7 +66,7 @@ def _parse_version(v: str) -> tuple:
 def get_current_version() -> str:
     # The installed version lives in package.json (plugin.json has no version field).
     try:
-        data = json.loads((Path(DECKY_PLUGIN_DIR) / "package.json").read_text())
+        data = json.loads((Path(DECKY_PLUGIN_DIR) / "package.json").read_text(encoding="utf-8"))
         return str(data.get("version", "0.0.0"))
     except Exception as e:
         logger.warning(f"[updater] cannot read current version: {e}")
@@ -78,7 +79,7 @@ def is_autoupdate_enabled() -> bool:
     # seul au démarrage ferait surgir une modale non sollicitée — on se contente
     # de notifier, et l'utilisateur active l'auto-update s'il le veut.
     try:
-        return bool(json.loads(SETTINGS_FILE.read_text()).get("autoupdate", False))
+        return bool(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")).get("autoupdate", False))
     except Exception:
         return False  # default OFF
 
@@ -86,7 +87,7 @@ def is_autoupdate_enabled() -> bool:
 def set_autoupdate_enabled(enabled: bool) -> bool:
     try:
         SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-        SETTINGS_FILE.write_text(json.dumps({"autoupdate": bool(enabled)}))
+        SETTINGS_FILE.write_text(json.dumps({"autoupdate": bool(enabled)}), encoding="utf-8")
     except Exception as e:
         logger.warning(f"[updater] cannot persist autoupdate flag: {e}")
     return bool(enabled)
@@ -349,13 +350,19 @@ async def apply(url: str) -> dict:
     except PermissionError as e:
         blocked_path = getattr(e, "filename", "") or DECKY_PLUGIN_DIR
         logger.error(f"[updater] apply failed: {e} | {_diagnose_permission(Path(blocked_path))}")
+        if sys.platform == "win32":
+            return {"ok": False,
+                    "error": f"Permission denied on {blocked_path} - Decky for Windows keeps "
+                             "installed plugins in a folder this plugin cannot write to. Install the "
+                             "new zip instead: Decky → Settings → Developer → Install Plugin from "
+                             "ZIP File."}
         hints = [f"sudo chown -R $(id -un) {DECKY_PLUGIN_DIR}"]
         if _selinux_enforcing():
             # The likely real culprit on Bazzite/Fedora Atomic: chown fixes DAC
             # ownership, but a root-run install can leave files mislabeled at the
             # SELinux (MAC) layer, which chown never touches — restorecon does.
             hints.append(f"sudo restorecon -R {DECKY_PLUGIN_DIR}")
-        as_root = os.geteuid() == 0
+        as_root = hasattr(os, "geteuid") and os.geteuid() == 0
         note = (" (this process already runs as root — a further Permission denied "
                 "here points at SELinux or an immutable file attribute, not ownership)"
                 if as_root else "")

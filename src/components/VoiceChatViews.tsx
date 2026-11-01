@@ -16,6 +16,7 @@ import {
   useSliderClipFix,
 } from "./Styled";
 import { useQamUi } from "../qamUi";
+import { hasCap } from "../platform";
 import { VideoGridModal } from "./VideoGridFullscreen";
 
 // Réagit à l'arrivée du flux vidéo relayé (Vesktop→QAM) pour cet utilisateur.
@@ -664,7 +665,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
       )}
       {/* Aperçu de MON Go Live natif (portail) — même idée, snapshots backend.
           Pas quand le partage mode jeu tourne : SelfPreviewTile s'en charge. */}
-      {isSelf && !screenCamOn && user?.is_live && (
+      {isSelf && !screenCamOn && user?.is_live && hasCap("gamescope_preview") && (
         <div style={{ padding: `${px(4)}px ${px(8)}px 0` }}>
           <SectionLabel><IcMonitor /> {t("self_preview_label")}</SectionLabel>
           {GOLIVE_PREVIEW_ENABLED ? <GoLivePreviewTile /> : <Notice>{t("self_preview_removed")}</Notice>}
@@ -758,6 +759,11 @@ const ToggleFieldAny = ToggleField as any;
 // GAMESCOPE_EXTERNAL_OVERLAY côté backend). Réglages répercutés en live (la
 // page overlay poll le state).
 function OverlayMenu() {
+  // The in-game overlay is a GTK window over gamescope: not available on Windows.
+  return hasCap("pov_overlay") ? <OverlayMenuInner /> : null;
+}
+
+function OverlayMenuInner() {
   const [open, setOpen] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
   const [povOn, setPovOn] = useState(false);
@@ -892,6 +898,11 @@ function OverlayMenu() {
 // plus bas, droite = jeu plus bas, milieu = les deux à 100 %. Le backend ne
 // touche que ce que l'on entend, jamais ce qui part vers l'appel ou le Go Live.
 export function ChatMixPanel() {
+  // Game <-> Discord balance is applied through PipeWire stream volumes: Linux only.
+  return hasCap("chat_mix") ? <ChatMixPanelInner /> : null;
+}
+
+function ChatMixPanelInner() {
   const sliderFix = useSliderClipFix();
   const [open, setOpen] = useState(false);
   // null tant que la valeur enregistrée n'est pas lue : sinon le 50 de départ

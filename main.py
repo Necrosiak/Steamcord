@@ -29,6 +29,12 @@ from logging import INFO
 sys.path.insert(0, str(Path(DECKY_PLUGIN_DIR) / "defaults"))
 sys.path.append(DECKY_PLUGIN_DIR)
 
+# One release zip serves Steam Deck / Linux AND Windows (Decky Loader for Windows,
+# Steam Big Picture). sc_platform answers "which host, which paths, which features";
+# the Linux code paths below are unchanged and the Windows ones sit behind IS_WINDOWS.
+import sc_platform
+IS_WINDOWS = sc_platform.IS_WINDOWS
+
 from tab_utils.tab import (
     create_discord_tab,
     setup_discord_tab,
@@ -118,6 +124,8 @@ def _log_tool_report():
 
 def _desktop_session():
     """Session Bureau (KWin) en cours ? Même signal que get_share_env."""
+    if IS_WINDOWS:
+        return False
     try:
         import vesktop
         return vesktop.proc_running(comm="kwin_wayland|kwin_x11")
@@ -141,14 +149,15 @@ async def _initialize_discord():
             logger.info("[desktop-off] mode Bureau : Vesktop pas lancé avant le retour en mode Jeu")
             waited = True
         await sleep(5)
-    _log_tool_report()
+    if not IS_WINDOWS:
+        _log_tool_report()
     # defaults/ d'abord : même piège que discord_client/tab_utils — la copie
     # racine vient du zip de release et n'est PAS resynchronisée par le deploy
     # local (le client injecté restait figé → pas d'enrichissement __sc_dm).
     _cjs = Path(DECKY_PLUGIN_DIR) / "defaults" / "steamcord_client.js"
     if not _cjs.exists():
         _cjs = Path(DECKY_PLUGIN_DIR) / "steamcord_client.js"
-    client_js = open(_cjs, "r").read()
+    client_js = open(_cjs, "r", encoding="utf-8").read()
     # webrtc_client.js surcharge getDisplayMedia → capture d'écran GStreamer pour
     # le partage d'écran (Go Live). DOIT être injecté sous Vesktop aussi, sinon le
     # partage d'écran « ne donne rien » (getDisplayMedia natif inutilisable headless).
@@ -156,10 +165,13 @@ async def _initialize_discord():
         _wjs = Path(DECKY_PLUGIN_DIR) / "defaults" / "webrtc_client.js"
         if not _wjs.exists():
             _wjs = Path(DECKY_PLUGIN_DIR) / "webrtc_client.js"
-        webrtc_js = open(_wjs, "r").read()
+        webrtc_js = open(_wjs, "r", encoding="utf-8").read()
     except Exception:
         webrtc_js = ""
-    tab = await vesktop.get_discord_tab(webrtc_js + "\n" + client_js)
+    # Host marker, read by webrtc_client.js: on Windows Go Live uses Electron's own
+    # desktop capture (no PipeWire / GStreamer relay exists there).
+    platform_js = 'window.STEAMCORD_PLATFORM = "%s";\n' % sc_platform.OS_NAME
+    tab = await vesktop.get_discord_tab(platform_js + webrtc_js + "\n" + client_js)
 
     Plugin.discord_tab = tab
 
@@ -314,6 +326,8 @@ def _running_executables(cap=400):
     L'heure de démarrage vient de /proc/<pid>/stat champ 22 ; elle sert à
     préférer le dernier lancé — donc le jeu plutôt que le lanceur qui l'a ouvert.
     """
+    if IS_WINDOWS:
+        return sc_platform.windows_exe_names(cap)
     seen = {}
     try:
         pids = [d for d in os.listdir("/proc") if d.isdigit()]
@@ -380,8 +394,8 @@ def _video_dirs():
             out.append(d)
     # Clips exportés par Steam (le dossier n'existe que si on en a exporté).
     import glob
-    out += [d for d in glob.glob(os.path.join(
-        home, ".local/share/Steam/userdata/*/gamerecordings/clips")) if os.path.isdir(d)]
+    for pattern in sc_platform.steam_clip_globs():
+        out += [d for d in glob.glob(pattern) if os.path.isdir(d)]
     return out
 
 
@@ -586,9 +600,8 @@ def _steam_clips():
     """
     import glob
     out = []
-    pattern = os.path.expanduser(
-        "~/.local/share/Steam/userdata/*/gamerecordings/clips/clip_*")
-    for d in glob.glob(pattern):
+    patterns = [os.path.join(g, "clip_*") for g in sc_platform.steam_clip_globs()]
+    for d in (p for pat in patterns for p in glob.glob(pat)):
         if not os.path.isdir(d):
             continue
         frags = glob.glob(os.path.join(d, "video", "*", "*.m4s"))
@@ -686,7 +699,7 @@ class Plugin:
     # et ré-assertés à chaque login du client : la persistance interne de
     # Discord se perd sur certains setups → retour aux défauts (issue #14).
     _mic_prefs = {}
-    _AUDIO_CFG = os.path.expanduser("~/.config/steamcord-audio.json")
+    _AUDIO_CFG = sc_platform.config_file("steamcord-audio.json")
     # ── Partage audio du jeu (voir section "Partage AUDIO du jeu") ──
     _ga_active = False
     # Traitement audio (Krisp/bruit/écho/gain) mis en pause pendant le partage du
@@ -731,7 +744,13 @@ class Plugin:
                                    "— retrying in 15s")
                     await sleep(15)
                 else:
-                    logger.warning(f"initialize() failed ({e!r}); retrying in 2s")
+                    # Short message only: the repr of a decode error carries the
+                    # whole injected script (~250 KB) and, every 2 s, filled the
+                    # log with hundreds of MB on Windows.
+                    msg = repr(e)
+                    if len(msg) > 400:
+                        msg = msg[:400] + "...(truncated)"
+                    logger.warning(f"initialize() failed ({msg}); retrying in 2s")
                     await sleep(2)
         logger.info("Discord initialized")
 
@@ -745,6 +764,8 @@ class Plugin:
         # de 08:17, état gelé à 08:19, un membre arrivé ensuite jamais montré).
         # Les interrupteurs d'overlay repartent éteints : rien ne doit rester.
         try:
+            if IS_WINDOWS:
+                raise StopIteration     # no overlay window on Windows, nothing to sweep
             import vesktop, signal as _sig
             # Filtre strict : un python qui exécute overlay.py avec SES
             # arguments. Le seul motif « game_overlay/overlay.py » tuait aussi
@@ -758,6 +779,8 @@ class Plugin:
                     pass
             if pids:
                 logger.info("[overlay] fenêtre orpheline d'avant le rechargement fermée")
+        except StopIteration:
+            pass
         except Exception as e:
             logger.warning(f"[overlay] nettoyage orphelin: {e!r}")
         # Discord coupé par l'interrupteur On/Off (#82) : il le reste après un
@@ -793,7 +816,7 @@ class Plugin:
         cls.runner = AppRunner(cls.server, access_log=None)
         await cls.runner.setup()
         logger.info("Starting server.")
-        await TCPSite(cls.runner, "0.0.0.0", 65123).start()
+        await TCPSite(cls.runner, "127.0.0.1" if IS_WINDOWS else "0.0.0.0", 65123).start()
 
         # Same failure mode as initialize() above: while the Steam UI is still
         # (re)starting, CEF answers /json but SharedJSContext is not in the tab
@@ -809,105 +832,113 @@ class Plugin:
         await cls.shared_js_tab.open_websocket()
         create_task(cls._notification_dispatcher())
 
-        # Use the SYSTEM GStreamer (1.26+). The original Deckcord bundled GStreamer in
-        # bin/, but this fork never shipped it — pointing at a nonexistent bin/ broke the
-        # subprocess silently. Inherit the user environment so PATH/HOME/typelibs
-        # resolve, and only override what's needed for hw encode + pipewire/pulse access.
-        # Le plugin GStreamer `nice` (ICE, requis par webrtcbin) n'est PAS dans l'image
-        # Bazzite de base → webrtcbin échouait à construire le pipeline VP8 ("missing
-        # plug-in") et getDisplayMedia se bloquait. On embarque libgstnice.so et on
-        # l'ajoute au GST_PLUGIN_PATH (pas d'install système / pas de reboot).
-        # Decky APLATIT defaults/ dans la racine du plugin à l'installation : le
-        # dossier vendoré arrive en <plugin>/gst-plugins, et <plugin>/defaults/
-        # n'existe PAS dans une install réelle (il n'existe que sur un deploy dev).
-        # Ne viser que defaults/ pointait donc GST_PLUGIN_PATH sur un dossier
-        # inexistant → libgstnice.so jamais chargé → webrtcbin sans ICE → « could
-        # not link queueN to send … missing a plug-in » et getDesktopSource qui
-        # expire (#42). On passe les DEUX chemins, ceux qui existent.
-        gst_plugins_dir = os.pathsep.join(
-            str(_p)
-            for _p in (
-                Path(DECKY_PLUGIN_DIR) / "gst-plugins",
-                Path(DECKY_PLUGIN_DIR) / "defaults" / "gst-plugins",
+        if IS_WINDOWS:
+            # Windows: no PipeWire, GStreamer relay or xdg ScreenCast portal. Go Live goes
+            # through Electron's own desktop capture (webrtc_client.js, STEAMCORD_PLATFORM).
+            logger.info("[win] Windows host: GStreamer relay and portal shim not started")
+        else:
+            # Use the SYSTEM GStreamer (1.26+). The original Deckcord bundled GStreamer in
+            # bin/, but this fork never shipped it — pointing at a nonexistent bin/ broke the
+            # subprocess silently. Inherit the user environment so PATH/HOME/typelibs
+            # resolve, and only override what's needed for hw encode + pipewire/pulse access.
+            # Le plugin GStreamer `nice` (ICE, requis par webrtcbin) n'est PAS dans l'image
+            # Bazzite de base → webrtcbin échouait à construire le pipeline VP8 ("missing
+            # plug-in") et getDisplayMedia se bloquait. On embarque libgstnice.so et on
+            # l'ajoute au GST_PLUGIN_PATH (pas d'install système / pas de reboot).
+            # Decky APLATIT defaults/ dans la racine du plugin à l'installation : le
+            # dossier vendoré arrive en <plugin>/gst-plugins, et <plugin>/defaults/
+            # n'existe PAS dans une install réelle (il n'existe que sur un deploy dev).
+            # Ne viser que defaults/ pointait donc GST_PLUGIN_PATH sur un dossier
+            # inexistant → libgstnice.so jamais chargé → webrtcbin sans ICE → « could
+            # not link queueN to send … missing a plug-in » et getDesktopSource qui
+            # expire (#42). On passe les DEUX chemins, ceux qui existent.
+            gst_plugins_dir = os.pathsep.join(
+                str(_p)
+                for _p in (
+                    Path(DECKY_PLUGIN_DIR) / "gst-plugins",
+                    Path(DECKY_PLUGIN_DIR) / "defaults" / "gst-plugins",
+                )
+                if _p.is_dir()
             )
-            if _p.is_dir()
-        )
-        # #38 : partir de _user_env() et NON de os.environ. plugin_loader est un
-        # binaire PyInstaller : il exporte LD_LIBRARY_PATH/LD_PRELOAD vers ses libs
-        # embarquées (/tmp/_MEI...). Le GStreamer SYSTÈME lancé ici héritait de ces
-        # variables et chargeait le libcrypto du bundle → « OPENSSL_3.4.0 not found »,
-        # donc pas de pipeline et un Go Live sans image (invisible sur Bazzite, dont
-        # les libs système sont compatibles ; fatal sur SteamOS). _user_env() fait
-        # déjà ce nettoyage — le shim s'en servait, ce lancement-ci l'avait manqué.
-        # Il dérive aussi XDG_RUNTIME_DIR/DBUS du vrai uid, ce que os.environ.get
-        # ne garantissait pas (le backend hérite du /run/user/0 de plugin_loader).
-        import vesktop as _vesktop
-        gst_env = {
-            **_vesktop._user_env(),
-            "GST_VAAPI_ALL_DRIVERS": "1",
-            "LIBVA_DRIVER_NAME": "radeonsi",
-            "GST_PLUGIN_PATH": gst_plugins_dir + os.pathsep + os.environ.get("GST_PLUGIN_PATH", ""),
-        }
-        # Réutilisé par le feeder webcam virtuelle (gst_camera.py).
-        cls._gst_env = gst_env
-        # Auto-install des dépendances du partage d'écran (self-contained sur toute
-        # BC-250 fraîche) AVANT de lancer gst_webrtc.py.
-        await cls._ensure_screenshare_deps()
-        # Tuer un gst_webrtc.py orphelin (restart de plugin_loader ne tue pas toujours
-        # l'enfant → port 65124 "address already in use"). Puis laisser le port se libérer.
-        try:
-            import vesktop
-            vesktop.proc_kill("gst_webrtc.py")
-            await sleep(1)
-        except Exception:
-            pass
-        cls.webrtc_server = await create_subprocess_exec(
-            sys_python(),
-            str(Path(DECKY_PLUGIN_DIR) / "gst_webrtc.py"),
-            env=gst_env,
-            stdout=PIPE,
-            stderr=PIPE,
-        )
-        create_task(stream_watcher(cls.webrtc_server.stdout))
-        create_task(stream_watcher(cls.webrtc_server.stderr, True))
-        # Portail ScreenCast pour gamescope (portal_shim.py) : rend le Go Live
-        # NATIF fonctionnel en mode jeu (getDisplayMedia → notre portail → node
-        # PipeWire gamescope), sans caméra virtuelle ni relais WebRTC local.
-        # Tourne sous le python SYSTÈME (pas de gi requis — dbus_next est
-        # vendoré dans py_modules, passé via PYTHONPATH).
-        try:
-            vesktop.proc_kill("portal_shim.py")
-        except Exception:
-            pass
-        _shim = Path(DECKY_PLUGIN_DIR) / "portal_shim.py"
-        if not _shim.exists():
-            _shim = Path(DECKY_PLUGIN_DIR) / "defaults" / "portal_shim.py"
-        shim_env = {
-            **vesktop._user_env(),
-            "PYTHONPATH": str(Path(DECKY_PLUGIN_DIR) / "py_modules"),
-        }
-        cls.portal_shim = await create_subprocess_exec(
-            sys_python(), str(_shim), env=shim_env, stdout=PIPE, stderr=PIPE,
-        )
-        create_task(stream_watcher(cls.portal_shim.stdout, prefix="[portal]"))
-        create_task(stream_watcher(cls.portal_shim.stderr, True, prefix="[portal]"))
+            # #38 : partir de _user_env() et NON de os.environ. plugin_loader est un
+            # binaire PyInstaller : il exporte LD_LIBRARY_PATH/LD_PRELOAD vers ses libs
+            # embarquées (/tmp/_MEI...). Le GStreamer SYSTÈME lancé ici héritait de ces
+            # variables et chargeait le libcrypto du bundle → « OPENSSL_3.4.0 not found »,
+            # donc pas de pipeline et un Go Live sans image (invisible sur Bazzite, dont
+            # les libs système sont compatibles ; fatal sur SteamOS). _user_env() fait
+            # déjà ce nettoyage — le shim s'en servait, ce lancement-ci l'avait manqué.
+            # Il dérive aussi XDG_RUNTIME_DIR/DBUS du vrai uid, ce que os.environ.get
+            # ne garantissait pas (le backend hérite du /run/user/0 de plugin_loader).
+            import vesktop as _vesktop
+            gst_env = {
+                **_vesktop._user_env(),
+                "GST_VAAPI_ALL_DRIVERS": "1",
+                "LIBVA_DRIVER_NAME": "radeonsi",
+                "GST_PLUGIN_PATH": gst_plugins_dir + os.pathsep + os.environ.get("GST_PLUGIN_PATH", ""),
+            }
+            # Réutilisé par le feeder webcam virtuelle (gst_camera.py).
+            cls._gst_env = gst_env
+            # Auto-install des dépendances du partage d'écran (self-contained sur toute
+            # BC-250 fraîche) AVANT de lancer gst_webrtc.py.
+            await cls._ensure_screenshare_deps()
+            # Tuer un gst_webrtc.py orphelin (restart de plugin_loader ne tue pas toujours
+            # l'enfant → port 65124 "address already in use"). Puis laisser le port se libérer.
+            try:
+                import vesktop
+                vesktop.proc_kill("gst_webrtc.py")
+                await sleep(1)
+            except Exception:
+                pass
+            cls.webrtc_server = await create_subprocess_exec(
+                sys_python(),
+                str(Path(DECKY_PLUGIN_DIR) / "gst_webrtc.py"),
+                env=gst_env,
+                stdout=PIPE,
+                stderr=PIPE,
+            )
+            create_task(stream_watcher(cls.webrtc_server.stdout))
+            create_task(stream_watcher(cls.webrtc_server.stderr, True))
+            # Portail ScreenCast pour gamescope (portal_shim.py) : rend le Go Live
+            # NATIF fonctionnel en mode jeu (getDisplayMedia → notre portail → node
+            # PipeWire gamescope), sans caméra virtuelle ni relais WebRTC local.
+            # Tourne sous le python SYSTÈME (pas de gi requis — dbus_next est
+            # vendoré dans py_modules, passé via PYTHONPATH).
+            try:
+                vesktop.proc_kill("portal_shim.py")
+            except Exception:
+                pass
+            _shim = Path(DECKY_PLUGIN_DIR) / "portal_shim.py"
+            if not _shim.exists():
+                _shim = Path(DECKY_PLUGIN_DIR) / "defaults" / "portal_shim.py"
+            shim_env = {
+                **vesktop._user_env(),
+                "PYTHONPATH": str(Path(DECKY_PLUGIN_DIR) / "py_modules"),
+            }
+            cls.portal_shim = await create_subprocess_exec(
+                sys_python(), str(_shim), env=shim_env, stdout=PIPE, stderr=PIPE,
+            )
+            create_task(stream_watcher(cls.portal_shim.stdout, prefix="[portal]"))
+            create_task(stream_watcher(cls.portal_shim.stderr, True, prefix="[portal]"))
         create_task(cls._remote_auth_watcher())
-        create_task(cls._audio_keepalive())
+        if not IS_WINDOWS:
+            create_task(cls._audio_keepalive())
         create_task(cls._autoupdate_check())
         cls._load_audio_cfg()
         cls.evt_handler.on_logged_in = cls._on_logged_in
         cls.evt_handler.on_own_stream_stop = cls._golive_ended
         cls.evt_handler.on_golive_wait = cls._golive_wait_toast
         create_task(cls.apply_stream_prefs())
-        create_task(cls._audio_routing_watcher())
-        create_task(cls._screen_diag())
-        create_task(cls._ga_boot_cleanup())
+        if not IS_WINDOWS:
+            create_task(cls._audio_routing_watcher())
+            create_task(cls._screen_diag())
+            create_task(cls._ga_boot_cleanup())
         create_task(cls._account_watcher())
-        # Lecteur clavier/souris du raccourci vocal — no-op tant qu'aucun binding
-        # clavier/souris n'existe (aucun fd ouvert, donc rien à payer).
-        create_task(cls._input_refresh())
-        create_task(cls._input_watchdog())
-        create_task(cls._desktop_off_watch())
+        if not IS_WINDOWS:
+            # Lecteur clavier/souris du raccourci vocal — no-op tant qu'aucun binding
+            # clavier/souris n'existe (aucun fd ouvert, donc rien à payer).
+            create_task(cls._input_refresh())
+            create_task(cls._input_watchdog())
+            create_task(cls._desktop_off_watch())
 
         async for state in cls.evt_handler.yield_new_state():
             await emit("state", state)
@@ -1309,7 +1340,7 @@ class Plugin:
     # à Vocal + Serveurs après un redémarrage — non reproduit ici (le stockage
     # survit), mais ce stockage peut être vidé sans que le plugin le sache. Copie
     # de secours dans un fichier : le frontend s'en sert si sa clé a disparu.
-    _VIEW_CFG = os.path.expanduser("~/.config/steamcord-view.json")
+    _VIEW_CFG = sc_platform.config_file("steamcord-view.json")
     _VIEW_TOPS = ("voice", "text")
     _VIEW_SRCS = ("servers", "dms")
     # Ce que l'icône Steamcord ouvre : le panneau, ou la vue agrandie (20/09).
@@ -1322,7 +1353,7 @@ class Plugin:
     async def get_open_view(cls):
         from json import load as _load
         try:
-            with open(cls._VIEW_CFG) as f:
+            with open(cls._VIEW_CFG, encoding="utf-8") as f:
                 cfg = _load(f)
             if not isinstance(cfg, dict):
                 cfg = {}
@@ -1361,7 +1392,7 @@ class Plugin:
         tmp = cls._VIEW_CFG + ".tmp"
         try:
             os.makedirs(os.path.dirname(cls._VIEW_CFG), exist_ok=True)
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 _dump(cfg, f)
             os.replace(tmp, cls._VIEW_CFG)
         except Exception as e:
@@ -1375,7 +1406,7 @@ class Plugin:
     # Le filtrage se fait CÔTÉ FRONTEND (index.tsx) et pas ici : c'est le contexte
     # Steam qui sait si un jeu tourne au premier plan, le backend n'en a aucune
     # idée. Ici on ne fait que persister le choix.
-    _NOTIFY_CFG = os.path.expanduser("~/.config/steamcord-notify.json")
+    _NOTIFY_CFG = sc_platform.config_file("steamcord-notify.json")
     _notify_settings = None
 
     # "all" : tout passe (comportement historique)
@@ -1404,7 +1435,7 @@ class Plugin:
         from json import load as _load
         if cls._notify_settings is None:
             try:
-                with open(cls._NOTIFY_CFG) as f:
+                with open(cls._NOTIFY_CFG, encoding="utf-8") as f:
                     cls._notify_settings = _load(f)
             except Exception:
                 cls._notify_settings = {}
@@ -1435,7 +1466,7 @@ class Plugin:
             cfg[key] = val
         try:
             os.makedirs(os.path.dirname(cls._NOTIFY_CFG), exist_ok=True)
-            with open(cls._NOTIFY_CFG, "w") as f:
+            with open(cls._NOTIFY_CFG, "w", encoding="utf-8") as f:
                 _dump(cfg, f)
         except Exception as e:
             logger.warning(f"save {cls._NOTIFY_CFG} failed: {e!r}")
@@ -1478,6 +1509,8 @@ class Plugin:
     def _downloads_dir(cls):
         """Le dossier Téléchargements de l'utilisateur, quel que soit son nom
         (xdg-user-dirs le localise), avec ~/Downloads en repli."""
+        if IS_WINDOWS:
+            return sc_platform.downloads_dir()
         import subprocess
         try:
             r = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True,
@@ -1499,6 +1532,12 @@ class Plugin:
         vérification — le but est de récupérer un fichier, pas de l'accepter de
         n'importe qui."""
         import ssl
+        if IS_WINDOWS:
+            # Windows' own certificate store is what create_default_context() loads.
+            try:
+                return ssl.create_default_context()
+            except Exception:
+                return None
         # Ordre : le chemin Fedora/Bazzite historique n'existe PAS sur cette
         # image (vérifié le 06/09) — c'est le second qui répond. On garde les
         # quatre : ce backend tourne aussi sur SteamOS, Arch et Debian.
@@ -1587,7 +1626,7 @@ class Plugin:
     # (protection anti-vol de jeton). Y accéder directement jette, et le préréglage
     # 1080p60 que le client injecté croyait poser ne l'était pas toujours. On passe
     # donc par le localStorage d'une iframe de même origine, comme Vencord.
-    _STREAM_CFG = os.path.expanduser("~/.config/steamcord-stream.json")
+    _STREAM_CFG = sc_platform.config_file("steamcord-stream.json")
     _stream_settings = None
 
     # "source" = ne rien contraindre, on laisse Vesktop/Discord décider.
@@ -1599,7 +1638,7 @@ class Plugin:
         from json import load as _load
         if cls._stream_settings is None:
             try:
-                with open(cls._STREAM_CFG) as f:
+                with open(cls._STREAM_CFG, encoding="utf-8") as f:
                     cls._stream_settings = _load(f)
             except Exception:
                 cls._stream_settings = {}
@@ -1657,7 +1696,7 @@ class Plugin:
             cfg["frameRate"] = frameRate
         try:
             os.makedirs(os.path.dirname(cls._STREAM_CFG), exist_ok=True)
-            with open(cls._STREAM_CFG, "w") as f:
+            with open(cls._STREAM_CFG, "w", encoding="utf-8") as f:
                 _dump(cfg, f)
         except Exception as e:
             logger.warning(f"save {cls._STREAM_CFG} failed: {e!r}")
@@ -1813,7 +1852,7 @@ class Plugin:
     _rpc_since = None
     # Préférence « afficher le jeu en cours sur Discord » (QAM → Config).
     # Persistée en JSON comme steamcord-input.json ; None = pas encore chargée.
-    _RPC_CFG = os.path.expanduser("~/.config/steamcord-rpc.json")
+    _RPC_CFG = sc_platform.config_file("steamcord-rpc.json")
     _rpc_enabled = None
 
     @classmethod
@@ -1836,7 +1875,7 @@ class Plugin:
         from json import load
         cfg = {}
         try:
-            with open(cls._RPC_CFG) as f:
+            with open(cls._RPC_CFG, encoding="utf-8") as f:
                 cfg = load(f) or {}
         except Exception:
             cfg = {}
@@ -1855,7 +1894,7 @@ class Plugin:
         from json import dump
         try:
             os.makedirs(os.path.dirname(cls._RPC_CFG), exist_ok=True)
-            with open(cls._RPC_CFG, "w") as f:
+            with open(cls._RPC_CFG, "w", encoding="utf-8") as f:
                 dump({"enabled": cls._rpc_pref(),
                       "detect_launcher_games": cls._rpc_detect_pref(),
                       "override": cls._rpc_override_pref()}, f)
@@ -1922,7 +1961,7 @@ class Plugin:
     # temps du visionnage d'un stream. On garde ici la préférence de
     # l'utilisateur ET les valeurs d'origine : si Steam meurt en plein stream,
     # le front les remet telles quelles au prochain chargement du plugin.
-    _KA_CFG = os.path.expanduser("~/.config/steamcord-keepawake.json")
+    _KA_CFG = sc_platform.config_file("steamcord-keepawake.json")
     _ka_cache = None
 
     @staticmethod
@@ -1939,7 +1978,7 @@ class Plugin:
         from json import load
         if cls._ka_cache is None:
             try:
-                with open(cls._KA_CFG) as f:
+                with open(cls._KA_CFG, encoding="utf-8") as f:
                     cfg = load(f) or {}
             except Exception:
                 cfg = {}
@@ -1952,7 +1991,7 @@ class Plugin:
         from json import dump
         try:
             os.makedirs(os.path.dirname(cls._KA_CFG), exist_ok=True)
-            with open(cls._KA_CFG, "w") as f:
+            with open(cls._KA_CFG, "w", encoding="utf-8") as f:
                 dump(cls._ka_cfg(), f)
         except Exception as e:
             logger.warning(f"save keepawake cfg failed: {e!r}")
@@ -2399,8 +2438,8 @@ class Plugin:
     # compte — l'ordre revenait comme avant après reload. Portage sur nos
     # propres fichiers = vraiment permanent, et on n'a pas besoin de
     # reproduire la synchro settings-proto de Discord (protobuf, fragile).
-    _GUILD_ORDER_CFG = os.path.expanduser("~/.config/steamcord-guild-order.json")
-    _HIDDEN_GUILDS_CFG = os.path.expanduser("~/.config/steamcord-hidden-guilds.json")
+    _GUILD_ORDER_CFG = sc_platform.config_file("steamcord-guild-order.json")
+    _HIDDEN_GUILDS_CFG = sc_platform.config_file("steamcord-hidden-guilds.json")
     _guild_order = None
     _hidden_guilds = None
 
@@ -2408,7 +2447,7 @@ class Plugin:
     def _load_json_list(path, key):
         from json import load
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 return list(load(f).get(key, []))
         except Exception:
             return []
@@ -2418,7 +2457,7 @@ class Plugin:
         from json import dump
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 dump({key: values}, f)
         except Exception as e:
             logger.warning(f"save {path} failed: {e!r}")
@@ -2961,7 +3000,7 @@ class Plugin:
         import vesktop as _v
         rt = _v._user_env().get("XDG_RUNTIME_DIR") or "/run/user/1000"
         try:
-            with open(os.path.join(rt, "steamcord-portal-shim.pid")) as f:
+            with open(os.path.join(rt, "steamcord-portal-shim.pid"), encoding="utf-8") as f:
                 pid = int(f.read().strip())
             with open(f"/proc/{pid}/cmdline", "rb") as f:
                 if b"portal_shim.py" not in f.read():
@@ -3072,6 +3111,8 @@ class Plugin:
     @classmethod
     async def _pactl(cls, *args, want_json=False):
         import vesktop
+        if IS_WINDOWS:
+            return ""               # no PulseAudio/PipeWire on Windows; "" is every caller's "nothing"
         pre = ("-f", "json") if want_json else ()
         p = await create_subprocess_exec("pactl", *pre, *args, stdout=PIPE, stderr=DEVNULL, env=vesktop._user_env())
         # ⚠ pactl pend indéfiniment quand PipeWire n'enregistre plus de clients
@@ -3448,7 +3489,7 @@ class Plugin:
     def _load_audio_cfg(cls):
         from json import load
         try:
-            with open(cls._AUDIO_CFG) as f:
+            with open(cls._AUDIO_CFG, encoding="utf-8") as f:
                 cfg = load(f)
             cls._audio_out = cfg.get("output") or None
             cls._audio_in = cfg.get("input") or None
@@ -3472,7 +3513,7 @@ class Plugin:
         from json import dump
         try:
             os.makedirs(os.path.dirname(cls._AUDIO_CFG), exist_ok=True)
-            with open(cls._AUDIO_CFG, "w") as f:
+            with open(cls._AUDIO_CFG, "w", encoding="utf-8") as f:
                 dump({"output": cls._audio_out, "input": cls._audio_in,
                       "mic": cls._mic_prefs, "ga_vol": cls._ga_vol,
                       "chat_mix": cls._chat_mix,
@@ -3486,7 +3527,7 @@ class Plugin:
     # input_watch : CEF n'a pas le focus clavier quand un jeu tourne, donc une
     # capture globale ne peut pas vivre côté frontend. Voir defaults/input_watch.py
     # pour les contraintes de vie privée (aucun code de touche journalisé).
-    _INPUT_CFG = os.path.expanduser("~/.config/steamcord-input.json")
+    _INPUT_CFG = sc_platform.config_file("steamcord-input.json")
     _input_lock = None            # asyncio.Lock (créé à la première écriture)
     _input_watcher = None
     _input_capture = None         # {"token": str, "task": Task} pendant une capture
@@ -3538,7 +3579,7 @@ class Plugin:
             return cls._voice_cache
         from json import load
         try:
-            with open(cls._INPUT_CFG) as f:
+            with open(cls._INPUT_CFG, encoding="utf-8") as f:
                 raw = load(f)
         except Exception:
             raw = None
@@ -3571,7 +3612,7 @@ class Plugin:
             ]
             try:
                 os.makedirs(os.path.dirname(cls._INPUT_CFG), exist_ok=True)
-                with open(cls._INPUT_CFG, "w") as f:
+                with open(cls._INPUT_CFG, "w", encoding="utf-8") as f:
                     dump(merged, f)
             except Exception as e:
                 logger.warning(f"save input cfg failed: {e!r}")
@@ -4358,6 +4399,12 @@ class Plugin:
     async def go_live(cls):
         async with cls._golive_lock():
             cls._golive_started_at = time.monotonic()
+            if IS_WINDOWS:
+                # No audio bridge / mic silencing / PipeWire watcher: capture the screen
+                # directly through Electron (webrtc_client.js directDesktop).
+                await cls.evt_handler.send_client({"type": "$golive", "stop": False,
+                                                   "direct": True})
+                return
             # Le pont AVANT d'ouvrir la modale : Vesktop énumère les
             # périphériques dans la foulée du clic de confirmation, le
             # périphérique doit donc déjà être là.
@@ -4377,6 +4424,8 @@ class Plugin:
     async def stop_go_live(cls):
         async with cls._golive_lock():
             await cls.evt_handler.send_client({"type": "$golive", "stop": True})
+            if IS_WINDOWS:
+                return
             task, cls._golive_capture_task = cls._golive_capture_task, None
             if task is not None and not task.done():
                 task.cancel()
@@ -4396,6 +4445,8 @@ class Plugin:
         « monté »). Après un clic sur Arrêter, tout est déjà démonté : les
         appels ci-dessous ne font alors rien.
         """
+        if IS_WINDOWS:
+            return                  # nothing was set up on Windows, nothing to tear down
         async with cls._golive_lock():
             # Discord émet deux STREAM_STOP à ~5 s d'écart : le second peut
             # tomber pendant un Go Live relancé aussitôt. Ne pas lui démonter
@@ -4517,7 +4568,7 @@ class Plugin:
         # OS effacent les paquets ajoutés → « sudo pacman -S … » y est un faux
         # conseil, on renvoie un code dédié à la place.
         try:
-            with open("/etc/os-release") as f:
+            with open("/etc/os-release", encoding="utf-8") as f:
                 for line in f:
                     if line.strip().startswith("ID="):
                         return line.split("=", 1)[1].strip().strip('"') == "steamos"
@@ -4624,7 +4675,7 @@ class Plugin:
             'echo "Done - screen share is ready."\n')
         try:
             p = Path.home() / cls._FIX_SCRIPT
-            p.write_text(script)
+            p.write_text(script, encoding="utf-8")
             p.chmod(0o755)
             return f"bash ~/{cls._FIX_SCRIPT}"
         except Exception as e:
@@ -4651,7 +4702,7 @@ class Plugin:
             path = os.path.join(v4l, name)
             label = ""
             try:
-                with open(os.path.join(path, "name")) as f:
+                with open(os.path.join(path, "name"), encoding="utf-8") as f:
                     label = f.read().strip()
             except Exception:
                 pass
@@ -5045,6 +5096,12 @@ class Plugin:
                 "oneshot": True, "jpg": jpg}
 
     @classmethod
+    async def get_platform_caps(cls):
+        """Which host we run on and which features it has. The QAM reads this once
+        and hides the controls that cannot work there (see src/platform.ts)."""
+        return {"os": sc_platform.OS_NAME, "caps": sc_platform.capabilities()}
+
+    @classmethod
     async def get_vesktop_backend(cls):
         # stand-alone : dit au QAM si un moyen de faire tourner Vesktop existe
         # (flatpak ou binaire natif). backend=None → l'écran d'initialisation
@@ -5054,7 +5111,7 @@ class Plugin:
         import vesktop
         try:
             b = vesktop.backend()
-            if (b == "flatpak" and vesktop.install_failures >= 3
+            if (b in ("flatpak", "windows") and vesktop.install_failures >= 3
                     and not await vesktop.installed()):
                 # flatpak est là mais l'install Vesktop échoue en boucle (hors-
                 # ligne, flathub bloqué, disque plein) → montrer l'écran d'aide
@@ -5077,6 +5134,8 @@ class Plugin:
         # /proc plutôt que pgrep : procps n'est ni installé ni dans le PATH du
         # service sur NixOS/Alpine → FileNotFoundError à chaque ouverture du
         # panneau, et le partage d'écran disparaissait (issue #29).
+        if IS_WINDOWS:
+            return {"env": "windows"}
         try:
             import vesktop
             if vesktop.proc_running(comm="kwin_wayland|kwin_x11"):
@@ -5092,13 +5151,13 @@ class Plugin:
     # expose les commandes vocales sous KWin. Le backend Discord reste connecté
     # afin de ne jamais raccrocher une conversation lors d'un changement de
     # session. Valeur par défaut = console Gamescope uniquement.
-    _VOICE_ENV_CFG = os.path.expanduser("~/.config/steamcord-voice-env.json")
+    _VOICE_ENV_CFG = sc_platform.config_file("steamcord-voice-env.json")
 
     @classmethod
     async def get_voice_gamescope_only(cls):
         from json import load as _load
         try:
-            with open(cls._VOICE_ENV_CFG) as f:
+            with open(cls._VOICE_ENV_CFG, encoding="utf-8") as f:
                 cfg = _load(f)
             if isinstance(cfg, dict) and isinstance(cfg.get("gamescope_only"), bool):
                 return {"gamescope_only": cfg["gamescope_only"]}
@@ -5114,7 +5173,7 @@ class Plugin:
     def _voice_env_cfg(cls):
         from json import load as _load
         try:
-            with open(cls._VOICE_ENV_CFG) as f:
+            with open(cls._VOICE_ENV_CFG, encoding="utf-8") as f:
                 cfg = _load(f)
             return cfg if isinstance(cfg, dict) else {}
         except Exception:
@@ -5137,7 +5196,7 @@ class Plugin:
         tmp = cls._VOICE_ENV_CFG + ".tmp"
         try:
             os.makedirs(os.path.dirname(cls._VOICE_ENV_CFG), exist_ok=True)
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 _dump(cfg, f)
             os.replace(tmp, cls._VOICE_ENV_CFG)
         except Exception as e:
@@ -5179,7 +5238,7 @@ class Plugin:
             os.makedirs(os.path.dirname(cls._VOICE_ENV_CFG), exist_ok=True)
             cfg = cls._voice_env_cfg()       # garder vesktop_desktop_off (#66)
             cfg["gamescope_only"] = gamescope_only
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 _dump(cfg, f)
             os.replace(tmp, cls._VOICE_ENV_CFG)
         except Exception as e:
@@ -5479,7 +5538,7 @@ class Plugin:
     # menu QAM. La page poll voice_state.json (roster + réglages, réécrit par
     # la boucle de state) et consomme /pov_feed : MP4/H264 dans WebKit MSE,
     # WebM/VP8 décodé par GStreamer sur SteamOS/Cairo.
-    _OVERLAY_CFG = os.path.expanduser("~/.config/steamcord-overlay.json")
+    _OVERLAY_CFG = sc_platform.config_file("steamcord-overlay.json")
     _overlay_proc = None
     _overlay_settings = None
     _overlay_caps_cache = None
@@ -5514,7 +5573,7 @@ class Plugin:
         backend = os.environ.get("STEAMCORD_OVERLAY_BACKEND", "").strip()
         if not backend:
             try:
-                backend = (Path.home() / ".config/steamcord-overlay-backend").read_text().strip()
+                backend = (Path.home() / ".config/steamcord-overlay-backend").read_text(encoding="utf-8").strip()
             except OSError:
                 pass
         return ("--backend", backend) if backend in ("cairo", "webkit") else ()
@@ -5549,7 +5608,7 @@ class Plugin:
         import json as _json
         if cls._overlay_settings is None:
             try:
-                with open(cls._OVERLAY_CFG) as f:
+                with open(cls._OVERLAY_CFG, encoding="utf-8") as f:
                     cls._overlay_settings = _json.load(f)
             except Exception:
                 cls._overlay_settings = {}
@@ -5563,7 +5622,7 @@ class Plugin:
     def _save_overlay_settings(cls):
         import json as _json
         try:
-            with open(cls._OVERLAY_CFG, "w") as f:
+            with open(cls._OVERLAY_CFG, "w", encoding="utf-8") as f:
                 _json.dump(cls._load_overlay_settings(), f)
         except Exception as e:
             logger.warning(f"[overlay] save settings failed: {e!r}")
@@ -5631,7 +5690,7 @@ class Plugin:
             d = cls._overlay_dir()
             os.makedirs(d, exist_ok=True)
             tmp = os.path.join(d, ".voice_state.tmp")
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 _json.dump(payload, f)
             os.replace(tmp, os.path.join(d, "voice_state.json"))
         except Exception as e:
@@ -5993,3 +6052,57 @@ class Plugin:
         # Au-delà, le loader nous SIGKILL et la fin du nettoyage saute : il vaut
         # mieux que ça se voie dans le journal.
         (logger.warning if _dt > 3 else logger.info)(f"[unload] terminé en {_dt:.2f}s")
+
+
+# ── Windows: Linux-only callables answer "not supported" instead of shelling out ──
+# The QAM hides these controls on Windows (see get_platform_caps / src/platform.ts),
+# but a stale panel, an old cached bundle or a plugin-to-plugin call can still reach
+# them. Each one gets a harmless, correctly-shaped answer rather than a FileNotFoundError
+# from pactl / pw-dump / gamescopectl / evdev.
+_WIN_UNSUPPORTED = {
+    "start_game_audio": False,
+    "stop_game_audio": True,
+    "get_game_audio": {"active": False, "has_mic": True, "voice": 100, "game": 60},
+    "set_game_audio_volume": {"ok": False},
+    "get_chat_mix": {"mix": 50, "discord": 100, "game": 100},
+    "set_chat_mix": {"ok": False},
+    "get_stream_volume": None,
+    "set_stream_volume": False,
+    "get_audio_devices": {"outputs": [], "inputs": [], "default_output": "", "default_input": "",
+                          "selected_output": "auto", "selected_input": "auto", "unsupported": True},
+    "set_audio_output": False,
+    "set_audio_input": False,
+    "reload_audio_devices": {"ok": False},
+    "start_screen_camera": {"ok": False, "error": "not supported on Windows"},
+    "stop_screen_camera": {"ok": True},
+    "get_camera_preview": {"running": False, "jpg": ""},
+    "start_golive_preview": {"ok": False, "code": "unsupported"},
+    "refresh_golive_preview": {"ok": False},
+    "stop_golive_preview": {"ok": True},
+    "get_golive_preview": {"running": False, "pending": False, "oneshot": True, "jpg": ""},
+    "start_voice_overlay": {"ok": False},
+    "stop_voice_overlay": {"ok": True},
+    "set_voice_overlay_settings": {"ok": False},
+    "start_pov_overlay": {"ok": False},
+    "stop_pov_overlay": {"ok": True},
+    "set_pov_overlay_settings": {"ok": False},
+    "get_overlay_status": {"voice_on": False, "pov_on": False, "voice": None, "pov": None,
+                           "pov_supported": False, "voice_supported": False, "backend": None},
+    "list_input_devices": {"devices": [], "unreadable": []},
+    "start_input_capture": {"ok": False, "error": "not supported on Windows"},
+    "cancel_input_capture": {"ok": True},
+    "get_controller_hid": False,
+    "enable_ptt": {"ok": False},
+    "set_voice_shortcut": {"ok": False},
+}
+
+
+def _win_stub(value):
+    async def _stub(cls, *args, **kwargs):
+        return value
+    return classmethod(_stub)
+
+
+if IS_WINDOWS:
+    for _name, _value in _WIN_UNSUPPORTED.items():
+        setattr(Plugin, _name, _win_stub(_value))

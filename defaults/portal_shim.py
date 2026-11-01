@@ -178,7 +178,7 @@ def _proc_running(*names):
             if not p.name.isdigit():
                 continue
             try:
-                if (p / "comm").read_text().strip() in names:
+                if (p / "comm").read_text(encoding="utf-8").strip() in names:
                     return True
             except OSError:
                 continue
@@ -533,7 +533,7 @@ class PortalShim:
             # xdg-dbus-proxy de l'instance (cmdline anonyme) — MAIS il vit dans
             # le scope systemd de l'app (app-flatpak-dev.vencord.Vesktop-*.scope,
             # vérifié en live 18/07 : le refus du proxy cassait le Go Live natif).
-            cg = Path(f"/proc/{pid}/cgroup").read_text(errors="replace").lower()
+            cg = Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8", errors="replace").lower()
             if any(k in cg for k in ("vesktop", "vencord", "steamcord")):
                 return True
             log.warning(f"sender {sender} refusé (pid={pid}, "
@@ -752,7 +752,7 @@ async def serve_while_in_game_mode():
         loop.add_signal_handler(signal.SIGUSR1, shim.close_all)
         # Publié SEULEMENT une fois la poignée armée : un pidfile visible alors
         # que SIGUSR1 tue encore par défaut ferait du relais notre assassin.
-        with open(_shim_pid_path(), "w") as f:
+        with open(_shim_pid_path(), "w", encoding="utf-8") as f:
             f.write(str(os.getpid()))
     except (NotImplementedError, RuntimeError, OSError) as e:
         log.warning(f"SIGUSR1 non armé: {e!r}")

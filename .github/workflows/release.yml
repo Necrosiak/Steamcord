@@ -10,7 +10,24 @@ permissions:
   contents: write
 
 jobs:
+  # Real Windows runner: the Win32 process table, known folders, registry and netstat
+  # helpers behind the Windows port cannot be exercised on Linux.
+  windows-tests:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python (the version Decky Loader for Windows runs plugins on)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Windows platform tests
+        run: python -m unittest discover -s tests -p test_windows_support.py -v
+
   release-plugin:
+    needs: windows-tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -47,6 +64,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_overlay_environment.py -v
           python3 -m unittest discover -s tests -p test_dbus_next_py315.py -v
           python3 -m unittest discover -s tests -p test_steam_display_env.py -v
+          python3 -m unittest discover -s tests -p test_windows_support.py -v
           node --test tests/test-chat-panel-layout.cjs tests/test-runtime-control.cjs tests/test-runtime-state.cjs
 
       - name: Download Decky Plugin CLI
@@ -58,6 +76,16 @@ jobs:
       - name: Build plugin ZIP
         run: |
           $(pwd)/cli/decky plugin build $(pwd)
+          # The Decky CLI names the zip after the plugin, not the repository: give it
+          # the repository's name so the download URL in the docs stays stable.
+          ZIP=$(ls out/*.zip | head -n 1)
+          TARGET="out/${{ github.event.repository.name }}.zip"
+          [ "$ZIP" = "$TARGET" ] || mv "$ZIP" "$TARGET"
+          ls -la out
+
+      - name: Check the ZIP serves both the Steam Deck and Windows
+        run: |
+          python3 tests/check_release_zip.py out/${{ github.event.repository.name }}.zip
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
