@@ -1,20 +1,8 @@
 # Steamcord
 
-**Новое: Windows** — Steamcord теперь работает и в Steam Big Picture на Windows, с Decky через Playhub или с Decky Loader for Windows от musika08. Подробнее: [Steamcord в Windows](WINDOWS.md) (на английском). Спасибо [@SilvertongueRED](https://github.com/SilvertongueRED) за вклад!
-
-<!-- expanded-navigation -->
-**Расширенный вид** — Пункт главного меню Steam теперь называется **Steamcord**. Он открывает существующий расширенный вид Discord; панель быстрого доступа остаётся доступна.
-
-
-v1.41.4: Личные беседы обновляются автоматически и сортируются по последнему отправленному/полученному сообщению. Закрепляйте беседы маленьким значком и меняйте порядок закреплённых стрелками. Настройки сохраняются для каждого аккаунта Discord и общие для голоса, текста и Big Screen. Навигация контроллером проверена на Bazzite; приветствуются отзывы с других устройств SteamOS.
-
 **Discord в игровом режиме Steam** — плагин [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) для Steam Deck / Bazzite / SteamOS.
 
 Голосовой чат, личные сообщения и демонстрация экрана прямо из меню быстрого доступа — не выходя из игрового режима и без второго устройства.
-
-Экспериментальный оверлей POV может показывать видео в SteamOS через GStreamer VP8/WebM без WebKitGTK, если установлены необходимые системные компоненты. Ход проверки: [issue #70](https://github.com/Necrosiak/Steamcord/issues/70).
-
-Уведомления других плагинов Decky снова могут использовать звуковые наборы AudioLoader; уведомления с явно отключённым звуком остаются беззвучными. См. [issue #72](https://github.com/Necrosiak/Steamcord/issues/72).
 
 🌍 **Языки:** [English](../README.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Italiano](README.it.md) · [Português](README.pt.md) · [Nederlands](README.nl.md) · [Polski](README.pl.md) · **Русский**
 
@@ -24,6 +12,14 @@ v1.41.4: Личные беседы обновляются автоматичес
 > этим проектом и не одобрен им.
 >
 > Интерфейс полностью переведён на 9 языков и автоматически следует языку SteamOS.
+
+## Что нового
+
+- **Новое: Windows** — Steamcord теперь работает и в Steam Big Picture на Windows, с Decky через Playhub или с Decky Loader for Windows от musika08. Подробнее: [Steamcord в Windows](WINDOWS.md) (на английском). Спасибо [@SilvertongueRED](https://github.com/SilvertongueRED) за вклад!
+- **Расширенный вид** — Пункт главного меню Steam теперь называется **Steamcord**. Он открывает существующий расширенный вид Discord; панель быстрого доступа остаётся доступна.
+- v1.41.4: Личные беседы обновляются автоматически и сортируются по последнему отправленному/полученному сообщению. Закрепляйте беседы маленьким значком и меняйте порядок закреплённых стрелками. Настройки сохраняются для каждого аккаунта Discord и общие для голоса, текста и Big Screen. Навигация контроллером проверена на Bazzite; приветствуются отзывы с других устройств SteamOS.
+- Экспериментальный оверлей POV может показывать видео в SteamOS через GStreamer VP8/WebM без WebKitGTK, если установлены необходимые системные компоненты. Ход проверки: [issue #70](https://github.com/Necrosiak/Steamcord/issues/70).
+- Уведомления других плагинов Decky снова могут использовать звуковые наборы AudioLoader; уведомления с явно отключённым звуком остаются беззвучными. См. [issue #72](https://github.com/Necrosiak/Steamcord/issues/72).
 
 ---
 

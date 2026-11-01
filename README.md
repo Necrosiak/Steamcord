@@ -1,20 +1,8 @@
 # Steamcord
 
-**New: Windows support** — Steamcord now also runs in Steam Big Picture on Windows, with Decky from Playhub or musika08's Decky Loader for Windows. See [Steamcord on Windows](docs/WINDOWS.md). Thanks to [@SilvertongueRED](https://github.com/SilvertongueRED) for their contribution!
-
-<!-- expanded-navigation -->
-**Expanded view** — The Steam main menu entry is now named **Steamcord**. It opens the existing expanded Discord view; the Quick Access panel remains available.
-
-
-v1.41.4: Private conversations refresh automatically and follow the latest sent/received message. Pin a conversation with the small pin icon and use the arrows beside pinned chats to change their order. Pins and their order are saved per Discord account and shared between Voice, Text and Big Screen. Controller navigation fixes were tested on Bazzite; feedback from other SteamOS devices is welcome.
-
 **Discord in Steam Gaming Mode** — a [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) plugin for Steam Deck / Bazzite / SteamOS.
 
 Voice chat, private messages and screen sharing from the Quick Access Menu, without leaving Game Mode and without a second device.
-
-The experimental in-game POV overlay can render through GStreamer VP8/WebM on SteamOS without WebKitGTK, when the required system plugins are installed. See [issue #70](https://github.com/Necrosiak/Steamcord/issues/70) for testing progress.
-
-Notifications from other Decky plugins can use AudioLoader sound packs again; toasts explicitly marked silent stay silent. See [issue #72](https://github.com/Necrosiak/Steamcord/issues/72).
 
 🌍 **Languages:** **English** · [Français](docs/README.fr.md) · [Deutsch](docs/README.de.md) · [Español](docs/README.es.md) · [Italiano](docs/README.it.md) · [Português](docs/README.pt.md) · [Nederlands](docs/README.nl.md) · [Polski](docs/README.pl.md) · [Русский](docs/README.ru.md)
 
@@ -24,6 +12,14 @@ Notifications from other Decky plugins can use AudioLoader sound packs again; to
 > by that project.
 >
 > The plugin UI is fully translated into 9 languages and follows your SteamOS language automatically.
+
+## What's new
+
+- **New: Windows support** — Steamcord now also runs in Steam Big Picture on Windows, with Decky from Playhub or musika08's Decky Loader for Windows. See [Steamcord on Windows](docs/WINDOWS.md). Thanks to [@SilvertongueRED](https://github.com/SilvertongueRED) for their contribution!
+- **Expanded view** — The Steam main menu entry is now named **Steamcord**. It opens the existing expanded Discord view; the Quick Access panel remains available.
+- v1.41.4: Private conversations refresh automatically and follow the latest sent/received message. Pin a conversation with the small pin icon and use the arrows beside pinned chats to change their order. Pins and their order are saved per Discord account and shared between Voice, Text and Big Screen. Controller navigation fixes were tested on Bazzite; feedback from other SteamOS devices is welcome.
+- The experimental in-game POV overlay can render through GStreamer VP8/WebM on SteamOS without WebKitGTK, when the required system plugins are installed. See [issue #70](https://github.com/Necrosiak/Steamcord/issues/70) for testing progress.
+- Notifications from other Decky plugins can use AudioLoader sound packs again; toasts explicitly marked silent stay silent. See [issue #72](https://github.com/Necrosiak/Steamcord/issues/72).
 
 ---
 
