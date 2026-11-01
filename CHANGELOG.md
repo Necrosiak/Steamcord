@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.42.6 — 2026-11-01
+
+### Improved
+
+- **Steamcord in the Steam menu.** The entry now uses the plugin's name and opens the existing expanded view. Steamcord, SkullKey and BoneCast can each keep their own entry when installed together.
+
+### Fixes
+
+- Reopening the Steam menu or reloading a plugin no longer adds another entry. Older duplicate Discord entries are cleaned up too.
+
+### Thanks
+
+Thanks to [@cymbatpd23](https://github.com/cymbatpd23) for reporting the repeated entries in [#84](https://github.com/Necrosiak/Steamcord/issues/84).
+
+**Full changelog:** [v1.42.5...v1.42.6](https://github.com/Necrosiak/Steamcord/compare/v1.42.5...v1.42.6)
+
+
 ## 1.42.5 — 2026-10-29
 
 ### Fixed
