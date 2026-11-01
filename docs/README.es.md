@@ -138,6 +138,7 @@ Las peticiones de funciones y los «¡funciona!» en configuraciones inusuales v
 - [@Epictek](https://github.com/Epictek) — base del inicio de sesión con QR
 - [@jessebofill](https://github.com/jessebofill) — código de parcheo del menú de Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — el cliente de Discord nativo que controla Steamcord
+- [@SilvertongueRED](https://github.com/SilvertongueRED) — el **port para Windows** del fork [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), que mostró los puntos de integración del soporte para Windows (en la v1.43.0)
 
 ## Aviso sobre IA
 

@@ -138,6 +138,7 @@ Featureverzoeken en "het werkt!"-meldingen op ongewone setups zijn net zo waarde
 - [@Epictek](https://github.com/Epictek) — basis van het aanmelden met QR-code
 - [@jessebofill](https://github.com/jessebofill) — code voor het patchen van het Steam-menu
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — de native Discord-client die Steamcord aanstuurt
+- [@SilvertongueRED](https://github.com/SilvertongueRED) — de **Windows-port** uit de fork [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), die de aanknopingspunten voor Windows-ondersteuning liet zien (in v1.43.0)
 
 ## AI-vermelding
 

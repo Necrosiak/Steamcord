@@ -139,6 +139,7 @@ Feature-Wünsche und „läuft!“-Meldungen von ungewöhnlichen Setups sind gen
 - [@Epictek](https://github.com/Epictek) — Grundlage der QR-Code-Anmeldung
 - [@jessebofill](https://github.com/jessebofill) — Code für das Steam-Menü-Patching
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — der native Discord-Client, den Steamcord steuert
+- [@SilvertongueRED](https://github.com/SilvertongueRED) — der **Windows-Port** aus dem Fork [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), der die Anknüpfungspunkte für die Windows-Unterstützung gezeigt hat (in v1.43.0)
 
 ## KI-Hinweis
 

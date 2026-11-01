@@ -138,6 +138,7 @@ Pedidos de funcionalidades e relatos de «funciona!» em configurações incomun
 - [@Epictek](https://github.com/Epictek) — base do login por QR Code
 - [@jessebofill](https://github.com/jessebofill) — código de patch do menu do Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — o cliente Discord nativo que o Steamcord controla
+- [@SilvertongueRED](https://github.com/SilvertongueRED) — o **port para Windows** do fork [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), que mostrou os pontos de integração do suporte a Windows (na v1.43.0)
 
 ## Aviso sobre IA
 

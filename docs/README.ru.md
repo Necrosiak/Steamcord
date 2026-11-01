@@ -138,6 +138,7 @@ sudo systemctl restart plugin_loader
 - [@Epictek](https://github.com/Epictek) — основа входа по QR-коду
 - [@jessebofill](https://github.com/jessebofill) — код патчинга меню Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — нативный клиент Discord, которым управляет Steamcord
+- [@SilvertongueRED](https://github.com/SilvertongueRED) — **порт для Windows** из форка [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), который показал точки интеграции для поддержки Windows (в v1.43.0)
 
 ## Об использовании ИИ
 

@@ -138,6 +138,7 @@ Prośby o funkcje i zgłoszenia „działa!” na nietypowych konfiguracjach są
 - [@Epictek](https://github.com/Epictek) — podstawa logowania kodem QR
 - [@jessebofill](https://github.com/jessebofill) — kod łatania menu Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — natywny klient Discord, którym steruje Steamcord
+- [@SilvertongueRED](https://github.com/SilvertongueRED) — **port na Windows** z forka [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), który wskazał punkty integracji obsługi Windows (w v1.43.0)
 
 ## Informacja o AI
 

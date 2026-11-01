@@ -185,6 +185,7 @@ Feature requests and "it works!" reports on unusual setups are just as valuable.
 - [@azizzidi](https://github.com/azizzidi) — **clickable notifications** for messages and calls, plus readable Discord mentions ([#71](https://github.com/Necrosiak/Steamcord/pull/71), landed in v1.41.1)
 - [@Memberoffoxhound](https://github.com/Memberoffoxhound) — five fixes carried over from his [GameModeCord](https://github.com/Memberoffoxhound/GameModeCord) fork (landed in v1.31.0): **the panel scaling to its own size** instead of Deck-absolute pixels, **B walking back one menu at a time**, **chat images and videos opening in the fullscreen viewer**, and two that were silently breaking screen sharing for everyone — **v4l2loopback looked up in sysfs** rather than hardcoded to `/dev/video42`, and **both share buttons no longer vanishing from DM calls**
 - [@jezonek](https://github.com/jezonek) — **push-to-talk on a keyboard key or a mouse button** ([#34](https://github.com/Necrosiak/Steamcord/pull/34)), including the backend evdev reader and its privacy constraints
+- [@SilvertongueRED](https://github.com/SilvertongueRED) — the **Windows port** from the [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) fork ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), which showed the integration points for Windows support (landed in v1.43.0)
 
 ### Community bug hunters
 
