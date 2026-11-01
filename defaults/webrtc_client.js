@@ -217,14 +217,30 @@
         } finally { f.remove(); }
         return q;
     };
+    // Host marker set by the backend before this script runs (main.py, platform_js).
+    const IS_WINDOWS_HOST = window.STEAMCORD_PLATFORM === "windows";
     const directDesktop = async () => {
         const q = readStreamQuality();
-        const mandatory = { chromeMediaSource: "desktop", chromeMediaSourceId: "screen:0:0" };
+        // Linux/gamescope has exactly one source ("screen:0:0", served by portal_shim.py).
+        // On Windows Electron numbers displays itself, so walk the likely ids until one
+        // gives a video track; the primary display comes first.
+        const sourceIds = IS_WINDOWS_HOST ? ["screen:0:0", "screen:1:0", "screen:-1:0"] : ["screen:0:0"];
+        const mandatory = { chromeMediaSource: "desktop", chromeMediaSourceId: sourceIds[0] };
         const res = Number(q && q.resolution);
         const fps = Number(q && q.frameRate);
         if (res > 0) { mandatory.maxHeight = res; mandatory.maxWidth = Math.round(res * 16 / 9); }
         if (fps > 0) mandatory.maxFrameRate = fps;
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory } });
+        let stream = null, lastErr = null;
+        for (const id of sourceIds) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false, video: { mandatory: { ...mandatory, chromeMediaSourceId: id } } });
+                if (stream.getVideoTracks()[0]) break;
+                stream.getTracks().forEach((t) => t.stop());
+                stream = null;
+            } catch (e) { lastErr = e; }
+        }
+        if (!stream) throw lastErr || new Error("capture directe sans piste vidéo");
         const video = stream.getVideoTracks()[0];
         if (!video) throw new Error("capture directe sans piste vidéo");
         try { video.contentHint = "motion"; } catch (_) {}
@@ -260,6 +276,13 @@
         // Un seul usage : posé par le $golive du QAM pour CE partage.
         const direct = !!window.STEAMCORD_GOLIVE_DIRECT;
         window.STEAMCORD_GOLIVE_DIRECT = false;
+        if (IS_WINDOWS_HOST) {
+            // Windows: Electron's desktop capture is the only path (no portal, no relay).
+            const stream = await directDesktop();
+            try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                m: "[golive] Windows : capture d'écran Electron OK (" + stream.getTracks().map((t) => t.kind).join("+") + ")" })); } catch (_) {}
+            return keepShareStream(stream);
+        }
         if (direct) {
             try {
                 const stream = await directDesktop();

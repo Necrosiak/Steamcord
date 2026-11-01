@@ -11,7 +11,14 @@ import { DANGER, InlineBtn, Notice } from "../Styled";
 // Partage d'écran en MODE JEU : gamescope n'a pas de portail → Go Live = écran noir.
 // On capture le node PipeWire gamescope → webcam virtuelle (/dev/video42), utilisée
 // comme caméra Discord. Voir gst_camera.py + start_screen_camera (backend).
+import { hasCap } from "../../platform";
+
+// The virtual camera (v4l2loopback) exists on Linux only.
 export function ScreenCameraButton() {
+  return hasCap("virtual_camera") ? <ScreenCameraButtonInner /> : null;
+}
+
+function ScreenCameraButtonInner() {
   const state = useSteamcordState();
   // L'état vit dans screenCam.ts (survit au démontage du QAM) : un useState local
   // repartirait à false à chaque réouverture alors que le stream tourne encore.

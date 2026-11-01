@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Windows support (Steam Big Picture), in the same zip.** Steamcord also runs on Windows
+  10 / 11 with [Decky Loader for Windows](https://github.com/musika08/decky-loader-windows)
+  3.3+. It picks the host by itself at start-up; nothing to configure. Voice chat, DMs,
+  servers and text chat, QR login, notifications, the soundboard, Rich Presence, per-user
+  volume and Go Live (video) work through Vesktop as on the Deck. See
+  [docs/WINDOWS.md](docs/WINDOWS.md).
+- Vesktop on Windows is installed per-user (`winget`, or the official installer, silently),
+  started minimised on its own profile per Steam account, and never touches a Vesktop the
+  user runs on the desktop.
+- The QAM hides what a host cannot do (PipeWire audio routing, game-audio share, chat mix,
+  virtual camera, overlays, the evdev controller shortcut, keep-awake) through
+  `Plugin.get_platform_caps` and `src/platform.ts`.
+
+### Changed
+
+- Every text file the backend reads or writes names UTF-8 (Windows defaults to its legacy
+  code page, which could not read `steamcord_client.js`).
+- The start-up retry log line is capped at 400 characters.
+- On Windows the local helper server listens on `127.0.0.1` only, and Linux-only callables
+  return harmless "not supported" values instead of shelling out.
+
+### Steam Deck / Linux
+
+No behaviour change: every Linux path is kept behind a platform check and the existing tests pass.
+
+### Tests and CI
+
+- `tests/test_windows_support.py`, with real-Windows cases on a `windows-latest` job.
+- `tests/check_release_zip.py` fails a release whose zip lacks the Deck files or the Windows layer.
+
 ## 1.42.6 — 2026-11-01
 
 ### Improved

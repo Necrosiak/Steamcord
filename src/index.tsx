@@ -88,6 +88,7 @@ import { useOpenChat } from "./components/ExpandedNav";
 import { TextChat } from "./components/TextChat";
 import { DiscordRuntimeControl } from "./components/DiscordRuntimeControl";
 import { t } from "./i18n";
+import { hasCap, isWindows, loadPlatform } from "./platform";
 import {
   call,
   addEventListener,
@@ -1276,8 +1277,8 @@ const UpdaterSection = () => {
 // "gamescope" (console). Depuis v1.15.0 Go Live marche partout (portail KWin
 // ou portal_shim) → ne sert plus qu'à décider si le fallback « mode jeu »
 // (v4l2) est proposé en plus ("unknown" → oui, par sécurité).
-function useShareEnv(): "desktop" | "gamescope" | "unknown" {
-  const [env, setEnv] = useState<"desktop" | "gamescope" | "unknown">("unknown");
+function useShareEnv(): "desktop" | "gamescope" | "windows" | "unknown" {
+  const [env, setEnv] = useState<"desktop" | "gamescope" | "windows" | "unknown">("unknown");
   useEffect(() => {
     let alive = true;
     const poll = () =>
@@ -1514,7 +1515,7 @@ const ContentBody = () => {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", minHeight: "60vh", padding: "0 12px", textAlign: "center" }}>
           <h2 style={{ margin: "0" }}><IcWarn /></h2>
-          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>{t("vesktop_missing")}</div>
+          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>{t(isWindows() ? "vesktop_missing_windows" : "vesktop_missing")}</div>
         </div>
       );
     }
@@ -2314,18 +2315,28 @@ const ConfigPanel = () => {
       </SR>
       <OpenViewConfig />
       <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcJoystick /> {t("config_shortcut")}</div>
-      </SR>
-      <VoiceShortcutConfig />
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcHeadphones /> {t("config_audio")}</div>
-      </SR>
-      <VoiceDesktopModeSetting />
-      <ScreenCamSetting />
-      <AudioDevicesConfig />
-      <hr />
+      {/* Push-to-talk / mute combo reads evdev devices: Linux only for now. */}
+      {hasCap("controller_shortcut") && (
+        <>
+          <SR>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcJoystick /> {t("config_shortcut")}</div>
+          </SR>
+          <VoiceShortcutConfig />
+          <hr />
+        </>
+      )}
+      {/* Everything here is PipeWire / KWin / v4l2: Linux only. */}
+      {hasCap("audio_routing") && (
+        <>
+          <SR>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcHeadphones /> {t("config_audio")}</div>
+          </SR>
+          <VoiceDesktopModeSetting />
+          <ScreenCamSetting />
+          <AudioDevicesConfig />
+          <hr />
+        </>
+      )}
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcMic /> {t("config_mic")}</div>
       </SR>
@@ -2340,7 +2351,7 @@ const ConfigPanel = () => {
       <NotifSoundSetting />
       <StreamerModeSetting />
       <StreamQualitySetting />
-      <KeepAwakeSetting />
+      {hasCap("keep_awake") && <KeepAwakeSetting />}
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcRefresh /> {t("config_updates")}</div>
@@ -2525,8 +2536,11 @@ export default definePlugin(() => {
   initVideoRelay();
   // Préférence + filet de restauration si une session précédente est morte
   // en plein visionnage (délai d'économiseur laissé à 0).
-  initKeepAwake();
-  initVoiceShortcut();
+  // Host + feature flags from the backend (Steam Deck vs Windows Big Picture).
+  loadPlatform().then((p) => {
+    if (p.caps.keep_awake) initKeepAwake();
+    if (p.caps.controller_shortcut) initVoiceShortcut();
+  });
 
   installClickHook();
 

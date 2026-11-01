@@ -75,6 +75,7 @@ const T: Record<Locale, Dict> = {
     login_vesktop_hint: "Can't scan the QR? Open Vesktop in Desktop Mode and sign in there once — Steamcord reuses that session. No login details ever pass through this plugin.",
     initializing: "Initializing…",
     vesktop_missing: "Vesktop cannot run: install flatpak (e.g. sudo pacman -S flatpak) or the native vesktop package, then reopen this panel.",
+    vesktop_missing_windows: "Steamcord could not install Vesktop automatically. Install it from vesktop.dev (or run: winget install Vencord.Vesktop), then reopen this panel.",
     initializing_slow: "This is taking longer than usual. In Desktop Mode, open Vesktop: if Discord asks you to sign in, sign in there. If Discord never finishes loading, right-click the Vesktop tray icon → Repair Vencord.",
     loading: "Loading…",
     soundboard_title: "Soundboard",

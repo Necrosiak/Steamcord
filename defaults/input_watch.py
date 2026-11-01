@@ -666,7 +666,7 @@ def list_hid_controllers():
     out = []
     for dev in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
         try:
-            with open(os.path.join(dev, "device", "uevent")) as f:
+            with open(os.path.join(dev, "device", "uevent"), encoding="utf-8") as f:
                 uevent = f.read()
         except OSError:
             continue

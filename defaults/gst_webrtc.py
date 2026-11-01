@@ -105,7 +105,7 @@ def _release_portal_sessions():
     confirmer que c'est bien notre shim avant de signaler.
     """
     try:
-        with open(_shim_pid_path()) as f:
+        with open(_shim_pid_path(), encoding="utf-8") as f:
             pid = int(f.read().strip())
     except Exception:
         return                      # pas de shim (mode bureau) : rien à libérer

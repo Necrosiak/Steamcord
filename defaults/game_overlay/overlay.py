@@ -936,7 +936,7 @@ def run_cairo(state_dir, state_path):
 
     def tick():
         try:
-            with open(state_path) as f:
+            with open(state_path, encoding="utf-8") as f:
                 txt = f.read()
         except Exception:
             return True                     # pas encore écrit : on retente
