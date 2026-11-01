@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.43.0 — 2026-11-01
+
+### New
+
+- **Windows support.** Steamcord now runs in Steam Big Picture on Windows, with the official Decky Loader installed by [Playhub](https://github.com/LoZazaMastro/Playhub) or with musika08's [Decky Loader for Windows](https://github.com/musika08/decky-loader-windows). Voice, private messages, notifications, game activity, Go Live with sound and watching streams all work. Steamcord downloads its own private copy of Vesktop, so a Discord you already use on Windows is left alone. Features that rely on Linux components (audio pickers, game audio mixing, overlays, controller shortcuts) are hidden there. See [Steamcord on Windows](docs/WINDOWS.md).
+
+### Improved
+
+- **Streams you aren't watching stay quiet.** In Game Mode and on Windows, a stream shared in your voice channel no longer plays its sound until you press Watch, and closing the panel stops it again; voices and your volume settings are untouched. Thanks to [@jckirton](https://github.com/jckirton) for the suggestion in [#83](https://github.com/Necrosiak/Steamcord/issues/83).
+
+### Fixes
+
+- The in-game overlay is no longer reported as unavailable when Steamcord starts: the check that looks for it now runs in the same clean environment as the overlay itself.
+
+### Thanks
+
+Thanks to [@SilvertongueRED](https://github.com/SilvertongueRED), whose [Windows fork](https://github.com/SilvertongueRED/Steamcord-for-Windows) showed the way for this port.
+
+**Full changelog:** [v1.42.6...v1.43.0](https://github.com/Necrosiak/Steamcord/compare/v1.42.6...v1.43.0)
+
 ## 1.42.6 — 2026-11-01
 
 ### Improved
