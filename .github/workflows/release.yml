@@ -26,14 +26,14 @@ jobs:
         with:
           version: "9.4.0"
 
-      - name: Test menu and expanded view lifecycle
-        run: |
-          node tests/steam-menu-lifecycle.test.cjs
-
       - name: Build frontend from source
         run: |
           pnpm i
           pnpm run build
+
+      - name: Test menu and expanded view lifecycle
+        run: |
+          node tests/steam-menu-lifecycle.test.cjs
 
       - name: Test private conversation ordering and navigation regressions
         run: |
