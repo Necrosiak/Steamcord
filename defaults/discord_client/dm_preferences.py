@@ -14,7 +14,7 @@ def pins_path(user_id):
 
 def load_pins(user_id):
     try:
-        data = json.loads(pins_path(user_id).read_text())
+        data = json.loads(pins_path(user_id).read_text(encoding="utf-8"))
         return list(dict.fromkeys(str(value) for value in data if str(value).isdigit())) if isinstance(data, list) else []
     except (OSError, ValueError):
         return []

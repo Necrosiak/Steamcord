@@ -1,3 +1,4 @@
+import { HostFeature, initHost, useHost, supports } from "./host";
 import {
   definePlugin,
   PanelSection,
@@ -50,6 +51,7 @@ const SliderFieldAny = SliderField as any;
 
 import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
+import { startVideoVisibility, stopVideoVisibility } from "./videoVisibility";
 import { initVideoRelay } from "./videoRelay";
 import { initKeepAwake, releaseKeepAwake, setKeepAwakeEnabled } from "./keepAwake";
 import { DiscordExpandedModal } from "./components/DiscordExpanded";
@@ -112,6 +114,7 @@ const SR = PanelSectionRow || ((p: any) => <div>{p.children}</div>);
 const CaptchaBtn = DialogButton as any;
 
 const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: string; qr_scanned?: boolean; captcha_needed?: boolean }) => {
+  const host = useHost();
   // Deux méthodes de login SEULEMENT : QR (ci-dessous) ou Vesktop en mode
   // Bureau. AUCUN identifiant ne transite par le plugin — pas de page de login
   // interne (l'ancien bouton « plein écran » pilotait une BrowserView Steam de
@@ -157,7 +160,7 @@ const NotLoggedIn = ({ qr_login, qr_scanned, captcha_needed }: { qr_login?: stri
       )}
       <div style={{ marginTop: 12, padding: "8px 10px", background: "rgba(255,255,255,0.05)", borderRadius: 8 }}>
         <p style={{ fontSize: 11, opacity: 0.75, margin: 0, lineHeight: 1.45 }}>
-          {t("login_vesktop_hint")}
+          {t(host.onWindows ? "login_vesktop_hint_windows" : "login_vesktop_hint")}
         </p>
       </div>
     </div>
@@ -1276,8 +1279,8 @@ const UpdaterSection = () => {
 // "gamescope" (console). Depuis v1.15.0 Go Live marche partout (portail KWin
 // ou portal_shim) → ne sert plus qu'à décider si le fallback « mode jeu »
 // (v4l2) est proposé en plus ("unknown" → oui, par sécurité).
-function useShareEnv(): "desktop" | "gamescope" | "unknown" {
-  const [env, setEnv] = useState<"desktop" | "gamescope" | "unknown">("unknown");
+function useShareEnv(): "desktop" | "gamescope" | "windows" | "unknown" {
+  const [env, setEnv] = useState<"desktop" | "gamescope" | "windows" | "unknown">("unknown");
   useEffect(() => {
     let alive = true;
     const poll = () =>
@@ -1442,6 +1445,7 @@ const ExpandedCallPanel = () => {
 };
 
 const ContentBody = () => {
+  const host = useHost();
   const state = useSteamcordState();
   // Vue d'ouverture : réglable, « Vocal » + « Serveurs » par défaut (#43).
   const [topTab, setTopTab] = useState<"voice" | "text" | "config">(getOpenTop);
@@ -1514,7 +1518,7 @@ const ContentBody = () => {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", minHeight: "60vh", padding: "0 12px", textAlign: "center" }}>
           <h2 style={{ margin: "0" }}><IcWarn /></h2>
-          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>{t("vesktop_missing")}</div>
+          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>{t(host.onWindows ? "vesktop_missing_windows" : "vesktop_missing")}</div>
         </div>
       );
     }
@@ -2313,11 +2317,14 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcChat /> {t("config_open_on")}</div>
       </SR>
       <OpenViewConfig />
+      <HostFeature name="controller_shortcut">
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcJoystick /> {t("config_shortcut")}</div>
       </SR>
       <VoiceShortcutConfig />
+      </HostFeature>
+      <HostFeature name="audio_routing">
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcHeadphones /> {t("config_audio")}</div>
@@ -2325,6 +2332,7 @@ const ConfigPanel = () => {
       <VoiceDesktopModeSetting />
       <ScreenCamSetting />
       <AudioDevicesConfig />
+      </HostFeature>
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcMic /> {t("config_mic")}</div>
@@ -2340,7 +2348,7 @@ const ConfigPanel = () => {
       <NotifSoundSetting />
       <StreamerModeSetting />
       <StreamQualitySetting />
-      <KeepAwakeSetting />
+      <HostFeature name="keep_awake"><KeepAwakeSetting /></HostFeature>
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcRefresh /> {t("config_updates")}</div>
@@ -2523,10 +2531,15 @@ export default definePlugin(() => {
 
   // Réception vidéo (voir le Go Live/cam des autres dans leur bloc).
   initVideoRelay();
+  startVideoVisibility();
   // Préférence + filet de restauration si une session précédente est morte
   // en plein visionnage (délai d'économiseur laissé à 0).
-  initKeepAwake();
-  initVoiceShortcut();
+  let hostActive = true;
+  initHost().then(() => {
+    if (!hostActive) return;
+    if (supports("keep_awake")) initKeepAwake();
+    if (supports("controller_shortcut")) initVoiceShortcut();
+  });
 
   installClickHook();
 
@@ -2612,6 +2625,8 @@ export default definePlugin(() => {
     content: <Suspense fallback={<div style={{ padding: 8 }}>{t("loading")}</div>}><ContentErrorBoundary><Content /></ContentErrorBoundary></Suspense>,
     icon: <FaDiscord />,
     onDismount() {
+      hostActive = false;
+      stopVideoVisibility();
       unpatchMenu();
       routerHook.removeRoute("/discord");
       uninstallClickHook();

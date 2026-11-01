@@ -36,3 +36,12 @@ class OverlayEnvironmentTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OverlayProbeEnvironmentTests(unittest.TestCase):
+    def test_probe_starts_from_the_user_environment(self):
+        # Inherited from plugin_loader, PyInstaller's LD_LIBRARY_PATH makes the
+        # system Python die silently and the overlay reads as unavailable.
+        source = (Path(__file__).resolve().parents[1] / 'main.py').read_text(encoding='utf-8')
+        probe = source[source.index('async def _overlay_caps'):source.index('cls._overlay_caps_cache = caps')]
+        self.assertIn('env=dict(vesktop._user_env())', probe)

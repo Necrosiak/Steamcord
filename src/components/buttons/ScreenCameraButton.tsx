@@ -1,3 +1,4 @@
+import { HostFeature } from "../../host";
 import { useEffect, useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
 import { FaGamepad, FaStop } from "react-icons/fa";
@@ -12,6 +13,10 @@ import { DANGER, InlineBtn, Notice } from "../Styled";
 // On capture le node PipeWire gamescope → webcam virtuelle (/dev/video42), utilisée
 // comme caméra Discord. Voir gst_camera.py + start_screen_camera (backend).
 export function ScreenCameraButton() {
+  return <HostFeature name="virtual_camera"><ScreenCameraButtonContent /></HostFeature>;
+}
+
+function ScreenCameraButtonContent() {
   const state = useSteamcordState();
   // L'état vit dans screenCam.ts (survit au démontage du QAM) : un useState local
   // repartirait à false à chaque réouverture alors que le stream tourne encore.

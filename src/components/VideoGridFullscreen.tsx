@@ -1,3 +1,4 @@
+import { VideoVisibility } from "../videoVisibility";
 import { DialogButton, Focusable, ModalRoot, showModal } from "@decky/ui";
 import { useEffect, useMemo, useState } from "react";
 import { t } from "../i18n";
@@ -59,7 +60,7 @@ function VideoTile({ user, kind, track }: { user: any; kind: string; track: Medi
   return (
     <Btn noFocusRing
       onClick={() => showModal(
-        <FullscreenVideoModal track={track} label={<>{kindIcon(kind)} {user.username}</>} />
+        <FullscreenVideoModal track={track} userId={user.id} label={<>{kindIcon(kind)} {user.username}</>} />
       )}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -187,6 +188,7 @@ export function VideoGridModal({ closeModal }: { closeModal?: () => void }) {
       onCancelActionDescription={t("video_exit_fullscreen")}
       bAllowFullSize
     >
+      <VideoVisibility users={liveUsers.map(u => u.id)} />
       {/* FULL_BLEED : déborde du cadre ~573px du dialog (cf. Styled.tsx). Les
           ancêtres overflow:hidden font toute la fenêtre, rien n'est clippé
           (vérifié en live au CDP). */}

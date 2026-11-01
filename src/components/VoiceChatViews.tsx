@@ -1,3 +1,5 @@
+import { HostFeature } from "../host";
+import { VideoVisibility } from "../videoVisibility";
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { memo, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useSteamcordState } from "../hooks/useSteamcordState";
@@ -92,8 +94,8 @@ const ModalRootAny = ModalRoot as any;
 // croyait plein écran, le user voyait une tranche). La modale, elle, est rendue
 // par Steam par-dessus tout l'écran, et le bouton B la ferme nativement
 // (onCancel) — exactement la maquette « window popup » de David (#8).
-export function FullscreenVideoModal({ track, label, closeModal }:
-  { track: MediaStreamTrack; label: ReactNode; closeModal?: () => void }) {
+export function FullscreenVideoModal({ track, label, userId, closeModal }:
+  { track: MediaStreamTrack; label: ReactNode; userId?: string; closeModal?: () => void }) {
   const ms = useMemo(() => new MediaStream([track]), [track]);
   // La piste meurt (partage coupé pendant le plein écran) → on se referme au
   // lieu de laisser une image figée.
@@ -114,6 +116,7 @@ export function FullscreenVideoModal({ track, label, closeModal }:
       onCancelActionDescription={t("video_exit_fullscreen")}
       bAllowFullSize
     >
+      <VideoVisibility users={userId ? [userId] : []} />
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, ...FULL_BLEED }}>
         <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
         <div style={{
@@ -654,6 +657,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           transition: "opacity 0.08s ease-out",
         }} />
       </div>
+      <HostFeature name="stream_preview">
       {/* Aperçu de MON partage d'écran (mode jeu), juste sous mon pseudo, pour
           voir ce que les autres voient. */}
       {isSelf && screenCamOn && (
@@ -670,6 +674,8 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
           {GOLIVE_PREVIEW_ENABLED ? <GoLivePreviewTile /> : <Notice>{t("self_preview_removed")}</Notice>}
         </div>
       )}
+
+      </HostFeature>
 
       {/* Volume VOIX (à quel point TU l'entends) — barre PLEINE LARGEUR. */}
       <div ref={sliderFix} className="steamcord-slider" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
@@ -728,6 +734,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
                      onClick={() => (watching ? stopVideo(user.id) : watchVideo(user.id))}>
             {watching ? t("video_stop") : <>{user?.is_live ? <IcMonitor /> : <IcCameraVideo />} {t("video_watch")}</>}
           </InlineBtn>
+          {watching && <VideoVisibility users={[user.id]} />}
           {watching && remoteVideo && (
             <MultiVideoTiles
               userId={user.id}
@@ -735,7 +742,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
               onFullscreen={(tid) => {
                 const trk = remoteVideo.getVideoTracks().find((x) => x.id === tid);
                 if (trk) showModal(
-                  <FullscreenVideoModal track={trk} label={trackLabel(getTrackKind(user.id, trk.id))} />,
+                  <FullscreenVideoModal track={trk} userId={user.id} label={trackLabel(getTrackKind(user.id, trk.id))} />,
                 );
               }}
             />
@@ -758,6 +765,10 @@ const ToggleFieldAny = ToggleField as any;
 // GAMESCOPE_EXTERNAL_OVERLAY côté backend). Réglages répercutés en live (la
 // page overlay poll le state).
 function OverlayMenu() {
+  return <HostFeature name="overlay"><OverlayMenuContent /></HostFeature>;
+}
+
+function OverlayMenuContent() {
   const [open, setOpen] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
   const [povOn, setPovOn] = useState(false);
@@ -892,6 +903,10 @@ function OverlayMenu() {
 // plus bas, droite = jeu plus bas, milieu = les deux à 100 %. Le backend ne
 // touche que ce que l'on entend, jamais ce qui part vers l'appel ou le Go Live.
 export function ChatMixPanel() {
+  return <HostFeature name="chat_mix"><ChatMixPanelContent /></HostFeature>;
+}
+
+function ChatMixPanelContent() {
   const sliderFix = useSliderClipFix();
   const [open, setOpen] = useState(false);
   // null tant que la valeur enregistrée n'est pas lue : sinon le 50 de départ

@@ -219,7 +219,10 @@
     };
     const directDesktop = async () => {
         const q = readStreamQuality();
-        const mandatory = { chromeMediaSource: "desktop", chromeMediaSourceId: "screen:0:0" };
+        // Windows desktop capture uses a different source ID from PipeWire.
+        // Measured on the private Windows Vesktop: 0 and 1 fail, -1 captures.
+        const windows = window.STEAMCORD_HOST === "windows";
+        const mandatory = { chromeMediaSource: "desktop", chromeMediaSourceId: windows ? "screen:-1:0" : "screen:0:0" };
         const res = Number(q && q.resolution);
         const fps = Number(q && q.frameRate);
         if (res > 0) { mandatory.maxHeight = res; mandatory.maxWidth = Math.round(res * 16 / 9); }
@@ -228,6 +231,7 @@
         const video = stream.getVideoTracks()[0];
         if (!video) throw new Error("capture directe sans piste vidéo");
         try { video.contentHint = "motion"; } catch (_) {}
+        if (windows) return stream; // Linux virtual-microphone bridge is not available here.
         try {
             const dev = (await navigator.mediaDevices.enumerateDevices())
                 .find((d) => d.kind === "audioinput" && d.label === "vencord-screen-share");
@@ -260,6 +264,18 @@
         // Un seul usage : posé par le $golive du QAM pour CE partage.
         const direct = !!window.STEAMCORD_GOLIVE_DIRECT;
         window.STEAMCORD_GOLIVE_DIRECT = false;
+        if (direct && window.STEAMCORD_HOST === "windows" && nativeGetDisplayMedia) {
+            try {
+                // Vesktop supplies Windows process-loopback audio here. Legacy
+                // getUserMedia always returns full-system loopback, which would
+                // send the call's voices back to the spectators.
+                const stream = await nativeFirst({ ...constraints, audio: true });
+                return keepShareStream(stream);
+            } catch (e) {
+                try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
+                    m: "[golive] Windows native capture unavailable; trying video-only desktop capture" })); } catch (_) {}
+            }
+        }
         if (direct) {
             try {
                 const stream = await directDesktop();
@@ -277,6 +293,7 @@
                 console.log("[Steamcord] getDisplayMedia → portail natif OK");
                 return keepShareStream(stream);
             } catch (e) {
+                if (window.STEAMCORD_HOST === "windows") throw e;
                 nativePortalDead = true;
                 console.log("[Steamcord] getDisplayMedia natif KO (" + ((e && e.message) || e) + ") → relais GStreamer local ; les prochains partages iront direct au relais");
                 try {
@@ -285,6 +302,7 @@
                 } catch (_) {}
             }
         }
+        if (window.STEAMCORD_HOST === "windows") throw new Error("Windows screen capture is unavailable");
         return keepShareStream(await getRTCStream(constraints));
     };
 

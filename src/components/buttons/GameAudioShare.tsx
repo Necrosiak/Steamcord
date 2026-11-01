@@ -1,3 +1,4 @@
+import { HostFeature } from "../../host";
 import { SliderField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { useSteamcordState } from "../../hooks/useSteamcordState";
@@ -14,6 +15,10 @@ const Slider = SliderField as any;
 // main.py). Les deux jauges règlent le volume de chaque branche du mix — ce que
 // les AUTRES entendent, pas le volume local.
 export function GameAudioShare() {
+  return <HostFeature name="game_audio_share"><GameAudioShareContent /></HostFeature>;
+}
+
+function GameAudioShareContent() {
   const sliderFix = useSliderClipFix();
   const state = useSteamcordState();
   const [on, setOn] = useState(false);

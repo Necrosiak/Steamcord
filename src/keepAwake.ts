@@ -1,3 +1,4 @@
+import { supports } from "./host";
 // Inhibiteur d'économiseur d'écran pendant le visionnage d'un stream (#51).
 //
 // SteamOS n'offre AUCUNE API d'inhibition : le service Screensaver de l'UI est
@@ -80,7 +81,7 @@ const savePending = (values: Record<string, number> | null) =>
   call("set_keepawake_pending", values).catch(() => {});
 
 async function doArm() {
-  if (!enabled || held) return;
+  if (!supports("keep_awake") || !enabled || held) return;
   if (!clientSettings()) return;  // pas de store → on ne touche à rien
   const snapshot: Held[] = [];
   for (const e of FIELDS) {

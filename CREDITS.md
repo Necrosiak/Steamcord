@@ -171,6 +171,11 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 # Code contributions
 
+### [@SilvertongueRED](https://github.com/SilvertongueRED)
+
+- The [Windows fork](https://github.com/SilvertongueRED/Steamcord-for-Windows),
+  which helped identify the Windows integration points for this port.
+
 ### [@theupriser](https://github.com/theupriser)
 
 - The "Discord" entry back in Steam's main menu, opening the expanded view,

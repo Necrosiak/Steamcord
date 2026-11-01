@@ -15,6 +15,10 @@ from decky import logger  # type: ignore
 
 from tab_utils.cdp import Tab
 
+import host
+if host.WINDOWS:
+    import vesktop_win
+
 VESKTOP_CDP = "http://127.0.0.1:9223"
 VESKTOP_APP = "dev.vencord.Vesktop"
 
@@ -73,6 +77,10 @@ def proc_pids(comm=None, cmdline=None):
     """PIDs matching `comm` (regex fullmatched against /proc/<pid>/comm, i.e.
     `pgrep -x`) and/or `cmdline` (regex searched in the full argv, `pgrep -f`).
     Our own PID is never returned."""
+    # Windows has no /proc: only a name match is possible. A cmdline filter
+    # cannot be honoured there, so it matches nothing (callers kill what this returns).
+    if host.WINDOWS:
+        return host.pids_named(comm) if comm and not cmdline else []
     comm_rx = re.compile(comm) if comm else None
     cmd_rx = re.compile(cmdline) if cmdline else None
     me = os.getpid()
@@ -89,7 +97,7 @@ def proc_pids(comm=None, cmdline=None):
             continue
         try:
             if comm_rx is not None:
-                with open(f"/proc/{pid}/comm") as f:
+                with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
                     # comm is truncated to 15 chars by the kernel; every name we
                     # match on (gamescope, kwin_wayland, vesktop) is shorter.
                     if not comm_rx.fullmatch(f.read().strip()):
@@ -111,6 +119,8 @@ def proc_running(comm=None, cmdline=None):
 
 def proc_kill(cmdline, sig=None):
     """`pkill -f` without procps. Returns the number of processes signalled."""
+    if host.WINDOWS:
+        return 0
     import signal as _sig
     n = 0
     for pid in proc_pids(cmdline=cmdline):
@@ -142,6 +152,8 @@ def _flatpak_vesktop_installed():
 
 def backend():
     """'flatpak' | 'native' | None (= aucun moyen d'avoir Vesktop)."""
+    if host.WINDOWS:
+        return "windows"  # Steamcord's own copy, see vesktop_win.py
     if _flatpak_available() and _flatpak_vesktop_installed():
         return "flatpak"
     if _native_bin():
@@ -189,9 +201,11 @@ def steam_account_id():
     still tried first so an older Steam behaves exactly as before.
     Falls back to "default" so Vesktop still works without Steam.
     """
+    if host.WINDOWS:
+        return vesktop_win.steam_account_id()
     autologin_name = ""
     try:
-        reg = (Path.home() / ".steam/registry.vdf").read_text(errors="ignore")
+        reg = (Path.home() / ".steam/registry.vdf").read_text(errors="ignore", encoding="utf-8")
         m = re.search(r'"ActiveUser"\s+"(\d+)"', reg)
         if m and m.group(1) != "0":
             return m.group(1)
@@ -203,7 +217,7 @@ def steam_account_id():
     for root in _STEAM_ROOTS:
         p = Path(os.path.expanduser(root)) / "config/loginusers.vdf"
         try:
-            data = p.read_text(errors="ignore")
+            data = p.read_text(errors="ignore", encoding="utf-8")
         except OSError:
             continue
         by_name = by_flag = by_time = None
@@ -268,7 +282,7 @@ def _ensure_profile(account):
 
 def _recorded_account():
     try:
-        return json.loads(_current_file().read_text()).get("account", "")
+        return json.loads(_current_file().read_text(encoding="utf-8")).get("account", "")
     except Exception:
         return ""
 
@@ -276,7 +290,7 @@ def _recorded_account():
 def _record_account(account):
     try:
         _profiles_dir().mkdir(parents=True, exist_ok=True)
-        _current_file().write_text(json.dumps({"account": account}))
+        _current_file().write_text(json.dumps({"account": account}), encoding="utf-8")
     except OSError as e:
         logger.warning(f"[multisession] cannot record account: {e!r}")
 
@@ -289,6 +303,8 @@ def _user_env():
     `systemctl --user` hit the wrong/forbidden bus → DISPLAY/XAUTHORITY come back
     empty → Vesktop launches with no graphical env → 9223 never opens. So ALWAYS
     derive both from our real uid; the plugin always runs as the target user."""
+    if host.WINDOWS:
+        return dict(os.environ)
     uid = os.getuid()
     rt = f"/run/user/{uid}"
     dbus = f"unix:path={rt}/bus"
@@ -312,12 +328,18 @@ async def _cdp_json(path):
             return await r.json()
 
 
-async def is_up():
+async def _port_is_up():
     try:
         await _cdp_json("/json/version")
         return True
     except Exception:
         return False
+
+
+async def is_up():
+    if host.WINDOWS and not vesktop_win.owns_cdp():
+        return False
+    return await _port_is_up()
 
 
 # flatpak : vesktop.bin (dans le sandbox) ; natif : le chemin d'app contient
@@ -340,6 +362,8 @@ _MAIN_PROC_PATTERN = r"(?s)\A(?!.*--type=).*[Vv]esktop"
 
 async def _running():
     """True if a Vesktop process exists, regardless of the debug port."""
+    if host.WINDOWS:
+        return vesktop_win.is_running()
     try:
         return proc_running(cmdline=_PROC_PATTERN)
     except Exception:
@@ -347,6 +371,8 @@ async def _running():
 
 
 async def installed():
+    if host.WINDOWS:
+        return vesktop_win.installed()
     b = backend()
     if b == "native":
         return True
@@ -356,6 +382,8 @@ async def installed():
 
 
 async def install():
+    if host.WINDOWS:
+        return await vesktop_win.install()
     if backend() != "flatpak":
         # natif = déjà installé ; None = rien d'installable silencieusement
         # (flatpak lui-même demande root) → le QAM affiche la marche à suivre.
@@ -468,7 +496,7 @@ def _steam_display_env():
     # on retombe alors sur les processus « steam » de notre uid.
     pids = []
     try:
-        pids.append(Path(os.path.expanduser("~/.steampid")).read_text().strip())
+        pids.append(Path(os.path.expanduser("~/.steampid")).read_text(encoding="utf-8").strip())
     except Exception:
         pass
     pids += _steam_pids()
@@ -494,7 +522,7 @@ def _steam_pids():
         if not p.name.isdigit():
             continue
         try:
-            if p.stat().st_uid != uid or (p / "comm").read_text().strip() != "steam":
+            if p.stat().st_uid != uid or (p / "comm").read_text(encoding="utf-8").strip() != "steam":
                 continue
             found.append((p.stat().st_mtime, p.name))
         except Exception:
@@ -553,6 +581,8 @@ def _pick_wayland(session_env, runtime_dir, gamescope):
 async def launch():
     # Always derive from our real uid — never trust inherited XDG_RUNTIME_DIR/DBUS,
     # which point at root's bus when spawned by the system service (see _user_env).
+    if host.WINDOWS:
+        return await vesktop_win.launch(_port_is_up)
     runtime_dir = f"/run/user/{os.getuid()}"
 
     # Don't launch until the host display actually exists (see _wait_for_display).
@@ -812,7 +842,7 @@ async def get_discord_tab(client_js) -> Tab:
             # stand-alone : rien pour faire tourner Vesktop (pas de flatpak, pas
             # de binaire natif, ou install flatpak qui échoue) → remonter une
             # erreur claire plutôt que de marteler le port CDP.
-            if backend() == "flatpak":
+            if backend() in ("flatpak", "windows"):
                 install_failures += 1
             raise RuntimeError("no Vesktop backend (flatpak or native) available")
         install_failures = 0
@@ -864,6 +894,13 @@ async def kill_for_recovery(tag="[recover]", relaunch=True):
     l'unité ne suffit pas, l'app sandboxée peut échapper au cgroup et Electron
     est mono-instance.
     """
+    if host.WINDOWS:
+        if not vesktop_win.is_running():
+            return False
+        stopped = await vesktop_win.stop(tag)
+        if stopped:
+            logger.info(f"{tag} Vesktop arrêté" + (" — le plugin va le relancer et réinjecter" if relaunch else " — arrêt volontaire"))
+        return stopped
     env = _user_env()
     if not await _running():
         return False
@@ -888,6 +925,10 @@ async def kill_for_recovery(tag="[recover]", relaunch=True):
 
 async def stop_managed():
     """Explicit user stop. Caller must pause recovery before entering here."""
+    if host.WINDOWS:
+        if not await vesktop_win.stop("[runtime-stop]"):
+            raise RuntimeError("Vesktop did not stop")
+        return
     process = await create_subprocess_exec(
         "systemctl", "--user", "stop", VESKTOP_UNIT,
         stdout=DEVNULL, stderr=DEVNULL, env=_user_env())
@@ -915,11 +956,13 @@ def release_portal_sessions(tag="[portal]"):
     être périmé (PID recyclé par le noyau), on relit /proc/<pid>/cmdline pour
     confirmer que c'est bien notre shim avant de signaler.
     """
+    if host.WINDOWS:
+        return False  # no ScreenCast portal shim on Windows
     import signal
     rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
     pidfile = os.path.join(rt, "steamcord-portal-shim.pid")
     try:
-        with open(pidfile) as f:
+        with open(pidfile, encoding="utf-8") as f:
             pid = int(f.read().strip())
     except Exception:
         return False                # pas de shim (mode bureau) : rien à libérer

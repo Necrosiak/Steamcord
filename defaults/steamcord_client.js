@@ -228,6 +228,21 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
         el.click();
         return "dom";
     };
+    const submitWindowsPicker = (dlg, button) => {
+        if (!button) {
+            // A screen radio is explicit: never choose an arbitrary application
+            // window while answering a Steamcord desktop-share request.
+            const radio = Array.from(dlg.querySelectorAll('input[type="radio"]'))
+                .find((input) => String(input.value).startsWith("screen:"));
+            if (radio) radio.click();
+            return false;
+        }
+        // Vesktop's Windows picker defaults to Stream With Audio. Its native
+        // handler chooses process-loopback capture, excluding its own audio.
+        dlg.dataset.scAuto = "1";
+        scReactClick(button);
+        return true;
+    };
     // Envoi d'une ligne au log BACKEND : c'est le seul artefact qu'un
     // utilisateur puisse nous joindre, et le seul que je puisse relire ici.
     const scDiag = (m) => {
@@ -257,6 +272,10 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
             if (!dlg) return;
             const buttons = Array.from(dlg.querySelectorAll("button"));
             const btn = buttons.find((b) => !b.disabled && /go live/i.test(b.textContent || ""));
+            if (window.STEAMCORD_HOST === "windows") {
+                submitWindowsPicker(dlg, btn);
+                return; // No venmic/PipeWire calls on Windows.
+            }
             if (!btn) {
                 // Première étape du sélecteur (grille de sources) : Go Live reste
                 // désactivé tant qu'aucun écran n'est choisi. En mode jeu le portail
@@ -592,7 +611,67 @@ window.Vencord.Plugins.plugins.Steamcord = {
         // on l'OFFRE au QAM par WebRTC local — miroir du relais micro, sens inverse.
         // L'audio n'est PAS relayé : il est déjà audible via la sortie de Vesktop.
         // Corrélation par userId. findByCode (≠ id de module) survit aux MAJ Discord.
+        // BEGIN STREAM VISIBILITY POLICY
+        window.__sc_createVideoVisibility = (deps) => {
+            let enabled = false;
+            let visible = new Set();
+            const suspended = new Set();
+            const closing = new Set();
+            const allowed = uid => !enabled || visible.has(uid) || deps.hasPov(uid);
+            const enforce = () => {
+                if (enabled) {
+                    for (const uid of deps.relayUsers()) {
+                        if (!allowed(uid)) { suspended.add(uid); deps.stop(uid, true); }
+                    }
+                    for (const stream of deps.subscriptions()) {
+                        if (!stream.viewing || allowed(stream.userId)) { closing.delete(stream.key); continue; }
+                        if (closing.has(stream.key)) continue;
+                        closing.add(stream.key);
+                        try { deps.close(stream.key); } catch (_) { closing.delete(stream.key); }
+                    }
+                }
+                for (const uid of [...suspended]) {
+                    if (visible.has(uid)) { suspended.delete(uid); deps.start(uid); }
+                }
+            };
+            return {
+                canWatch: allowed,
+                defer: uid => suspended.add(uid),
+                forget: uid => suspended.delete(uid),
+                update: (active, ids) => { enabled = active === true; visible = new Set(ids); enforce(); },
+                enforce,
+            };
+        };
+        // END STREAM VISIBILITY POLICY
         window.STEAMCORD_VIDEO = window.STEAMCORD_VIDEO || {}; // userId -> { pc, streamKey }
+        window.STEAMCORD_VIDEO_EPOCH = window.STEAMCORD_VIDEO_EPOCH || {};
+        window.STEAMCORD_VIDEO_VISIBILITY = window.__sc_createVideoVisibility({
+            hasPov: uid => !!window.STEAMCORD_POV?.[uid]?.alive,
+            relayUsers: () => Object.keys(window.STEAMCORD_VIDEO),
+            start: uid => { window.STEAMCORD_startVideoRelay(uid); },
+            stop: (uid, suspend) => window.STEAMCORD_stopVideoRelay(uid, suspend),
+            subscriptions: () => {
+                const WP = Vencord.Webpack;
+                const channel = WP.findStore("SelectedChannelStore")?.getVoiceChannelId?.();
+                if (!channel || !window.__sc_streamsForChannel) return [];
+                const me = WP.findStore("UserStore")?.getCurrentUser?.()?.id;
+                const streams = WP.findStore("ApplicationStreamingStore");
+                return window.__sc_streamsForChannel(channel).map(({ key, s }) => ({
+                    key, userId: s.ownerId || s.userId,
+                    viewing: (s.ownerId || s.userId) !== me && (streams?.getViewerIds?.(key) || []).includes(me),
+                }));
+            },
+            close: key => {
+                const close = Vencord.Webpack.findByCode('"STREAM_CLOSE",streamKey');
+                if (!close) throw new Error("Stream close action unavailable");
+                close(key);
+            },
+        });
+        if (window.STEAMCORD_VIDEO_VISIBILITY_TIMER) clearInterval(window.STEAMCORD_VIDEO_VISIBILITY_TIMER);
+        window.STEAMCORD_VIDEO_VISIBILITY_TIMER = setInterval(() => {
+            try { window.STEAMCORD_VIDEO_VISIBILITY.enforce(); } catch (_) {}
+        }, 500);
+
 
         // Streams visibles d'un salon = UNION de deux registres du store (issue #8) :
         // « active streams » (les nôtres / déjà regardés — les seuls peuplés en appel
@@ -744,6 +823,12 @@ window.Vencord.Plugins.plugins.Steamcord = {
         };
 
         window.STEAMCORD_startVideoRelay = async (userId) => {
+            if (!window.STEAMCORD_VIDEO_VISIBILITY.canWatch(userId)) {
+                window.STEAMCORD_VIDEO_VISIBILITY.defer(userId); return;
+            }
+            const epoch = (window.STEAMCORD_VIDEO_EPOCH[userId] || 0) + 1;
+            window.STEAMCORD_VIDEO_EPOCH[userId] = epoch;
+            const current = () => window.STEAMCORD_VIDEO_EPOCH[userId] === epoch;
             try {
                 const WP = Vencord.Webpack;
                 const ASS = WP.findStore("ApplicationStreamingStore");
@@ -827,6 +912,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 window.__sc_holdSinks(userId);
                 let found = [];
                 for (let i = 0; i < 80; i++) {
+                    if (!current()) return;
                     found = engineTracks();
                     const kinds = new Set(found.map(x => x.kind));
                     if (found.length && [...expected].every(k => kinds.has(k))) break;
@@ -919,24 +1005,28 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const meta = pc.getTransceivers()
                     .filter(tr => tr.sender && tr.sender.track)
                     .map(tr => ({ mid: tr.mid, kind: kindByTrackId[tr.sender.track.id] || "video" }));
+                if (!current()) return;
                 window.STEAMCORD_WS.send(JSON.stringify({ type: "$VIDEO_WEBRTC", userId, offer: pc.localDescription, meta }));
                 console.log("[Steamcord] video: offer envoyée pour " + userId);
             } catch (e) {
                 console.error("[Steamcord] video relay start failed", e);
                 // Pas de relais monté → personne ne libérera les sinks tenus plus haut.
-                if (!window.STEAMCORD_VIDEO[userId]) window.__sc_releaseSinks(userId);
+                if (current() && !window.STEAMCORD_VIDEO[userId]) window.__sc_releaseSinks(userId);
             }
         };
 
-        window.STEAMCORD_stopVideoRelay = (userId) => {
+        window.STEAMCORD_stopVideoRelay = (userId, suspend = false) => {
+            window.STEAMCORD_VIDEO_EPOCH[userId] = (window.STEAMCORD_VIDEO_EPOCH[userId] || 0) + 1;
+            if (!suspend) window.STEAMCORD_VIDEO_VISIBILITY.forget(userId);
             try {
                 const entry = window.STEAMCORD_VIDEO[userId];
+                const hasPov = !!window.STEAMCORD_POV?.[userId]?.alive;
+                if (!hasPov) window.__sc_releaseSinks(userId);
                 if (!entry) return;
-                window.__sc_releaseSinks(userId);
                 if (entry.keepalive) clearInterval(entry.keepalive);
                 if (entry.pc) entry.pc.close();
                 const close = Vencord.Webpack.findByCode('"STREAM_CLOSE",streamKey');
-                if (close && entry.streamKey) close(entry.streamKey);
+                if (!hasPov && close && entry.streamKey) close(entry.streamKey);
                 delete window.STEAMCORD_VIDEO[userId];
                 console.log("[Steamcord] video: relais arrêté pour " + userId);
             } catch (e) { console.error("[Steamcord] video relay stop failed", e); }
@@ -1551,7 +1641,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     // pas une option : Vesktop ne s'y attend pas.
                                                     const ASS2 = WP.findStore("ApplicationStreamingStore");
                                                     const t0 = Date.now();
-                                                    const TRANSIENT_MS = 32000;
+                                                    // Windows has no PipeWire portal consumers to drain.
+                                                    const TRANSIENT_MS = window.STEAMCORD_HOST === "windows" ? 3500 : 32000;
                                                     const sinceAcq0 = Date.now() - (window.STEAMCORD_GOLIVE_LAST_NATIVE || 0);
                                                     if (sinceAcq0 < TRANSIENT_MS) {
                                                         scdiag("attente de " + Math.ceil((TRANSIENT_MS - sinceAcq0) / 1000)
@@ -2452,6 +2543,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     break;
                                 }
                                 case "$webrtc":
+                                    return;
+                                case "$VIDEO_VISIBILITY":
+                                    window.STEAMCORD_VIDEO_VISIBILITY.update(data.enabled, Array.isArray(data.userIds) ? data.userIds : []);
                                     return;
                                 case "$WATCH_VIDEO":
                                     window.STEAMCORD_startVideoRelay(data.userId);

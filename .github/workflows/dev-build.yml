@@ -7,6 +7,16 @@ on:
   workflow_dispatch:
 
 jobs:
+  windows-host:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Test Windows runtime boundaries
+        run: python -m unittest discover -s tests -p "test_windows*.py" -v
+
   build-plugin:
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +41,9 @@ jobs:
       - name: Test menu and expanded view lifecycle
         run: |
           node tests/steam-menu-lifecycle.test.cjs
+          node --test tests/test-host-capabilities.cjs tests/test-desktop-capture.cjs
+          node --test tests/test-stream-visibility.cjs tests/test-video-visibility-leases.cjs
+          python3 -m unittest discover -s tests -p test_video_visibility.py -v
 
       - name: Test Discord runtime and chat layout
         run: |
@@ -50,6 +63,15 @@ jobs:
         run: |
           $(pwd)/cli/decky plugin build $(pwd)
           unzip out/${{ github.event.repository.name }}.zip -d out/${{ github.event.repository.name }}
+
+      - name: Check Windows runtime in plugin ZIP
+        run: |
+          python3 - <<'PYTHON'
+          import zipfile
+          with zipfile.ZipFile("out/Steamcord.zip") as archive:
+              for name in ("host.py", "vesktop_win.py"):
+                  assert "Steamcord/" + name in archive.namelist(), name
+          PYTHON
 
       - name: Upload plugin
         uses: actions/upload-artifact@v4
