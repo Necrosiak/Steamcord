@@ -1,5 +1,9 @@
 # Steamcord
 
+<!-- expanded-navigation -->
+**Vue étendue** — L’entrée du menu principal Steam porte désormais le nom **Steamcord**. Elle ouvre la vue Discord étendue existante ; le panneau d’accès rapide reste disponible.
+
+
 v1.41.4 : Les MP s’actualisent automatiquement et suivent le dernier message envoyé/reçu. Épinglez une conversation avec la petite icône, puis utilisez les flèches des MP épinglés pour changer leur ordre. Les épingles et leur ordre sont sauvegardés par compte Discord et partagés entre Vocal, Textuel et Big Screen. Les corrections de navigation manette ont été testées sur Bazzite ; les retours d’autres appareils SteamOS sont les bienvenus.
 
 **Discord en Mode Jeu Steam** — un plugin [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) pour Steam Deck / Bazzite / SteamOS.

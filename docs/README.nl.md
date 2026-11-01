@@ -1,5 +1,9 @@
 # Steamcord
 
+<!-- expanded-navigation -->
+**Uitgebreide weergave** — Het item in het Steam-hoofdmenu heet nu **Steamcord**. Het opent de bestaande uitgebreide Discord-weergave; het sneltoegangspaneel blijft beschikbaar.
+
+
 v1.41.4: Privégesprekken worden automatisch vernieuwd en gesorteerd op het laatste verzonden/ontvangen bericht. Zet gesprekken vast met het kleine pinpictogram en wijzig hun volgorde met de pijlen. Pins en volgorde worden per Discord-account opgeslagen en gedeeld tussen Spraak, Tekst en Big Screen. Controllernavigatie getest op Bazzite; feedback van andere SteamOS-apparaten is welkom.
 
 **Discord in de Steam-spelmodus** — een [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader)-plugin voor Steam Deck / Bazzite / SteamOS.

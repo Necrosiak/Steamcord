@@ -1,5 +1,9 @@
 # Steamcord
 
+<!-- expanded-navigation -->
+**Widok rozszerzony** — Pozycja w głównym menu Steam nazywa się teraz **Steamcord**. Otwiera dotychczasowy rozszerzony widok Discorda; panel szybkiego dostępu pozostaje dostępny.
+
+
 v1.41.4: Rozmowy prywatne odświeżają się automatycznie i są sortowane według ostatniej wysłanej/odebranej wiadomości. Przypnij rozmowę małą ikoną i zmieniaj kolejność przypiętych rozmów strzałkami. Ustawienia są zapisywane dla konta Discord i wspólne dla głosu, tekstu i Big Screen. Nawigację kontrolerem sprawdzono na Bazzite; mile widziane testy na innych urządzeniach SteamOS.
 
 **Discord w trybie gry Steam** — wtyczka [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) dla Steam Deck / Bazzite / SteamOS.
