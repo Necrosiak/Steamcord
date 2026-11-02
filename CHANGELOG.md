@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.43.1 — 2026-11-02
+
+### New
+
+- **Hide the Steamcord entry in Steam's main menu.** A new option in Settings, under "Open on", removes the entry from the menu; the Quick Access panel stays available. Thanks to [@JDLKMR](https://github.com/JDLKMR) for the suggestion in [#86](https://github.com/Necrosiak/Steamcord/issues/86).
+
+**Full changelog:** [v1.43.0...v1.43.1](https://github.com/Necrosiak/Steamcord/compare/v1.43.0...v1.43.1)
+
 ## 1.43.0 — 2026-11-01
 
 ### New
