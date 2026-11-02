@@ -41,7 +41,7 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
   }
 }
 
-import { patchMenu } from "./patches/menuPatch";
+import { menuEntryEnabled, patchMenu, setMenuEntryEnabled } from "./patches/menuPatch";
 import { notify, installClickHook, uninstallClickHook, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
 import { ACCENT, DANGER, ONLINE, focusHalo, setVeilAlpha } from "./components/Styled";
 
@@ -2294,6 +2294,23 @@ const NOTE = `:not(${CTL}):has(> div[style*="font-size: 11px"])`;
 const SETTINGS_GAPS = `.sc-settings > *${CTL} + *${CTL},
 .sc-settings > *${CTL} + *${NOTE} + *${CTL} { margin-top: 8px; }`;
 
+// #86 : l'entrée « Steamcord » du menu principal Steam est facultative ;
+// le panneau d'accès rapide reste disponible quand elle est retirée.
+const MenuEntryToggle = () => {
+  const [on, setOn] = useState(menuEntryEnabled);
+  return (
+    <SR>
+      <ToggleField
+        label={t("menu_entry")}
+        description={t("menu_entry_desc")}
+        checked={on}
+        onChange={(v: boolean) => { setOn(v); setMenuEntryEnabled(v); }}
+        bottomSeparator="none"
+      />
+    </SR>
+  );
+};
+
 const ConfigPanel = () => {
   return (
     <div className="sc-settings">
@@ -2317,6 +2334,7 @@ const ConfigPanel = () => {
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcChat /> {t("config_open_on")}</div>
       </SR>
       <OpenViewConfig />
+      <MenuEntryToggle />
       <HostFeature name="controller_shortcut">
       <hr />
       <SR>
