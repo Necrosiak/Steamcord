@@ -688,6 +688,49 @@ async def _recheck(updater):
     return info
 
 
+def _decky_loader_identity():
+    """(pid, start time) of the Decky Loader process this backend runs under, or
+    None (not on Linux, or not started by Decky)."""
+    import os
+    pid = os.getppid()
+    for _ in range(8):
+        if pid <= 1:
+            return None
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmdline = f.read()
+            with open(f"/proc/{pid}/stat") as f:
+                fields = f.read().rsplit(")", 1)[1].split()
+        except (OSError, IndexError):
+            return None
+        if cmdline.startswith(b"Decky Loader"):
+            return pid, fields[19]
+        pid = int(fields[1])
+    return None
+
+
+async def _exit_with_decky_loader(log, interval=15):
+    """A restart of plugin_loader leaves the old plugin backends running on
+    their own (measured 02/11/2026: eight orphans, one growing to 4.5 GB).
+    Leave as soon as the Decky Loader that started this backend is gone."""
+    import asyncio
+    import os
+    identity = _decky_loader_identity()
+    if identity is None:
+        return
+    pid, started = identity
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                alive = f.read().rsplit(")", 1)[1].split()[19] == started
+        except (OSError, IndexError):
+            alive = False
+        if not alive:
+            log("Decky Loader is gone: stopping this orphaned plugin backend")
+            os._exit(0)
+
+
 class Plugin:
     server = Application()
     cors = aiohttp_cors.setup(
@@ -846,6 +889,7 @@ class Plugin:
     @classmethod
     async def _main(cls):
         logger.info("Starting Steamcord backend")
+        create_task(_exit_with_decky_loader(logger.warning))
         # Fenêtre d'overlay orpheline : après un rechargement du backend
         # (mise à jour, déploiement) l'ancien overlay.py survit, mais
         # _overlay_proc repart à None → plus aucune écriture de l'état, et
@@ -4035,12 +4079,34 @@ class Plugin:
         from json import loads
         try:
             await sleep(2)  # laisser PipeWire finir d'énumérer au boot
+            if await cls._adopt_leftover_silence():
+                return
             if cls._real_capture_source(
                     loads(await cls._pactl("list", "sources", want_json=True) or "[]")):
                 return
             await cls._golive_mic_silence(True)
         except Exception as e:
             logger.warning(f"[golive] silence au démarrage: {e!r}")
+
+    @classmethod
+    async def _adopt_leftover_silence(cls):
+        """Le silence posé par l'instance PRÉCÉDENTE reste la source par défaut :
+        son _unload ne peut pas finir la restauration (aucune suspension n'y
+        reprend la main, cf. _unload). Sans reprise, personne ne surveillait
+        plus l'arrivée d'un vrai micro : il restait muet jusqu'au reboot
+        (mesuré 03/11, Elgato Wave:3 branché, silence gardé 16 s et plus).
+        On le reprend à notre compte et on relance la veille : un vrai micro,
+        déjà là ou branché ensuite, récupère la main en 5 s."""
+        if cls._golive_silence_restore is not None:
+            return False
+        if (await cls._pactl("get-default-source")).strip() != "steamcord_silence_mic":
+            return False
+        sink = (await cls._pactl("get-default-sink")).strip()
+        cls._golive_silence_restore = f"{sink}.monitor" if sink else "@DEFAULT_MONITOR@"
+        logger.info("[golive] micro silencieux laissé par l'instance précédente → repris, "
+                    "veille du vrai micro relancée")
+        cls._start_silence_watch()
+        return True
 
     @classmethod
     async def _golive_mic_silence(cls, enable):
@@ -4125,10 +4191,14 @@ class Plugin:
                     if len(parts) >= 3 and "steamcord_silence" in parts[2]:
                         await cls._pactl("unload-module", parts[0])
                 logger.info("[golive] capture voix restaurée")
-            task = cls._golive_silence_task
-            cls._golive_silence_task = None
-            if task is not None and not task.done():
-                task.cancel()
+                # Seulement ici, une fois le silence levé : placé après le
+                # if/else, ce bloc annulait aussi la veille que la pose du
+                # silence venait de lancer, avant son premier tour (mesuré
+                # 03/11 : un micro branché après coup n'était jamais repris).
+                task = cls._golive_silence_task
+                cls._golive_silence_task = None
+                if task is not None and not task.done():
+                    task.cancel()
         except Exception as e:
             logger.warning(f"[golive] mic-silence({enable}): {e!r}")
 
