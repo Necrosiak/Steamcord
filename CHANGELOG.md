@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.43.2 — 2026-11-03
+
+### Fixes
+
+- **A microphone plugged in after Steamcord starts is picked up.** On a device without a microphone, Steamcord replaces the system microphone with a silent one so the call never hears your speakers. When a real microphone appeared later, Steamcord was supposed to hand it back within seconds, but that check stopped right after it started, so the silent microphone stayed until the next reboot. It now switches to the real microphone as soon as it appears, also after a plugin update or reload.
+- Steamcord's background process now stops on its own if Decky Loader goes away without stopping it, instead of staying in memory.
+
+**Full changelog:** [v1.43.1...v1.43.2](https://github.com/Necrosiak/Steamcord/compare/v1.43.1...v1.43.2)
+
 ## 1.43.1 — 2026-11-02
 
 ### New
