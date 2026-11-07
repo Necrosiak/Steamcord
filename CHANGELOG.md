@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.44.0 — 2026-11-07
+
+### New
+
+- Voice overlay preferences are kept for the next call, with centered side positions, your own mute/deafen and streaming indicators, and a separate switch for stream and camera notifications (#92).
+- Experimental GeForce NOW game detection from the native client's window title. Manual titles take priority. Browser sessions and native Wayland windows invisible to X11 aren't covered. A real GeForce NOW session still needs confirmation (#88).
+
+### Fixes
+
+- Game / Discord balance stays inactive in Desktop Mode, can be disabled, and restores the application volumes Steamcord changed (#87).
+- Manual game titles remain applied when Discord's game database is unavailable.
+
+### Improved
+
+- The receiving video relay requests full resolution and a higher bitrate. This is not yet a confirmed fix for pixelated streams (#89).
+- Video diagnostics and microphone guidance are available in Settings (#90).
+
+### Known issues
+
+- Screen sharing split into four copies (#91) and in-game opacity on the Deck OLED (#93) remain under investigation.
+
+### Thanks
+
+Thanks to [@nawavon](https://github.com/nawavon), [@edwardlaurence00](https://github.com/edwardlaurence00), [@j2v454sj](https://github.com/j2v454sj) and [@Matchaccia](https://github.com/Matchaccia) for the reports and suggestions.
+
+**Full changelog:** [v1.43.2...v1.44.0](https://github.com/Necrosiak/Steamcord/compare/v1.43.2...v1.44.0)
+
 ## 1.43.2 — 2026-11-03
 
 ### Fixes
