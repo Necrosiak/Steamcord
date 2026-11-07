@@ -161,12 +161,16 @@
     // coûte qu'un `drawImage`, et surtout n'ajoute AUCUN consommateur PipeWire.
     // C'est ce dernier point qui compte : c'est un second consommateur sur le
     // node gamescope qui figeait le partage chez les spectateurs (01/09).
-    const keepShareStream = (stream) => {
+    const keepShareStream = (stream, backend) => {
+        window.STEAMCORD_CAPTURE_BACKEND = backend;
         window.STEAMCORD_SHARE_STREAM = stream;
         try {
             const t = stream.getVideoTracks()[0];
             if (t) t.addEventListener("ended", () => {
-                if (window.STEAMCORD_SHARE_STREAM === stream) window.STEAMCORD_SHARE_STREAM = undefined;
+                if (window.STEAMCORD_SHARE_STREAM === stream) {
+                    window.STEAMCORD_SHARE_STREAM = undefined;
+                    window.STEAMCORD_CAPTURE_BACKEND = undefined;
+                }
             });
         } catch (_) {}
         return stream;
@@ -270,7 +274,7 @@
                 // getUserMedia always returns full-system loopback, which would
                 // send the call's voices back to the spectators.
                 const stream = await nativeFirst({ ...constraints, audio: true });
-                return keepShareStream(stream);
+                return keepShareStream(stream, "windows-native");
             } catch (e) {
                 try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
                     m: "[golive] Windows native capture unavailable; trying video-only desktop capture" })); } catch (_) {}
@@ -281,7 +285,7 @@
                 const stream = await directDesktop();
                 try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
                     m: "[golive] capture directe OK (" + stream.getTracks().map((t) => t.kind).join("+") + ")" })); } catch (_) {}
-                return keepShareStream(stream);
+                return keepShareStream(stream, "desktop-direct");
             } catch (e) {
                 try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag",
                     m: "[golive] capture directe KO (" + ((e && e.message) || e) + ") → getDisplayMedia de Vesktop" })); } catch (_) {}
@@ -291,7 +295,7 @@
             try {
                 const stream = await nativeFirst(constraints);
                 console.log("[Steamcord] getDisplayMedia → portail natif OK");
-                return keepShareStream(stream);
+                return keepShareStream(stream, "native-portal");
             } catch (e) {
                 if (window.STEAMCORD_HOST === "windows") throw e;
                 nativePortalDead = true;
@@ -303,7 +307,7 @@
             }
         }
         if (window.STEAMCORD_HOST === "windows") throw new Error("Windows screen capture is unavailable");
-        return keepShareStream(await getRTCStream(constraints));
+        return keepShareStream(await getRTCStream(constraints), "gstreamer");
     };
 
     if (window.navigator?.mediaDevices) {

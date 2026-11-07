@@ -765,13 +765,10 @@ class Plugin:
     # Équilibre Jeu ↔ Discord de CE QUE L'ON ENTEND (0 = tout jeu, 50 = les deux à
     # 100 %, 100 = tout Discord). Voir _apply_chat_mix.
     _chat_mix = 50
-    _mix_touched = set()          # sink-inputs dont on a changé le volume
-    # #64 : avant 1.40.1 le mix s'appliquait aussi HORS appel, et WirePlumber a
-    # mémorisé ces volumes baissés (stream-properties) → les applis redémarrent
-    # basses. Pendant 7 jours après la mise à jour, hors appel, un flux qui
-    # arrive pile au niveau qu'on imposait est remis à 100 % (une fois par flux).
-    _mix_heal_until = 0
-    _mix_healed = set()
+    _chat_mix_enabled = True
+    _chat_mix_lock = None
+    _mix_touched = {}          # sink-inputs dont on a changé le volume
+
 
     @classmethod
     async def _initialize_until_up(cls):
@@ -988,18 +985,7 @@ class Plugin:
             await emit("state", state)
             # Overlays in-game : miroir du state (roster/parole) + réalignement
             # des relais POV — seulement quand la fenêtre overlay tourne.
-            if cls._overlay_running():
-                if not state.get("vc"):
-                    # Sortie du vocal → fermer les overlays : ils sont liés à
-                    # l'appel (retour user : quitter l'appel ne fermait pas
-                    # l'overlay). Toggles remis à false = le menu QAM reflète
-                    # l'état à sa prochaine ouverture.
-                    await cls.stop_pov_overlay()
-                    await cls.stop_voice_overlay()
-                else:
-                    cls._write_overlay_state(state)
-                    if cls._pov_ov_on:
-                        await cls._sync_pov_users(state)
+            await cls._sync_overlay_state(state)
 
     @classmethod
     async def _account_watcher(cls):
@@ -1301,11 +1287,7 @@ class Plugin:
                 await sleep(2)
                 try:
                     await cls.evt_handler.send_client(
-                        {"type": "$rpc", "game": cls._rpc_game,
-                         "started_at": cls._rpc_since,
-                         "procs": _running_executables(),
-                         "detect": cls._rpc_detect_pref(),
-                         "override": cls._rpc_override_pref()})
+                        await cls._rpc_payload())
                 except Exception:
                     pass
             create_task(_replay_rpc())
@@ -1324,6 +1306,9 @@ class Plugin:
     @classmethod
     async def _notification_dispatcher(cls):
         async for notification in cls.evt_handler.yield_notification():
+            if (notification.get("kind") in ("stream_start", "camera_start")
+                    and cls._load_overlay_settings()["voice"].get("video_notifications", True) is False):
+                continue
             logger.info("Dispatching notification")
             payload = dumps(
                 {
@@ -1779,7 +1764,7 @@ class Plugin:
         try:
             for stop in (cls.stop_game_audio, cls.stop_voice_overlay, cls.stop_pov_overlay):
                 try:
-                    await wait_for(stop(), 5)
+                    await wait_for(stop(remember=False) if stop == cls.stop_voice_overlay else stop(), 5)
                 except Exception:
                     logger.warning("[runtime] media cleanup failed; stopping Discord anyway")
             import vesktop
@@ -1985,13 +1970,10 @@ class Plugin:
         # jeu courant (toujours mémorisé, même préférence coupée).
         try:
             await cls.evt_handler.send_client(
-                {"type": "$rpc",
-                 "game": cls._rpc_game if cls._rpc_enabled else None,
-                 "started_at": cls._rpc_since if cls._rpc_enabled else None,
-                 "procs": _running_executables() if cls._rpc_enabled and cls._rpc_game else [],
-                 "detect": cls._rpc_detect_pref(), "override": cls._rpc_override_pref()})
+                await cls._rpc_payload())
         except Exception:
             pass
+        cls._rpc_rescan_arm()
         return True
 
     # ── #51 : inhibiteur d'économiseur d'écran pendant le visionnage ────────
@@ -2050,6 +2032,47 @@ class Plugin:
         cls._ka_save()
         return True
 
+    _rpc_cloud_status = None
+
+    @classmethod
+    async def get_cloud_game_status(cls):
+        return cls._rpc_cloud_status or {"game": None, "reason": "not_gfn", "source": None}
+
+    @classmethod
+    async def _rpc_payload(cls):
+        from discord_client.cloud_game import is_geforce_launcher, detect_geforce_game
+        from asyncio import to_thread
+        game = cls._rpc_game if cls._rpc_pref() else None
+        detect = cls._rpc_detect_pref()
+        override = cls._rpc_override_pref()
+        report = {"game": None, "reason": "not_gfn", "source": None}
+        if game and is_geforce_launcher(game):
+            if not detect or override:
+                report["reason"] = "disabled"
+            else:
+                try:
+                    env = None
+                    if not host.WINDOWS:
+                        import vesktop
+                        env = dict(vesktop._user_env())
+                        if _desktop_session():
+                            env.update(await vesktop._show_env())
+                        else:
+                            env.update(vesktop._steam_display_env())
+                    report = await to_thread(detect_geforce_game, game, env)
+                except Exception:
+                    report = {"game": None, "reason": "unavailable", "source": None}
+        # A Steam game or preference may have changed while querying X11.
+        if (game != (cls._rpc_game if cls._rpc_pref() else None)
+                or detect != cls._rpc_detect_pref() or override != cls._rpc_override_pref()):
+            game = cls._rpc_game if cls._rpc_pref() else None
+            detect, override = cls._rpc_detect_pref(), cls._rpc_override_pref()
+            report = {"game": None, "reason": "not_gfn", "source": None}
+        cls._rpc_cloud_status = report
+        return {"type": "$rpc", "game": game, "started_at": cls._rpc_since if game else None,
+                "procs": _running_executables() if game and detect and not override and not is_geforce_launcher(game) else [],
+                "detect": detect, "override": override, "cloud_game": report.get("game")}
+
     @classmethod
     async def set_rpc(cls, game):
         logger.info("Setting RPC")
@@ -2063,9 +2086,7 @@ class Plugin:
         # reconnaître le jeu qu'un LANCEUR a ouvert (Heroic, Lutris...), que
         # Steam ne nous nomme jamais. Inutile quand rien ne tourne.
         await cls.evt_handler.send_client(
-            {"type": "$rpc", "game": cls._rpc_game, "started_at": cls._rpc_since,
-             "procs": _running_executables() if cls._rpc_game else [],
-             "detect": cls._rpc_detect_pref(), "override": cls._rpc_override_pref()})
+            await cls._rpc_payload())
         cls._rpc_rescan_arm()
 
     # Steam ne notifie QUE ses propres applications : lancer un jeu DEPUIS Heroic
@@ -2079,7 +2100,7 @@ class Plugin:
     @classmethod
     def _rpc_rescan_arm(cls):
         task = getattr(cls, "_rpc_rescan_task", None)
-        if not cls._rpc_game:
+        if not cls._rpc_game or not cls._rpc_pref():
             if task is not None:
                 task.cancel()
                 cls._rpc_rescan_task = None
@@ -2095,18 +2116,16 @@ class Plugin:
                         break
                     try:
                         await cls.evt_handler.send_client(
-                            {"type": "$rpc", "game": cls._rpc_game,
-                             "started_at": cls._rpc_since,
-                             "procs": _running_executables(),
-                             "detect": cls._rpc_detect_pref(),
-                             "override": cls._rpc_override_pref()})
+                            await cls._rpc_payload())
                     except Exception:
                         # Client absent/reconnexion : réessai au tour suivant.
                         pass
             finally:
                 # L'annulation se propage d'elle-même ; on ne veut ici que
                 # libérer la référence pour qu'un prochain arm() reparte.
-                cls._rpc_rescan_task = None
+                from asyncio import current_task
+                if cls._rpc_rescan_task is current_task():
+                    cls._rpc_rescan_task = None
 
         cls._rpc_rescan_task = create_task(_loop())
 
@@ -2813,6 +2832,21 @@ class Plugin:
         return await cls.evt_handler.api.set_local_mute(user_id, muted)
 
     @classmethod
+    async def get_video_diagnostics(cls):
+        import platform
+        report = await cls.evt_handler.api._store_access_request("$get_video_diagnostics")
+        data = {"host": host.NAME, "kernel": platform.release(), "video": report,
+                "session": (await cls.get_share_env()).get("env")}
+        if not host.WINDOWS:
+            try:
+                distro = platform.freedesktop_os_release()
+                data["distribution"] = {k: distro[k] for k in ("ID", "VERSION_ID") if k in distro}
+            except (OSError, AttributeError):
+                pass
+        logger.info("[video-diagnostic] %s", dumps(data))
+        return data
+
+    @classmethod
     async def get_audio_processing(cls):
         r = await cls.evt_handler.api.get_audio_processing()
         # Client indisponible (reconnexion…) : montrer au moins les prefs
@@ -3459,65 +3493,96 @@ class Plugin:
 
     @classmethod
     async def _apply_chat_mix(cls):
+        from asyncio import Lock
+        if cls._chat_mix_lock is None:
+            cls._chat_mix_lock = Lock()
+        async with cls._chat_mix_lock:
+            await cls._apply_chat_mix_locked()
+
+    @classmethod
+    def _chat_mix_game_mode(cls):
+        if host.WINDOWS or _desktop_session():
+            return False
+        try:
+            import vesktop
+            return bool(vesktop.proc_running(comm="gamescope|gamescope-wl"))
+        except Exception:
+            return False
+
+    @classmethod
+    async def _apply_chat_mix_locked(cls):
         from json import loads
-        # Le réglage est mémorisé, mais il ne s'applique que EN APPEL : hors appel
-        # on se comporte comme à 50 (les flux déjà touchés repassent à 100 %, le
-        # reste n'est plus jamais modifié).
-        m = cls._chat_mix if cls._in_call() else 50
-        discord_pct, game_pct = cls._chat_mix_levels(m)
-        heal = None
-        if m == 50 and time.time() < cls._mix_heal_until:
-            d, g = cls._chat_mix_levels(cls._chat_mix)
-            heal = (g, d)
-        real = await cls._real_output_sink()
-        if not real:
+        # Desktop mixers retain ownership. Only restore streams we actually
+        # changed, and only if their volume still matches our last write.
+        active = cls._chat_mix_enabled and cls._chat_mix_game_mode() and cls._in_call()
+        m = cls._chat_mix if active else 50
+        if m == 50 and not cls._mix_touched:
             return
         try:
-            sinks = loads(await cls._pactl("list", "sinks", want_json=True) or "[]")
-            real_idx = next((str(s.get("index")) for s in sinks if s.get("name") == real), None)
-            if real_idx is None:
-                return
-            # Le JSON de pactl ne donne PAS l index des modules (seulement nom et
-            # argument) : la forme courte « index<TAB>nom<TAB>arguments » oui.
-            mods = {}
-            for line in (await cls._pactl("list", "short", "modules")).splitlines():
-                parts = line.split("	")
-                if len(parts) >= 3:
-                    mods[parts[0]] = parts[2]
-            for si in loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]"):
-                if str(si.get("sink")) != real_idx:
-                    continue
+            inputs = loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]")
+            present = {str(si.get("index")) for si in inputs}
+            for idx in set(cls._mix_touched) - present:
+                cls._mix_touched.pop(idx, None)
+            real_idx, mods = None, {}
+            if m != 50:
+                real = await cls._real_output_sink()
+                sinks = loads(await cls._pactl("list", "sinks", want_json=True) or "[]")
+                real_idx = next((str(x.get("index")) for x in sinks if x.get("name") == real), None)
+                for line in (await cls._pactl("list", "short", "modules")).splitlines():
+                    parts = line.split("\t")
+                    if len(parts) >= 3:
+                        mods[parts[0]] = parts[2]
+            d, g = cls._chat_mix_levels(m)
+            for si in inputs:
                 idx = str(si.get("index"))
+                props = si.get("properties") or {}
+                identity = (str(si.get("client")), props.get("application.process.id"),
+                            props.get("application.process.binary"), props.get("media.name"))
+                volumes = [str(v.get("value_percent", "100%")) for v in (si.get("volume") or {}).values()]
+                if not volumes:
+                    continue
+                saved = cls._mix_touched.get(idx)
+                if saved and saved["identity"] != identity:
+                    cls._mix_touched.pop(idx, None)
+                    saved = None
+                if m == 50 or str(si.get("sink")) != real_idx:
+                    if saved:
+                        if volumes == saved["applied"]:
+                            await cls._pactl("set-sink-input-volume", idx, *saved["restore"])
+                        cls._mix_touched.pop(idx, None)
+                    continue
+                # An external mixer changed this stream: keep its new baseline.
+                if saved is None or volumes != saved["applied"]:
+                    saved = {"identity": identity, "original": volumes,
+                             "restore": [str(v.get("value")) if isinstance(v.get("value"), int) else str(v.get("value_percent", "100%"))
+                                         for v in (si.get("volume") or {}).values()]}
                 arg = mods.get(str(si.get("owner_module")), "")
                 is_discord = cls._is_vesktop_stream(si) or "bonecast_discord" in arg
-                target = discord_pct if is_discord else game_pct
-                vols = list((si.get("volume") or {}).values())
-                try:
-                    cur = int(str(vols[0].get("value_percent", "100%")).rstrip("%"))
-                except Exception:
-                    cur = None
-                if m == 50:
-                    if idx in cls._mix_touched and cur != 100:
-                        await cls._pactl("set-sink-input-volume", idx, "100%")
-                    elif heal and idx not in cls._mix_healed:
-                        cls._mix_healed.add(idx)
-                        if cur == heal[1 if is_discord else 0] != 100:
-                            await cls._pactl("set-sink-input-volume", idx, "100%")
-                            logger.info(f"[chatmix] volume mémorisé restauré : {idx} {cur}% → 100%")
-                    continue
-                if cur != target:
-                    await cls._pactl("set-sink-input-volume", idx, f"{target}%")
-                cls._mix_touched.add(idx)
-            if m == 50:
-                cls._mix_touched.clear()
+                gain = d if is_discord else g
+                target = [f"{round(float(v.rstrip('%')) * gain / 100)}%" for v in saved["original"]]
+                if volumes != target:
+                    await cls._pactl("set-sink-input-volume", idx, *target)
+                saved["applied"] = target
+                cls._mix_touched[idx] = saved
         except Exception as e:
             logger.warning(f"[chatmix] {e!r}")
+
+    @classmethod
+    @linux_only({"ok": False})
+    async def set_chat_mix_enabled(cls, enabled):
+        if not isinstance(enabled, bool):
+            return {"ok": False}
+        cls._chat_mix_enabled = enabled
+        cls._save_audio_cfg()
+        await cls._apply_chat_mix()
+        return await cls.get_chat_mix()
 
     @classmethod
     @linux_only({"mix": 50, "discord": 100, "game": 100})
     async def get_chat_mix(cls):
         d, g = cls._chat_mix_levels(cls._chat_mix)
-        return {"mix": cls._chat_mix, "discord": d, "game": g}
+        return {"mix": cls._chat_mix, "discord": d, "game": g,
+                "enabled": cls._chat_mix_enabled, "active": cls._chat_mix_game_mode()}
 
     @classmethod
     @linux_only({"ok": False})
@@ -3544,13 +3609,9 @@ class Plugin:
             if isinstance(cfg.get("ga_vol"), dict):
                 cls._ga_vol.update({k: int(v) for k, v in cfg["ga_vol"].items()
                                     if k in cls._ga_vol})
+            cls._chat_mix_enabled = cfg.get("chat_mix_enabled", True) is not False
             if isinstance(cfg.get("chat_mix"), int):
                 cls._chat_mix = max(0, min(100, cfg["chat_mix"]))
-            if isinstance(cfg.get("mix_heal_until"), (int, float)):
-                cls._mix_heal_until = cfg["mix_heal_until"]
-            elif cls._chat_mix != 50:
-                cls._mix_heal_until = int(time.time()) + 7 * 86400
-                cls._save_audio_cfg()
         except Exception:
             pass
 
@@ -3562,8 +3623,7 @@ class Plugin:
             with open(cls._AUDIO_CFG, "w", encoding="utf-8") as f:
                 dump({"output": cls._audio_out, "input": cls._audio_in,
                       "mic": cls._mic_prefs, "ga_vol": cls._ga_vol,
-                      "chat_mix": cls._chat_mix,
-                      "mix_heal_until": cls._mix_heal_until}, f)
+                      "chat_mix": cls._chat_mix, "chat_mix_enabled": cls._chat_mix_enabled}, f)
         except Exception as e:
             logger.warning(f"save audio cfg failed: {e!r}")
 
@@ -5665,6 +5725,7 @@ class Plugin:
     _overlay_proc = None
     _overlay_settings = None
     _overlay_caps_cache = None
+    _voice_restore_channel = None
     _voice_ov_on = False
     _pov_ov_on = False
     _pov_users = set()          # users actuellement relayés (client MediaRecorder)
@@ -5728,6 +5789,27 @@ class Plugin:
         return caps
 
     @classmethod
+    async def _sync_overlay_state(cls, state):
+        if host.WINDOWS:
+            return
+        vc_channel = (state.get("vc") or {}).get("channel_id")
+        if not vc_channel:
+            cls._voice_restore_channel = None
+            if cls._voice_ov_on or cls._pov_ov_on:
+                await cls.stop_pov_overlay()
+                await cls.stop_voice_overlay(remember=False)
+            return
+        if (not cls._voice_ov_on
+                and cls._load_overlay_settings()["voice"].get("enabled", False)
+                and cls._voice_restore_channel != vc_channel):
+            cls._voice_restore_channel = vc_channel
+            await cls.start_voice_overlay()
+        if cls._overlay_running():
+            cls._write_overlay_state(state)
+            if cls._pov_ov_on:
+                await cls._sync_pov_users(state)
+
+    @classmethod
     def _overlay_running(cls):
         return cls._overlay_proc is not None and cls._overlay_proc.returncode is None
 
@@ -5740,8 +5822,12 @@ class Plugin:
                     cls._overlay_settings = _json.load(f)
             except Exception:
                 cls._overlay_settings = {}
-        cls._overlay_settings.setdefault(
-            "voice", {"pos": "bottom-left", "opacity": 85, "scale": 100})
+        if not isinstance(cls._overlay_settings, dict):
+            cls._overlay_settings = {}
+        voice = cls._overlay_settings.get("voice")
+        cls._overlay_settings["voice"] = {
+            "pos": "bottom-left", "opacity": 85, "scale": 100, "enabled": False,
+            **(voice if isinstance(voice, dict) else {})}
         cls._overlay_settings.setdefault(
             "pov", {"layout": "right", "opacity": 90, "scale": 100})
         return cls._overlay_settings
@@ -5805,8 +5891,9 @@ class Plugin:
                         f"https://cdn.discordapp.com/avatars/{u.get('id')}/{av}.webp?size=64"
                         if av else "https://cdn.discordapp.com/embed/avatars/0.png"),
                     "is_speaking": bool(u.get("is_speaking")),
-                    "is_muted": bool(u.get("is_muted")),
-                    "is_deafened": bool(u.get("is_deafened")),
+                    "is_muted": bool((st.get("me") or {}).get("is_muted") if u.get("id") == (st.get("me") or {}).get("id") else u.get("is_muted")),
+                    "is_deafened": bool((st.get("me") or {}).get("is_deafened") if u.get("id") == (st.get("me") or {}).get("id") else u.get("is_deafened")),
+                    "is_live": bool(u.get("is_live")),
                 })
             s = cls._load_overlay_settings()
             payload = {
@@ -5889,6 +5976,8 @@ class Plugin:
     @classmethod
     @linux_only({"ok": False})
     async def start_voice_overlay(cls):
+        cls._load_overlay_settings()["voice"]["enabled"] = True
+        cls._save_overlay_settings()
         cls._voice_ov_on = True
         ok = await cls._ensure_overlay_window()
         if not ok:
@@ -5898,7 +5987,10 @@ class Plugin:
 
     @classmethod
     @linux_only({"ok": True})
-    async def stop_voice_overlay(cls):
+    async def stop_voice_overlay(cls, remember=True):
+        if remember:
+            cls._load_overlay_settings()["voice"]["enabled"] = False
+            cls._save_overlay_settings()
         cls._voice_ov_on = False
         cls._write_overlay_state()
         await cls._maybe_stop_overlay_window()

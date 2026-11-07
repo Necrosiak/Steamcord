@@ -824,6 +824,11 @@ function OverlayMenuContent() {
             onChange={(v: boolean) => toggleVoice(v)}
             bottomSeparator="none"
           />
+          <div style={{ fontSize: 11, opacity: 0.65, margin: "2px 0 6px" }}>{t("overlay_voice_remembered")}</div>
+          <ToggleFieldAny label={t("overlay_video_notifications")}
+            checked={voice.video_notifications !== false}
+            onChange={(value: boolean) => pushVoice({ video_notifications: value })}
+            bottomSeparator="none" />
           {voiceOn && (
             <>
               <DropdownAny
@@ -832,6 +837,8 @@ function OverlayMenuContent() {
                 rgOptions={[
                   { data: "top-left", label: t("overlay_pos_tl") },
                   { data: "top-right", label: t("overlay_pos_tr") },
+                  { data: "center-left", label: t("overlay_pos_cl") },
+                  { data: "center-right", label: t("overlay_pos_cr") },
                   { data: "bottom-left", label: t("overlay_pos_bl") },
                   { data: "bottom-right", label: t("overlay_pos_br") },
                 ]}
@@ -913,15 +920,17 @@ function ChatMixPanelContent() {
   // partirait au backend et écraserait le réglage de l'utilisateur.
   const [mix, setMix] = useState<number | null>(null);
   const [touched, setTouched] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+  const [active, setActive] = useState(true);
   useEffect(() => {
-    call<[], any>("get_chat_mix").then((r: any) => setMix(typeof r?.mix === "number" ? r.mix : 50))
+    call<[], any>("get_chat_mix").then((r: any) => { setMix(typeof r?.mix === "number" ? r.mix : 50); setEnabled(r?.enabled !== false); setActive(r?.active !== false); })
       .catch(() => setMix(50));
   }, []);
   useEffect(() => {
-    if (!touched || mix === null) return;
+    if (!touched || mix === null || !enabled || !active) return;
     const id = setTimeout(() => { call<[number], any>("set_chat_mix", mix).catch(() => {}); }, 150);
     return () => clearTimeout(id);
-  }, [mix, touched]);
+  }, [mix, touched, enabled, active]);
   if (mix === null) return null;
   const game = Math.min(100, (100 - mix) * 2);
   const discord = Math.min(100, mix * 2);
@@ -941,7 +950,16 @@ function ChatMixPanelContent() {
       </CollapseHeader>
       {open && (
         <CollapseBody>
-          <div ref={sliderFix} className="steamcord-slider steamcord-mix" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
+          <ToggleFieldAny label={t("chat_mix_enabled")} checked={enabled}
+            onChange={async (value: boolean) => {
+              try {
+                const r = await call<[boolean], any>("set_chat_mix_enabled", value);
+                if (r?.ok === false) return;
+                setEnabled(r?.enabled !== false); setActive(r?.active !== false);
+              } catch (_) {}
+            }} bottomSeparator="none" />
+          {!active && <Notice>{t("chat_mix_desktop")}</Notice>}
+          {enabled && active && <div ref={sliderFix} className="steamcord-slider steamcord-mix" style={{ padding: "0 12px", boxSizing: "border-box", width: "100%", overflow: "visible" }}>
             <SliderFieldAny
               label={<div style={{ width: "100%", display: "flex", justifyContent: "center" }}>{levels}</div>}
               value={mix}
@@ -950,7 +968,7 @@ function ChatMixPanelContent() {
               onChange={(v: number) => { setTouched(true); setMix(v); }}
               bottomSeparator="none"
             />
-          </div>
+          </div>}
         </CollapseBody>
       )}
     </div>

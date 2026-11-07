@@ -112,7 +112,16 @@ class EventHandler:
             users = [self.me] + users
         # Reflète l'état de partage courant indépendamment de l'ordre des events.
         for user in users:
-            user.is_live = user.id in self.streaming_users
+            if user.id == self.me.id:
+                # The channel roster can contain an older copy of self. Keep
+                # its channel-specific camera state, but read local controls
+                # from the current media state, not account-wide gateway events.
+                user.is_muted = self.me.is_muted
+                user.is_deafened = self.me.is_deafened
+                user.is_speaking = self.me.is_speaking
+                user.is_live = self.me.is_live
+            else:
+                user.is_live = user.id in self.streaming_users
 
         return {
             "channel_id": self.vc_channel_id,

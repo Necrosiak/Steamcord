@@ -218,6 +218,13 @@ if (window.STEAMCORD_IS_VESKTOP && !window.STEAMCORD_PICKER_WATCHER) {
     // branché sur l'événement DOM — le clic partait dans le vide et la modale
     // restait ouverte (issue #42). On appelle onClick des props React, avec repli
     // sur le clic DOM pour les boutons Vencord (`vc-btn-*`, versions antérieures).
+    window.rpcCloudName = (data) => {
+        const launcher = String(data.game || "").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (!["geforcenow", "nvidiageforcenow"].includes(launcher) || data.detect === false || String(data.override || "").trim()) return null;
+        const name = data.cloud_game;
+        return typeof name === "string" && name.trim() && name.length <= 200 && !/[\x00-\x1f\x7f]/.test(name) ? name.trim() : null;
+    };
+
     const scReactClick = (el) => {
         const k = Object.keys(el).find((n) => n.startsWith("__reactProps"));
         const onClick = k && el[k] && el[k].onClick;
@@ -822,6 +829,59 @@ window.Vencord.Plugins.plugins.Steamcord = {
             return Array.from(out, ([key, s]) => ({ key, s }));
         };
 
+        window.__sc_videoDiagnostics = async () => {
+            // Whitelist numbers and codec names only: no participant IDs,
+            // device labels, SDP, addresses, messages or capture images.
+            const dimensions = (track) => {
+                const st = track?.getSettings?.() || {};
+                return Object.fromEntries(["width", "height", "frameRate"].filter(k =>
+                    Number.isFinite(st[k])).map(k => [k, st[k]]));
+            };
+            const capture = (window.STEAMCORD_SHARE_STREAM?.getVideoTracks?.() || []).map(dimensions);
+            const relays = [];
+            for (const [userId, entry] of Object.entries(window.STEAMCORD_VIDEO || {})) {
+                const source = (window.__sc_videoTracksFor?.(userId) || []).map(x => ({kind: x.kind, ...dimensions(x.t)}));
+                let stats = [];
+                if (entry.pc?.connectionState === "connected") {
+                    let timer;
+                    try {
+                        const report = await Promise.race([entry.pc.getStats(), new Promise((_, reject) => {
+                            timer = setTimeout(() => reject(new Error("timeout")), 1500);
+                        })]);
+                        report.forEach(st => {
+                            if (st.type !== "outbound-rtp" || (st.kind || st.mediaType) !== "video") return;
+                            const data = {};
+                            for (const key of ["frameWidth", "frameHeight", "framesPerSecond", "framesEncoded", "bytesSent", "qualityLimitationReason"])
+                                if (typeof st[key] === "number" || key === "qualityLimitationReason" && ["none", "cpu", "bandwidth", "other"].includes(st[key])) data[key] = st[key];
+                            stats.push(data);
+                        });
+                    } catch (_) {} finally { clearTimeout(timer); }
+                }
+                relays.push({source, stats});
+            }
+            const backend = ["windows-native", "desktop-direct", "native-portal", "gstreamer"].includes(window.STEAMCORD_CAPTURE_BACKEND)
+                ? window.STEAMCORD_CAPTURE_BACKEND : "none";
+            return {backend, capture, relays};
+        };
+
+        // A second encode happens on the local Vesktop -> Steam relay. Its
+        // browser defaults are too conservative for an enlarged game stream.
+        // This cannot increase the quality of the source sent by Discord.
+        window.__sc_configureRelaySender = async (sender, kind) => {
+            if (!sender || typeof sender.getParameters !== "function") return false;
+            try {
+                const params = sender.getParameters();
+                if (!params.encodings || !params.encodings.length) return false;
+                params.degradationPreference = "maintain-resolution";
+                for (const encoding of params.encodings) {
+                    encoding.maxBitrate = kind === "screen" ? 18000000 : 6000000;
+                    encoding.scaleResolutionDownBy = 1;
+                }
+                await sender.setParameters(params);
+                return true;
+            } catch (_) { return false; } // Older engines retain their defaults.
+        };
+
         window.STEAMCORD_startVideoRelay = async (userId) => {
             if (!window.STEAMCORD_VIDEO_VISIBILITY.canWatch(userId)) {
                 window.STEAMCORD_VIDEO_VISIBILITY.defer(userId); return;
@@ -987,7 +1047,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         } else { staleMisses = 0; }
                     } catch (e) { /* ignore */ }
                 }, 1000);
-                window.STEAMCORD_VIDEO[userId] = { pc, streamKey, keepalive };
+                window.STEAMCORD_VIDEO[userId] = { pc, streamKey, keepalive, kinds };
 
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
@@ -1764,7 +1824,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // permissif : le match exact reste prioritaire, donc aucun jeu
                                     // qui marchait déjà ne peut changer de cible.
                                     try {
-                                        let appId = "0", rpcName = data.game;
+                                        const cloudName = window.rpcCloudName(data);
+                                        let appId = "0", rpcName = String(data.override || "").trim() || cloudName || data.game;
                                         // Lanceurs connus : eux-mêmes détectables par Discord, donc
                                         // « Heroic » résout parfaitement... et masque le jeu. On ne
                                         // consulte les processus QUE pour eux, ou quand le nom n'a
@@ -1863,8 +1924,15 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                         || window.__sc_rpcAppIdsLoose?.get(window.rpcNormNameLoose(forced))
                                                         || "0";
                                                 }
+                                                if (cloudName) {
+                                                    rpcName = cloudName;
+                                                    appId = window.__sc_rpcAppIds.get(cloudName.toLowerCase())
+                                                        || window.__sc_rpcAppIdsNorm?.get(window.rpcNormName(cloudName))
+                                                        || window.__sc_rpcAppIdsLoose?.get(window.rpcNormNameLoose(cloudName))
+                                                        || "0";
+                                                }
                                                 const isLauncher = SC_LAUNCHERS.has(window.rpcNormNameLoose(raw));
-                                                if (!forced && data.detect !== false && (isLauncher || appId === "0")) {
+                                                if (!forced && !cloudName && data.detect !== false && (isLauncher || appId === "0")) {
                                                     const titleKey = window.rpcNormNameLoose(raw);
                                                     for (const rawProc of (data.procs || [])) {
                                                         // Sous Wine, argv[0] est un chemin Windows complet
@@ -2555,7 +2623,11 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     return;
                                 case "$VIDEO_ANSWER": {
                                     const entry = window.STEAMCORD_VIDEO[data.userId];
-                                    if (entry && entry.pc) await entry.pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+                                    if (entry && entry.pc) {
+                                        await entry.pc.setRemoteDescription(new RTCSessionDescription(data.payload));
+                                        await Promise.all(entry.pc.getSenders().map((sender, i) =>
+                                            window.__sc_configureRelaySender(sender, entry.kinds?.[i] || "video")));
+                                    }
                                     return;
                                 }
                                 case "$POV_START":
@@ -2584,6 +2656,10 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         try { localStorage.removeItem("token"); location.reload(); } catch (_) {}
                                     }
                                     return;
+                                }
+                                case "$get_video_diagnostics": {
+                                    result = await window.__sc_videoDiagnostics();
+                                    break;
                                 }
                                 case "$get_audio_processing": {
                                     // Réglages micro Discord (Voix & Vidéo). La réduction de bruit

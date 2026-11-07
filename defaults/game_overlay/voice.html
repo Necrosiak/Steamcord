@@ -20,6 +20,8 @@
   #roster.on { display: flex; }
   #roster.top-left     { top: 18px; left: 18px; }
   #roster.top-right    { top: 18px; right: 18px; align-items: flex-end; }
+  #roster.center-left { top: 50%; left: 18px; transform: translateY(-50%); }
+  #roster.center-right { top: 50%; right: 18px; transform: translateY(-50%); align-items: flex-end; }
   #roster.bottom-left  { bottom: 18px; left: 18px; }
   #roster.bottom-right { bottom: 18px; right: 18px; align-items: flex-end; }
   .row {
@@ -28,7 +30,7 @@
     padding: calc(3px * var(--scale)) calc(9px * var(--scale)) calc(3px * var(--scale)) calc(4px * var(--scale));
     width: fit-content;
   }
-  #roster.top-right .row, #roster.bottom-right .row {
+  #roster.top-right .row, #roster.center-right .row, #roster.bottom-right .row {
     flex-direction: row-reverse;
     padding: calc(3px * var(--scale)) calc(4px * var(--scale)) calc(3px * var(--scale)) calc(9px * var(--scale));
   }
@@ -95,6 +97,9 @@
     + '<path d="M3.5 6.5H2.4a5.6 5.6 0 0 0 4.85 5.05V13H5v1.5h6V13H8.75v-1.45c.77-.1 1.49-.37 2.12-.77l-1.1-1.1a4.1 4.1 0 0 1-6.27-3.18z"/>'
     + '<path d="M12.5 6.5a4.1 4.1 0 0 1-.45 1.86l1.1 1.1a5.57 5.57 0 0 0 .85-2.96h-1.5z"/></svg>';
 
+  const DEAF_SVG = '<svg class="mute" viewBox="0 0 16 16" fill="none" stroke="#ed4245" stroke-width="1.7"><path d="M2 10V8a6 6 0 0112 0v2M2 9v4h3V9zM11 9v4h3V9zM1 1l14 14"/></svg>';
+  const LIVE_SVG = '<svg class="mute" viewBox="0 0 16 16" fill="none" stroke="#23a55a" stroke-width="1.5"><rect x="1" y="2" width="14" height="10" rx="1"/><path d="M8 12v3M4 15h8"/></svg>';
+
   // ── ① Roster vocal ─────────────────────────────────────────────────────
   let lastVoice = null, lastEvKey = "";
   const liveEvents = (v) => {
@@ -105,13 +110,13 @@
     lastVoice = v;
     if (!v || !v.enabled) { roster.className = ""; roster.innerHTML = ""; return; }
     const s = v.settings || {};
-    const pos = ["top-left","top-right","bottom-left","bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
+    const pos = ["top-left","top-right","center-left","center-right","bottom-left","bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
     roster.className = "on " + pos;
     roster.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 85) / 100);
     roster.style.setProperty("--scale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
     const rows = (v.users || []).map((u) => {
       const cls = "row" + (u.is_speaking ? " speaking" : "");
-      const mute = (u.is_muted || u.is_deafened) ? MUTE_SVG : "";
+      const mute = (u.is_deafened ? DEAF_SVG : u.is_muted ? MUTE_SVG : "") + (u.is_live ? LIVE_SVG : "");
       return '<div class="' + cls + '"><img class="avatar" src="' + (u.avatar_url || "") + '">'
         + '<span class="name">' + esc(u.username) + '</span>' + mute + '</div>';
     }).join("");

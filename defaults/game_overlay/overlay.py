@@ -465,7 +465,7 @@ class RosterArea(Gtk.DrawingArea):
 
         st = v.get("settings") or {}
         pos = st.get("pos") if st.get("pos") in (
-            "top-left", "top-right", "bottom-left", "bottom-right") else "bottom-left"
+            "top-left", "top-right", "center-left", "center-right", "bottom-left", "bottom-right") else "bottom-left"
         opacity = st.get("opacity")
         opacity = (opacity if isinstance(opacity, (int, float)) else 85) / 100.0
         scale = st.get("scale")
@@ -492,8 +492,9 @@ class RosterArea(Gtk.DrawingArea):
             lay = self._layout(cr, u.get("username") or "", self.FONT_PX * scale,
                                self.NAME_MAX * scale)
             tw, th = lay.get_pixel_size()
-            w = pad_in + av + gap + tw + (gap + mute_sz if muted else 0) + pad_out
-            rows.append({"u": u, "lay": lay, "tw": tw, "th": th, "w": w, "muted": muted})
+            badges = (["deaf" if u.get("is_deafened") else "mute"] if muted else []) + (["live"] if u.get("is_live") else [])
+            w = pad_in + av + gap + tw + len(badges) * (gap + mute_sz) + pad_out
+            rows.append({"u": u, "lay": lay, "tw": tw, "th": th, "w": w, "badges": badges})
 
         # Arrivées / départs : petites lignes « → pseudo » (vert) / « ← pseudo »
         # (rouge), du côté libre du roster (au-dessus en bas d'écran).
@@ -511,7 +512,9 @@ class RosterArea(Gtk.DrawingArea):
 
         total_h = len(rows) * row_h + max(0, len(rows) - 1) * gap_row
         top = pos.startswith("top")
-        y = self.MARGIN if top else H - self.MARGIN - total_h - ev_total
+        y = ((H - total_h - ev_total) / 2 if pos.startswith("center") else
+             self.MARGIN if top else H - self.MARGIN - total_h - ev_total)
+        y = max(self.MARGIN, y)
 
         cr.push_group()
 
@@ -546,8 +549,8 @@ class RosterArea(Gtk.DrawingArea):
             if right:
                 # flex-direction: row-reverse → avatar à droite, badge à gauche.
                 cx = x + pad_out
-                if r["muted"]:
-                    self._draw_mute(cr, cx, y + (row_h - mute_sz) / 2, mute_sz)
+                for badge in r["badges"]:
+                    self._draw_badge(cr, badge, cx, y + (row_h - mute_sz) / 2, mute_sz)
                     cx += mute_sz + gap
                 text_x, avatar_x = cx, x + r["w"] - pad_in - av
             else:
@@ -561,9 +564,10 @@ class RosterArea(Gtk.DrawingArea):
             cr.move_to(text_x, y + (row_h - r["th"]) / 2)
             PangoCairo.show_layout(cr, r["lay"])
 
-            if not right and r["muted"]:
-                self._draw_mute(cr, text_x + r["tw"] + gap,
-                                y + (row_h - mute_sz) / 2, mute_sz)
+            if not right:
+                for i, badge in enumerate(r["badges"]):
+                    self._draw_badge(cr, badge, text_x + r["tw"] + gap + i * (mute_sz + gap),
+                                     y + (row_h - mute_sz) / 2, mute_sz)
 
             y += row_h + gap_row
         if top:
@@ -571,6 +575,27 @@ class RosterArea(Gtk.DrawingArea):
         cr.pop_group_to_source()
         cr.paint_with_alpha(max(0.0, min(1.0, opacity)))
         return False
+
+    def _draw_badge(self, cr, kind, x, y, size):
+        if kind == "mute":
+            self._draw_mute(cr, x, y, size)
+            return
+        cr.save()
+        cr.translate(x, y)
+        cr.scale(size / 16, size / 16)
+        cr.set_line_width(1.6)
+        if kind == "live":
+            cr.set_source_rgb(0.14, 0.65, 0.35)
+            cr.rectangle(1, 2, 14, 10)
+            cr.move_to(8, 12); cr.line_to(8, 15)
+            cr.move_to(4, 15); cr.line_to(12, 15)
+        else:
+            cr.set_source_rgb(0.93, 0.26, 0.27)
+            cr.arc(8, 8, 6, 3.14159, 6.28318)
+            cr.rectangle(2, 8, 3, 5); cr.rectangle(11, 8, 3, 5)
+            cr.move_to(1, 1); cr.line_to(15, 15)
+        cr.stroke()
+        cr.restore()
 
     def _draw_pov(self, cr):
         if not self.pov.get("enabled") or not self.pov_frames:

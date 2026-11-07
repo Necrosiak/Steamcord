@@ -89,7 +89,7 @@ import { ServerHub } from "./components/ServerHub";
 import { useOpenChat } from "./components/ExpandedNav";
 import { TextChat } from "./components/TextChat";
 import { DiscordRuntimeControl } from "./components/DiscordRuntimeControl";
-import { t } from "./i18n";
+import { t, errText } from "./i18n";
 import {
   call,
   addEventListener,
@@ -1018,6 +1018,21 @@ const StreamQualitySetting = () => {
   );
 };
 
+const VideoDiagnosticsSetting = () => {
+  const [report, setReport] = useState("");
+  const [busy, setBusy] = useState(false);
+  return <>
+    <SR><DialogButton disabled={busy} onClick={async () => {
+      setBusy(true);
+      try { setReport(JSON.stringify(await call("get_video_diagnostics"), null, 2)); }
+      catch (e) { setReport(errText(e)); }
+      finally { setBusy(false); }
+    }}>{t("video_diagnostics")}</DialogButton></SR>
+    <SR><div style={{fontSize: 11, opacity: 0.65}}>{t("video_diagnostics_desc")}</div></SR>
+    {report && <SR><pre style={{fontSize: 11, whiteSpace: "pre-wrap", overflowWrap: "anywhere", userSelect: "text"}}>{report}</pre></SR>}
+  </>;
+};
+
 const UpdaterSection = () => {
   // Défaut OFF, aligné sur le backend : une install passe par la modale de
   // confirmation de Decky, on ne la fait pas surgir sans que l'user l'ait voulu.
@@ -1777,6 +1792,7 @@ const MicProcessingConfig = () => {
   return (
     <>
       <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "2px 0" }}><IcMic /> {t("mic_noise_reduction")}</div></SR>
+      <SR><div style={{ fontSize: 11, opacity: 0.65, marginBottom: 6 }}>{t("mic_speaker_hint")}</div></SR>
       <SR>
         <Dropdown rgOptions={noiseOpts as any} selectedOption={cfg.noise}
           onChange={(e: any) => {
@@ -2324,6 +2340,7 @@ const ConfigPanel = () => {
       <RpcToggle />
       <RpcDetectToggle />
       <RpcOverrideField />
+      <SR><div style={{fontSize: 11, opacity: 0.65}}>{t("rpc_gfn_native_desc")}</div></SR>
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcUser /> {t("config_display_name")}</div>
@@ -2366,6 +2383,7 @@ const ConfigPanel = () => {
       <NotifSoundSetting />
       <StreamerModeSetting />
       <StreamQualitySetting />
+      <VideoDiagnosticsSetting />
       <HostFeature name="keep_awake"><KeepAwakeSetting /></HostFeature>
       <hr />
       <SR>
