@@ -268,6 +268,12 @@
         // Un seul usage : posé par le $golive du QAM pour CE partage.
         const direct = !!window.STEAMCORD_GOLIVE_DIRECT;
         window.STEAMCORD_GOLIVE_DIRECT = false;
+        // Share started from Vesktop's own button: use the native picker as-is.
+        // The 8 s budget and relay fallback are for the QAM Go Live only (same
+        // gate as the modal auto-validation in steamcord_client.js).
+        if (!direct && !window.STEAMCORD_GOLIVE_ACTIVE && nativeGetDisplayMedia) {
+            return keepShareStream(await nativeGetDisplayMedia(constraints), "native-portal");
+        }
         if (direct && window.STEAMCORD_HOST === "windows" && nativeGetDisplayMedia) {
             try {
                 // Vesktop supplies Windows process-loopback audio here. Legacy

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- Screen sharing started from Vesktop's own button in Desktop Mode works again. It no longer goes through the Go Live timeout and GStreamer fallback, which could leave the button unresponsive for the rest of the session.
+
 ## 1.44.0 — 2026-11-07
 
 ### New
