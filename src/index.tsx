@@ -1018,17 +1018,17 @@ const StreamQualitySetting = () => {
   );
 };
 
-const VideoDiagnosticsSetting = () => {
+const DiagnosticsSetting = ({ action, label, description }: { action: string; label: string; description: string }) => {
   const [report, setReport] = useState("");
   const [busy, setBusy] = useState(false);
   return <>
     <SR><DialogButton disabled={busy} onClick={async () => {
       setBusy(true);
-      try { setReport(JSON.stringify(await call("get_video_diagnostics"), null, 2)); }
+      try { setReport(JSON.stringify(await call(action), null, 2)); }
       catch (e) { setReport(errText(e)); }
       finally { setBusy(false); }
-    }}>{t("video_diagnostics")}</DialogButton></SR>
-    <SR><div style={{fontSize: 11, opacity: 0.65}}>{t("video_diagnostics_desc")}</div></SR>
+    }}>{label}</DialogButton></SR>
+    <SR><div style={{fontSize: 11, opacity: 0.65}}>{description}</div></SR>
     {report && <SR><pre style={{fontSize: 11, whiteSpace: "pre-wrap", overflowWrap: "anywhere", userSelect: "text"}}>{report}</pre></SR>}
   </>;
 };
@@ -2341,6 +2341,7 @@ const ConfigPanel = () => {
       <RpcDetectToggle />
       <RpcOverrideField />
       <SR><div style={{fontSize: 11, opacity: 0.65}}>{t("rpc_gfn_native_desc")}</div></SR>
+      <DiagnosticsSetting action="get_game_diagnostics" label={t("game_diagnostics")} description={t("game_diagnostics_desc")} />
       <hr />
       <SR>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcUser /> {t("config_display_name")}</div>
@@ -2383,7 +2384,7 @@ const ConfigPanel = () => {
       <NotifSoundSetting />
       <StreamerModeSetting />
       <StreamQualitySetting />
-      <VideoDiagnosticsSetting />
+      <DiagnosticsSetting action="get_video_diagnostics" label={t("video_diagnostics")} description={t("video_diagnostics_desc")} />
       <HostFeature name="keep_awake"><KeepAwakeSetting /></HostFeature>
       <hr />
       <SR>

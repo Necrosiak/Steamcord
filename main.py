@@ -2039,6 +2039,32 @@ class Plugin:
         return cls._rpc_cloud_status or {"game": None, "reason": "not_gfn", "source": None}
 
     @classmethod
+    async def get_game_diagnostics(cls):
+        from discord_client.cloud_game import is_geforce_launcher
+        # Refresh the probe without sending or changing Discord activity. Never
+        # include game/window titles, executable paths or the manual title.
+        payload = await cls._rpc_payload()
+        status = await cls.get_cloud_game_status()
+        data = cls._diagnostic_system()
+        data.update({
+            "activity_enabled": bool(cls._rpc_pref()),
+            "launcher_detection_enabled": bool(cls._rpc_detect_pref()),
+            "manual_title_set": bool(cls._rpc_override_pref()),
+            "steam_application": ("geforce_now" if is_geforce_launcher(payload.get("game"))
+                                  else "other" if payload.get("game") else "none"),
+            "geforce_now": {
+                "reason": status.get("reason") if status.get("reason") in {
+                    "not_gfn", "disabled", "not_running", "unavailable", "detected", "ambiguous", "no_game"
+                } else "unavailable",
+                "source": status.get("source") if status.get("source") in {"windows-title", "x11-title"} else None,
+                "game_detected": bool(status.get("game")),
+            },
+            "session": (await cls.get_share_env()).get("env"),
+        })
+        logger.info("[game-diagnostic] %s", dumps(data))
+        return data
+
+    @classmethod
     async def _rpc_payload(cls):
         from discord_client.cloud_game import is_geforce_launcher, detect_geforce_game
         from asyncio import to_thread
@@ -2832,17 +2858,26 @@ class Plugin:
         return await cls.evt_handler.api.set_local_mute(user_id, muted)
 
     @classmethod
-    async def get_video_diagnostics(cls):
+    def _diagnostic_system(cls):
         import platform
-        report = await cls.evt_handler.api._store_access_request("$get_video_diagnostics")
-        data = {"host": host.NAME, "kernel": platform.release(), "video": report,
-                "session": (await cls.get_share_env()).get("env")}
-        if not host.WINDOWS:
+        data = {"host": host.NAME, "kernel": platform.release(),
+                "steamcord_version": updater.get_current_version()}
+        if host.WINDOWS:
+            release, version, _, _ = platform.win32_ver()
+            data["windows"] = {"release": release, "version": version or platform.version()}
+        else:
             try:
                 distro = platform.freedesktop_os_release()
                 data["distribution"] = {k: distro[k] for k in ("ID", "VERSION_ID") if k in distro}
             except (OSError, AttributeError):
                 pass
+        return data
+
+    @classmethod
+    async def get_video_diagnostics(cls):
+        report = await cls.evt_handler.api._store_access_request("$get_video_diagnostics")
+        data = cls._diagnostic_system()
+        data.update(video=report, session=(await cls.get_share_env()).get("env"))
         logger.info("[video-diagnostic] %s", dumps(data))
         return data
 

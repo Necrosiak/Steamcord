@@ -18,6 +18,8 @@ jobs:
         run: python -m unittest discover -s tests -p "test_windows*.py" -v
       - name: Test cloud game detection boundaries
         run: python -m unittest discover -s tests -p test_cloud_game.py -v
+      - name: Test support diagnostics
+        run: python -m unittest discover -s tests -p test_support_diagnostics.py -v
 
   build-plugin:
     runs-on: ubuntu-latest
@@ -55,6 +57,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_audio_overlay_regressions.py -v
           node --test tests/test-video-overlay-regressions.cjs
           python3 -m unittest discover -s tests -p test_cloud_game.py -v
+          python3 -m unittest discover -s tests -p test_support_diagnostics.py -v
           node --test tests/test-cloud-rpc.cjs
           python3 -m unittest discover -s tests -p test_dbus_next_py315.py -v
           python3 -m unittest discover -s tests -p test_steam_display_env.py -v

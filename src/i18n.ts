@@ -34,6 +34,8 @@ let _locale: Locale | null = null;
 
 const T: Record<Locale, Dict> = {
   en: {
+    game_diagnostics: "Game detection diagnostics",
+    game_diagnostics_desc: "Record system version and detection status in Steamcord’s log. Game titles and account information are not included.",
     rpc_gfn_native_desc: "GeForce NOW: automatic game titles are supported for the native client when its window title is readable. For browser sessions or unavailable titles, use the manual title above.",
     dm_pin: "Pin conversation", dm_unpin: "Unpin conversation", dm_pin_failed: "Unable to save pin. Try again.",
     vesktop_desktop_off: "Don't run Vesktop in Desktop Mode",
@@ -318,6 +320,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is installed. Close and reopen the Quick Access menu to load it.",
   },
   fr: {
+    game_diagnostics: "Diagnostic de détection des jeux",
+    game_diagnostics_desc: "Relève la version du système et l’état de détection dans le journal Steamcord. Les noms des jeux et les informations de compte sont exclus.",
     rpc_gfn_native_desc: "GeForce NOW : le nom du jeu peut être détecté dans le client natif si le titre de sa fenêtre est lisible. Pour le navigateur ou un titre inaccessible, utilise le titre manuel ci-dessus.",
     video_diagnostics: "Diagnostic vidéo",
     video_diagnostics_desc: "Pendant un partage ou un visionnage, relève les dimensions vidéo et les statistiques du relais local dans le journal Steamcord. Aucune image ni information de compte n’est collectée.",
@@ -602,6 +606,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} est installé. Ferme puis rouvre le menu d'accès rapide pour le charger.",
   },
   de: {
+    game_diagnostics: "Diagnose der Spielerkennung",
+    game_diagnostics_desc: "Systemversion und Erkennungsstatus im Steamcord-Protokoll erfassen. Spieltitel und Kontoinformationen werden nicht erfasst.",
     rpc_gfn_native_desc: "GeForce NOW: Spielnamen können im nativen Client automatisch erkannt werden, wenn sein Fenstertitel lesbar ist. Für Browser-Sitzungen oder unlesbare Titel verwende den manuellen Titel oben.",
     chat_mix_enabled: "Spiel-/Discord-Lautstärkeausgleich aktivieren",
     chat_mix_desktop: "Im Desktop-Modus inaktiv. Verwende den Lautstärkemixer des Systems.",
@@ -880,6 +886,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} ist installiert. Schließe das Schnellzugriffsmenü und öffne es erneut, um es zu laden.",
   },
   es: {
+    game_diagnostics: "Diagnóstico de detección de juegos",
+    game_diagnostics_desc: "Registra la versión del sistema y el estado de detección en Steamcord. No incluye títulos de juegos ni información de cuenta.",
     rpc_gfn_native_desc: "GeForce NOW: se puede detectar el juego en el cliente nativo si el título de la ventana es legible. Para sesiones de navegador o títulos inaccesibles, usa el título manual de arriba.",
     chat_mix_enabled: "Activar balance Juego / Discord",
     chat_mix_desktop: "Inactivo en modo Escritorio. Usa el mezclador de volumen del sistema.",
@@ -1158,6 +1166,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} está instalado. Cierra y vuelve a abrir el menú de acceso rápido para cargarlo.",
   },
   it: {
+    game_diagnostics: "Diagnostica del rilevamento giochi",
+    game_diagnostics_desc: "Registra la versione del sistema e lo stato del rilevamento nel registro di Steamcord. Non include titoli dei giochi o dati dell’account.",
     rpc_gfn_native_desc: "GeForce NOW: il nome del gioco può essere rilevato nel client nativo se il titolo della finestra è leggibile. Per il browser o titoli non accessibili, usa il titolo manuale qui sopra.",
     chat_mix_enabled: "Attiva il bilanciamento Gioco / Discord",
     chat_mix_desktop: "Inattivo in modalità Desktop. Usa il mixer del volume di sistema.",
@@ -1436,6 +1446,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} è installato. Chiudi e riapri il menu di accesso rapido per caricarlo.",
   },
   pt: {
+    game_diagnostics: "Diagnóstico de deteção de jogos",
+    game_diagnostics_desc: "Regista a versão do sistema e o estado da deteção no registo do Steamcord. Não inclui títulos de jogos nem dados da conta.",
     rpc_gfn_native_desc: "GeForce NOW: o nome do jogo pode ser detetado no cliente nativo se o título da janela estiver acessível. No navegador ou sem um título acessível, usa o título manual acima.",
     chat_mix_enabled: "Ativar equilíbrio Jogo / Discord",
     chat_mix_desktop: "Inativo no modo Desktop. Usa o misturador de volume do sistema.",
@@ -1714,6 +1726,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "O Steamcord {v} está instalado. Fecha e volta a abrir o menu de acesso rápido para o carregar.",
   },
   nl: {
+    game_diagnostics: "Diagnose van gamedetectie",
+    game_diagnostics_desc: "Leg de systeemversie en detectiestatus vast in het Steamcord-logboek. Gametitels en accountgegevens worden niet opgenomen.",
     rpc_gfn_native_desc: "GeForce NOW: de gamenaam kan in de native client worden herkend als de venstertitel leesbaar is. Gebruik bij browsersessies of onleesbare titels de handmatige titel hierboven.",
     chat_mix_enabled: "Game-/Discord-balans inschakelen",
     chat_mix_desktop: "Niet actief in desktopmodus. Gebruik de volumemixer van het systeem.",
@@ -1992,6 +2006,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is geïnstalleerd. Sluit het snelmenu en open het opnieuw om het te laden.",
   },
   pl: {
+    game_diagnostics: "Diagnostyka wykrywania gier",
+    game_diagnostics_desc: "Zapisuje wersję systemu i stan wykrywania w dzienniku Steamcord. Bez tytułów gier i danych konta.",
     rpc_gfn_native_desc: "GeForce NOW: gra może zostać wykryta w natywnym kliencie, jeśli tytuł okna jest dostępny. W przeglądarce lub przy niedostępnym tytule użyj ręcznego tytułu powyżej.",
     chat_mix_enabled: "Włącz balans Gra / Discord",
     chat_mix_desktop: "Nieaktywny w trybie pulpitu. Użyj systemowego miksera głośności.",
@@ -2270,6 +2286,8 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} jest zainstalowany. Zamknij i otwórz ponownie menu szybkiego dostępu, aby go wczytać.",
   },
   ru: {
+    game_diagnostics: "Диагностика обнаружения игр",
+    game_diagnostics_desc: "Записывает версию системы и состояние обнаружения в журнал Steamcord. Названия игр и данные аккаунта не включаются.",
     rpc_gfn_native_desc: "GeForce NOW: игра может определяться в нативном клиенте, если доступен заголовок окна. Для браузера или недоступного заголовка укажи название вручную выше.",
     chat_mix_enabled: "Включить баланс Игра / Discord",
     chat_mix_desktop: "Неактивен в режиме рабочего стола. Используй системный микшер громкости.",

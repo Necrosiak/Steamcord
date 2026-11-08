@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.44.1 — 2026-11-08
+
+### New
+
+- Game detection diagnostics in Settings, available in both the Quick Access panel and the expanded view on Windows and Linux. The report shows whether game detection is enabled and where GeForce NOW detection stops, without including game titles or account information (#88).
+
+### Improved
+
+- Game and video diagnostics include the Steamcord version and Linux distribution/version or Windows version/build.
+
+### Known issues
+
+- This update adds diagnostics for testing; it does not contain a confirmed fix for GeForce NOW detection (#88), screen sharing split into four copies (#91), pixelated streams (#89), or in-game opacity on the Deck OLED (#93).
+
+### Thanks
+
+Thanks to [@j2v454sj](https://github.com/j2v454sj) and [@BeanieBoy981](https://github.com/BeanieBoy981) for testing and sending feedback and logs.
+
+**Full changelog:** [v1.44.0...v1.44.1](https://github.com/Necrosiak/Steamcord/compare/v1.44.0...v1.44.1)
+
 ## 1.44.0 — 2026-11-07
 
 ### New
