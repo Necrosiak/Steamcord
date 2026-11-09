@@ -171,10 +171,27 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 # Code contributions
 
+### [@simonesessa](https://github.com/simonesessa)
+
+- Screen sharing from Vesktop's own button in Desktop Mode, which went through
+  the Go Live timeout and relay and left the button dead for the session: the
+  cause traced in the log, the fix, a regression test that fails on the old
+  code, and checks on a Steam Deck in both modes
+  ([#94](https://github.com/Necrosiak/Steamcord/pull/94))
+
+### [@borborisovai](https://github.com/borborisovai)
+
+- Proxy support for Discord, from the
+  [Steamcord-proxysupport](https://github.com/borborisovai/Steamcord-proxysupport)
+  fork: HTTP, HTTPS, SOCKS4 and SOCKS5 with a login, through a small local
+  bridge, so Steamcord can be used where Discord is blocked
+
 ### [@SilvertongueRED](https://github.com/SilvertongueRED)
 
 - The [Windows fork](https://github.com/SilvertongueRED/Steamcord-for-Windows),
   which helped identify the Windows integration points for this port.
+- The shortened start-up retry message, after a failed Discord start filled
+  the Windows log with hundreds of MB
 
 ### [@theupriser](https://github.com/theupriser)
 

@@ -793,7 +793,14 @@ class Plugin:
                                    "— retrying in 15s")
                     await sleep(15)
                 else:
-                    logger.warning(f"initialize() failed ({e!r}); retrying in 2s")
+                    # Message court : le repr d'une erreur de décodage emporte tout
+                    # le script injecté (~250 Ko), et toutes les 2 s il gonflait le
+                    # journal de centaines de Mo (relevé sur Windows par
+                    # @SilvertongueRED).
+                    msg = repr(e)
+                    if len(msg) > 400:
+                        msg = msg[:400] + "…"
+                    logger.warning(f"initialize() failed ({msg}); retrying in 2s")
                     await sleep(2)
         logger.info("Discord initialized")
 
@@ -887,6 +894,18 @@ class Plugin:
     async def _main(cls):
         logger.info("Starting Steamcord backend")
         create_task(_exit_with_decky_loader(logger.warning))
+        # Settings ▸ Proxy : le pont local démarre AVANT tout le reste, sinon la
+        # première vérification de mise à jour, le QR login et le téléchargement
+        # de Vesktop partent en direct pendant que Discord, lui, passera par le
+        # proxy. Ne bloque jamais le démarrage (réglage invalide, proxy coupé).
+        try:
+            from discord_client import netproxy
+            cfg = netproxy.load()
+            if netproxy.is_active(cfg):
+                await netproxy.ensure_bridge(cfg)
+                logger.info(f"[proxy] actif: {netproxy.describe(cfg)}")
+        except Exception as e:
+            logger.warning(f"[proxy] démarrage du pont impossible: {e!r}")
         # Fenêtre d'overlay orpheline : après un rechargement du backend
         # (mise à jour, déploiement) l'ancien overlay.py survit, mais
         # _overlay_proc repart à None → plus aucune écriture de l'état, et
@@ -1611,8 +1630,16 @@ class Plugin:
         tmp = path + ".part"
         try:
             connector = TCPConnector(ssl=cls._ca_ssl_context())
+            # Settings ▸ Proxy : le CDN de Discord peut être bloqué comme le
+            # reste (le pont local absorbe le login SOCKS5/HTTP).
+            proxy = None
+            try:
+                from discord_client import netproxy
+                proxy = netproxy.aiohttp_proxy(bridge=netproxy.bridge_url())
+            except Exception as e:
+                logger.warning(f"[attach] proxy indisponible: {e!r}")
             async with ClientSession(connector=connector) as sess:
-                async with sess.get(url, timeout=120) as resp:
+                async with sess.get(url, timeout=120, proxy=proxy) as resp:
                     if resp.status != 200:
                         logger.warning(f"[attach] HTTP {resp.status} sur {name}")
                         return {"ok": False, "code": "attach_http", "cmd": str(resp.status)}
@@ -1726,6 +1753,90 @@ class Plugin:
             return {"ok": False, "error": str(e)}
         await cls.apply_stream_prefs()
         return {"ok": True, **cfg}
+
+    # ── Proxy (Settings ▸ Proxy) ────────────────────────────────────────────
+    # Discord est bloqué dans plusieurs pays : le QAM doit pouvoir désigner le
+    # proxy sans VPN système. Le backend ne fait que lire/écrire une config et
+    # tenir le pont local (netproxy.py) — l'application réelle se fait au
+    # lancement de Vesktop, d'où `apply_proxy` pour redémarrer Discord.
+    @classmethod
+    async def get_proxy(cls):
+        try:
+            from discord_client import netproxy
+            cfg = netproxy.load()
+            return {**netproxy.public(cfg), "active": netproxy.is_active(cfg),
+                    "bridge": bool(netproxy.bridge_url())}
+        except Exception as e:
+            logger.warning(f"[proxy] lecture impossible: {e!r}")
+            return {"enabled": False, "scheme": "socks5", "host": "", "port": 1080,
+                    "username": "", "has_password": False, "bypass": "",
+                    "active": False, "bridge": False, "error": "proxy_err_read"}
+
+    @classmethod
+    async def set_proxy(cls, enabled=None, scheme=None, host=None, port=None,
+                        username=None, password=None, bypass=None):
+        try:
+            from discord_client import netproxy
+            before = netproxy.load()
+            result = netproxy.save({
+                "enabled": enabled, "scheme": scheme, "host": host, "port": port,
+                "username": username, "password": password, "bypass": bypass,
+            })
+            if not result.get("ok"):
+                return result
+            cfg = result["config"]
+            try:
+                if netproxy.is_active(cfg):
+                    await netproxy.ensure_bridge(cfg)
+                else:
+                    await netproxy.stop_bridge()
+            except Exception as e:
+                logger.warning(f"[proxy] pont local: {e!r}")
+            changed = {k: before[k] for k in netproxy.USER_FIELDS} != {
+                k: cfg[k] for k in netproxy.USER_FIELDS}
+            running = False
+            try:
+                import vesktop
+                running = await vesktop.is_up()
+            except Exception:
+                pass
+            logger.info(f"[proxy] réglage enregistré: {netproxy.describe(cfg)}"
+                        + (" (redémarrage de Discord requis)" if changed and running else ""))
+            return {"ok": True, "config": netproxy.public(cfg),
+                    "restart_required": bool(changed and running)}
+        except Exception as e:
+            logger.warning(f"[proxy] enregistrement impossible: {e!r}")
+            return {"ok": False, "error": "proxy_err_save"}
+
+    @classmethod
+    async def test_proxy(cls):
+        try:
+            from discord_client import netproxy
+            return await netproxy.test()
+        except Exception as e:
+            logger.warning(f"[proxy] test impossible: {e!r}")
+            return {"ok": False, "error": "proxy_err_unreachable"}
+
+    @classmethod
+    async def apply_proxy(cls):
+        """Redémarre Vesktop pour que le proxy prenne effet. Ne fait rien s'il
+        ne tourne pas : le prochain lancement lira la config."""
+        try:
+            import vesktop
+            from discord_client import netproxy
+            cfg = netproxy.load()
+            if netproxy.is_active(cfg):
+                await netproxy.ensure_bridge(cfg)
+            else:
+                await netproxy.stop_bridge()
+            if not await vesktop.is_up():
+                return {"ok": True, "restarted": False}
+            stopped = await vesktop.kill_for_recovery("[proxy]")
+            # Le watchdog relance et réinjecte le client dès que l'onglet meurt.
+            return {"ok": bool(stopped), "restarted": bool(stopped)}
+        except Exception as e:
+            logger.warning(f"[proxy] redémarrage impossible: {e!r}")
+            return {"ok": False, "restarted": False, "error": "proxy_err_restart"}
 
     @classmethod
     async def connect_ws(cls):
@@ -5965,6 +6076,14 @@ class Plugin:
                 pass
             from discord_client.overlay_environment import overlay_environment
             env = overlay_environment(env, {}, vesktop._steam_display_env(), _desktop_session())
+            # Settings ▸ Proxy : l'overlay charge les avatars avec urllib, donc
+            # il suit les variables d'environnement (pont local = pas de mot de
+            # passe en argv). Vide quand le proxy est off.
+            try:
+                from discord_client import netproxy
+                env.update(netproxy.env(bridge=netproxy.bridge_url()))
+            except Exception:
+                pass
             cls._overlay_proc = await create_subprocess_exec(
                 sys_python(), str(script), "--state-dir", cls._overlay_dir(),
                 *cls._overlay_backend_args(),

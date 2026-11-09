@@ -74,3 +74,53 @@ for (const fails of [false, true]) {
     assert.equal(directCalls, fails ? 1 : 0);
   });
 }
+
+// Vesktop's own share button must bypass the Go Live timeout and relay.
+test('manual Vesktop share uses native getDisplayMedia, and a cancel does not kill the portal', async () => {
+  const calls = [], kept = [];
+  const stream = { manual: true };
+  let cancel = true;
+  const ctx = {
+    console: { log() {}, warn() {} },
+    window: { STEAMCORD_HOST: 'linux' },
+    nativeGetDisplayMedia: async c => {
+      calls.push(c);
+      if (cancel) throw Object.assign(Error('Permission denied'), { name: 'NotAllowedError' });
+      return stream;
+    },
+    nativePortalDead: false,
+    nativeFirst: async () => { throw Error('manual share must not use the Go Live timeout'); },
+    directDesktop: async () => { throw Error('manual share must not use direct capture'); },
+    keepShareStream: (s, backend) => { kept.push(backend); return s; },
+    getRTCStream: async () => { throw Error('manual share must not fall back to the relay'); }
+  };
+  const capture = vm.runInNewContext(source.slice(gdmStart, gdmEnd) + '\nsteamcordGDM', ctx);
+  await assert.rejects(capture({ video: true }), { name: 'NotAllowedError' });
+  assert.equal(ctx.nativePortalDead, false);
+  cancel = false;
+  const constraints = { video: true, audio: true };
+  assert.equal(await capture(constraints), stream);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1], constraints);
+  assert.deepEqual(kept, ['native-portal']);
+});
+
+test('QAM Go Live keeps the native-first strategy with the relay fallback', async () => {
+  let nativeCalls = 0, relayCalls = 0;
+  const relay = { relay: true };
+  const ctx = {
+    console: { log() {}, warn() {} },
+    window: { STEAMCORD_HOST: 'linux', STEAMCORD_GOLIVE_ACTIVE: true },
+    nativeGetDisplayMedia: async () => { throw Error('QAM Go Live must go through nativeFirst'); },
+    nativePortalDead: false,
+    nativeFirst: async () => { nativeCalls++; throw Error('native portal timeout (8s)'); },
+    directDesktop: async () => { throw Error('not a direct Go Live'); },
+    keepShareStream: s => s,
+    getRTCStream: async () => { relayCalls++; return relay; }
+  };
+  const capture = vm.runInNewContext(source.slice(gdmStart, gdmEnd) + '\nsteamcordGDM', ctx);
+  assert.equal(await capture({ video: true }), relay);
+  assert.equal(nativeCalls, 1);
+  assert.equal(relayCalls, 1);
+  assert.equal(ctx.nativePortalDead, true);
+});

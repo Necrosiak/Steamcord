@@ -143,10 +143,20 @@ async def install():
     url = RELEASE_URL.format(version=VERSION, asset=asset)
     root().mkdir(parents=True, exist_ok=True)
     part = root() / (asset + ".part")
+    # Settings ▸ Proxy: the download is useless without it where GitHub is
+    # filtered — and this runs before Discord, so the proxy is the only route.
+    proxy = None
+    try:
+        from discord_client import netproxy
+        cfg = netproxy.load()
+        if netproxy.is_active(cfg):
+            proxy = netproxy.aiohttp_proxy(cfg, await netproxy.ensure_bridge(cfg))
+    except Exception as e:
+        logger.warning(f"[win-vesktop] proxy unavailable: {e!r}")
     try:
         logger.info(f"[win-vesktop] downloading {asset}")
         async with ClientSession() as session:
-            async with session.get(url, timeout=None) as response:
+            async with session.get(url, timeout=None, proxy=proxy) as response:
                 response.raise_for_status()
                 with open(part, "wb") as f:
                     async for chunk in response.content.iter_chunked(1 << 20):
@@ -261,7 +271,7 @@ async def stop(tag):
     return False
 
 
-def _command(account):
+def _command(account, extra_flags=()):
     profile = profile_dir(account)
     return [
         str(exe()),
@@ -273,6 +283,7 @@ def _command(account):
         # Keep Discord's timers (gateway heartbeat) running while minimised.
         "--disable-background-timer-throttling",
         "--start-minimized",
+        *extra_flags,
     ], profile
 
 
@@ -322,7 +333,17 @@ async def launch(is_up):
     if await is_up():
         logger.warning(f"[win-vesktop] port {CDP_PORT} is already used by another program")
         return False
-    command, profile = _command(account)
+    # Proxy (Settings ▸ Proxy): same Chromium flags as on Linux. Windows has no
+    # systemd unit, but the local bridge is plain asyncio and runs here too.
+    proxy_flags = []
+    try:
+        from discord_client import netproxy
+        proxy_flags = await netproxy.chromium_flags_for_launch()
+        if proxy_flags:
+            logger.info(f"[win-vesktop] launching through {netproxy.describe()}")
+    except Exception as e:
+        logger.warning(f"[proxy] proxy flags unavailable, launching without: {e!r}")
+    command, profile = _command(account, proxy_flags)
     _remember_account(account)
     logger.info(f"[win-vesktop] starting Vesktop {VERSION} for Steam account {account}")
     try:

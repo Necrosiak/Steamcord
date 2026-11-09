@@ -93,12 +93,29 @@ def set_autoupdate_enabled(enabled: bool) -> bool:
     return bool(enabled)
 
 
+def _urlopen(req, timeout):
+    """`urlopen`, through the proxy from Settings ▸ Proxy when one is set.
+
+    The updater is the request users behind a mandatory proxy need most: the
+    check runs before Discord is up, so it falls back to the proxy itself when
+    the local bridge (netproxy) has not been started yet in this process."""
+    try:
+        from discord_client import netproxy
+        opener = netproxy.urllib_opener()
+    except Exception as e:  # a broken proxy setting must never block updates
+        logger.warning(f"[updater] proxy unavailable ({e!r}) — going direct")
+        opener = None
+    if opener is not None:
+        return opener.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout, context=_ssl_context())
+
+
 def _fetch_latest_blocking() -> dict:
     req = urllib.request.Request(
         RELEASES_API,
         headers={"User-Agent": _USER_AGENT, "Accept": "application/vnd.github+json"},
     )
-    with urllib.request.urlopen(req, timeout=15, context=_ssl_context()) as resp:
+    with _urlopen(req, timeout=15) as resp:
         rel = json.loads(resp.read().decode("utf-8"))
 
     tag = rel.get("tag_name") or rel.get("name") or ""
@@ -219,7 +236,7 @@ def _apply_blocking(url: str) -> None:
         tmp = Path(tmp)
         zip_path = tmp / "update.zip"
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-        with urllib.request.urlopen(req, timeout=120, context=_ssl_context()) as resp, open(zip_path, "wb") as f:
+        with _urlopen(req, timeout=120) as resp, open(zip_path, "wb") as f:
             shutil.copyfileobj(resp, f)
 
         extract_dir = tmp / "x"

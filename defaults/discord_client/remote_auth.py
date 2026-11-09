@@ -57,12 +57,21 @@ async def exchange_ticket(ticket: str, priv_jwk_json: str):
         "X-Discord-Locale": "fr",
         "X-Discord-Timezone": "Europe/Paris",
     }
+    # Settings ▸ Proxy : cette requête part du Python du plugin, pas de
+    # Vesktop — sans ça, le QR login restait le seul chemin bloqué.
+    proxy = None
+    try:
+        from discord_client import netproxy
+        proxy = netproxy.aiohttp_proxy(bridge=netproxy.bridge_url())
+    except Exception:
+        pass
     try:
         async with ClientSession(headers=headers) as session:
             async with session.post(
                 REMOTE_AUTH_LOGIN_URL,
                 json={"ticket": ticket},
                 ssl=ssl_ctx,
+                proxy=proxy,
                 timeout=__import__('aiohttp').ClientTimeout(total=20),
             ) as resp:
                 body = await resp.json()

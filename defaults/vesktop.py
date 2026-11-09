@@ -737,6 +737,19 @@ async def launch():
         # WebRTC (portail) lit les variables d'ENV, pas la plateforme ozone.
         extra_flags.append("--ozone-platform=x11")
 
+    # Proxy (Settings ▸ Proxy). Chromium flags, plus our loopback bridge when
+    # the proxy needs a login (Chromium has none) or is SOCKS — the bridge is
+    # started here, before the app, so the very first request already has a
+    # route. A broken setting must never stop Discord from launching.
+    proxy_flags = []
+    try:
+        from discord_client import netproxy
+        proxy_flags = await netproxy.chromium_flags_for_launch()
+        if proxy_flags:
+            logger.info(f"[proxy] launching Vesktop through {netproxy.describe()}")
+    except Exception as e:
+        logger.warning(f"[proxy] proxy flags unavailable, launching without: {e!r}")
+
     _ensure_profile(account)
     _record_account(account)
     # stand-alone : la commande dépend du backend — flatpak (Bazzite/SteamOS)
@@ -803,6 +816,7 @@ async def launch():
         # de son propre partage) n'est pas touché.
         "--disable-accelerated-video-decode",
         "--disable-features=AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL",
+        *proxy_flags,
         *extra_flags,
         stdout=DEVNULL, stderr=DEVNULL, env=env,
     )

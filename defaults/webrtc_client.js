@@ -268,6 +268,15 @@
         // Un seul usage : posé par le $golive du QAM pour CE partage.
         const direct = !!window.STEAMCORD_GOLIVE_DIRECT;
         window.STEAMCORD_GOLIVE_DIRECT = false;
+        // Partage lancé depuis le bouton de Vesktop (mode bureau) : sélecteur
+        // natif tel quel, comme sans le plugin. Le budget de 8 s et le repli
+        // relais ne valent que pour le Go Live du QAM (même gate que
+        // l'auto-validation de la modale dans steamcord_client.js). Sinon le
+        // temps de choisir une source dans deux sélecteurs suffisait à griller
+        // le portail pour la session, et le bouton restait mort (PR #94).
+        if (!direct && !window.STEAMCORD_GOLIVE_ACTIVE && nativeGetDisplayMedia) {
+            return keepShareStream(await nativeGetDisplayMedia(constraints), "native-portal");
+        }
         if (direct && window.STEAMCORD_HOST === "windows" && nativeGetDisplayMedia) {
             try {
                 // Vesktop supplies Windows process-loopback audio here. Legacy
