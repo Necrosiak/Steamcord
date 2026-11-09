@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.45.0 — 2026-11-09
+
+### New
+
+- **Proxy for Discord.** In countries where Discord is blocked, Settings ▸ Proxy can send Discord through an HTTP, HTTPS, SOCKS4 or SOCKS5 proxy, with an optional login, and a Test button checks that Discord answers through it. Discord's connection, sign-in (QR code included), images and Go Live signalling use it, as do Steamcord's own downloads (updates, attachments, the Windows Vesktop download). The password is stored on the device only, never shown again in the panel, and never written to a command line or the log. Voice and video calls cannot go through a proxy: in countries where calls are blocked too, a system-wide VPN is still needed. Thanks to [@borborisovai](https://github.com/borborisovai).
+
+### Fixes
+
+- Screen sharing started from Vesktop's own button in Desktop Mode works again. It no longer goes through the Go Live timeout and fallback, which could leave the button unresponsive for the rest of the session ([#94](https://github.com/Necrosiak/Steamcord/pull/94), thanks to [@simonesessa](https://github.com/simonesessa)).
+- A Discord start that keeps failing no longer writes the whole injected script to the log every 2 seconds, which could grow the log by hundreds of MB (thanks to [@SilvertongueRED](https://github.com/SilvertongueRED)).
+
+**Full changelog:** [v1.44.1...v1.45.0](https://github.com/Necrosiak/Steamcord/compare/v1.44.1...v1.45.0)
+
 ## 1.44.1 — 2026-11-08
 
 ### New
