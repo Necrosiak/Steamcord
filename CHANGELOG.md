@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.45.1 — 2026-11-10
+
+### Fixes
+
+- Turning off the Steamcord entry in Steam's main menu now lasts after Steam restarts. Steamcord also saves this choice in its own settings, because Steam could reload an older value and bring the entry back ([#86](https://github.com/Necrosiak/Steamcord/issues/86)).
+
+### Improved
+
+- Game detection diagnostics now say how many windows were read, how many belong to GeForce NOW, and what kind of title they had (game name, GeForce NOW only, a launcher page). Game titles are still never included ([#88](https://github.com/Necrosiak/Steamcord/issues/88)).
+
+### Thanks
+
+Thanks to [@zerothecat4564](https://github.com/zerothecat4564) and [@JDLKMR](https://github.com/JDLKMR) for reporting and confirming the menu issue ([#86](https://github.com/Necrosiak/Steamcord/issues/86)), and to [@j2v454sj](https://github.com/j2v454sj) for testing GeForce NOW detection ([#88](https://github.com/Necrosiak/Steamcord/issues/88)).
+
+**Full changelog:** [v1.45.0...v1.45.1](https://github.com/Necrosiak/Steamcord/compare/v1.45.0...v1.45.1)
+
 ## 1.45.0 — 2026-11-09
 
 ### New
