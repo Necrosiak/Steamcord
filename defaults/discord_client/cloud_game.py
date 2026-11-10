@@ -19,11 +19,19 @@ def is_geforce_launcher(name):
     return key in {'geforcenow', 'nvidiageforcenow'}
 
 
-def game_from_title(title):
-    """Called only for a proven native GFN window, never for arbitrary tabs."""
+def classify_title(title):
+    """Return (kind, game) for a proven native GFN window title.
+
+    kind is one of 'game', 'branding' (only the GeForce NOW name), 'page'
+    (a launcher page or status such as Home/Loading/Error), 'invalid'
+    (control characters, too long) or 'unknown' (branding in an unknown
+    format). Only the kind may be logged; never the title itself.
+    """
     if not isinstance(title, str) or len(title) > 300 or any(ord(c) < 32 for c in title):
-        return None
+        return 'invalid', None
     title = unicodedata.normalize('NFKC', title.replace('®', '').replace('™', '')).strip()
+    if not title or is_geforce_launcher(title):
+        return 'branding', None
     brand = r'(?:NVIDIA\s+)?GeForce\s*NOW'
     # Require a word/separator boundary; preserve punctuation inside game names.
     title = re.sub(r'\s+(?:(?:on|en|in|via)\s+|[-–—|:]\s*)' + brand + r'\s*$', '', title, flags=re.I)
@@ -31,17 +39,24 @@ def game_from_title(title):
     title = title.replace('®', '').replace('™', '').strip()
     status = title.casefold().rstrip(' .…')
     if re.match(r'^(?:application (?:launch failed|resource corrupted)\b|error code\b|error\s*[:#]|error\s+(?:0x|[0-9])|connecting to\b)', status):
-        return None
-    if not title or is_geforce_launcher(title) or status in {
+        return 'page', None
+    if not title or is_geforce_launcher(title):
+        return 'branding', None
+    if status in {
         'games', 'home', 'library', 'settings', 'sign in', 'login', 'jeux',
         'accueil', 'bibliothèque', 'paramètres', 'connexion', 'nvidia',
         'loading', 'connecting', 'sign-in', 'signin', 'queue', 'error', 'chargement',
     }:
-        return None
+        return 'page', None
     # A remaining branding string has an unknown format; do not publish it.
     if re.search(brand, title, re.I):
-        return None
-    return title if len(title) <= 200 else None
+        return 'unknown', None
+    return ('game', title) if len(title) <= 200 else ('invalid', None)
+
+
+def game_from_title(title):
+    """Called only for a proven native GFN window, never for arbitrary tabs."""
+    return classify_title(title)[1]
 
 
 def _native_linux_pids(proc_root=Path('/proc')):
@@ -64,7 +79,7 @@ def _native_linux_pids(proc_root=Path('/proc')):
     return pids
 
 
-def _x11_titles(env, run=subprocess.run, which=shutil.which):
+def _x11_titles(env, run=subprocess.run, which=shutil.which, stats=None):
     """Bounded, read-only queries; the caller supplies the actual Steam display.
 
     GFN's Flatpak can advertise a PID inside its own namespace. Exact WM_CLASS
@@ -96,6 +111,8 @@ def _x11_titles(env, run=subprocess.run, which=shutil.which):
             ids = re.findall(r'^\s+(0x[0-9a-fA-F]+)\s+"', children, re.M)
         if len(ids) > 128:
             return None
+        if stats is not None:
+            stats['windows'] = len(dict.fromkeys(ids))
         for wid in dict.fromkeys(ids):
             props = query(['xprop', '-f', 'WM_NAME', '8s', '-id', wid, 'WM_CLASS', '_NET_WM_NAME', 'WM_NAME'])
             if props is None:
@@ -165,11 +182,21 @@ def _windows_titles(pids):
     return titles
 
 
+def _title_summary(titles):
+    """Counts only: how many GFN windows had a title, and of which kind."""
+    kinds = {}
+    for title in titles or ():
+        kind = classify_title(title)[0]
+        kinds[kind] = kinds.get(kind, 0) + 1
+    return {'gfn_windows': len(titles or ()), 'title_kinds': kinds}
+
+
 def detect_geforce_game(steam_game, env=None):
     """A fresh snapshot. No retained last-game value that could go stale."""
     if not is_geforce_launcher(steam_game):
         return {'game': None, 'reason': 'not_gfn', 'source': None}
     try:
+        stats = {}
         if sys.platform == 'win32':
             import host
             pids = {pid for pid, exe in host.processes()
@@ -179,14 +206,15 @@ def detect_geforce_game(steam_game, env=None):
         else:
             pids = _native_linux_pids()
             source = 'x11-title'
-            titles = _x11_titles(dict(env or os.environ)) if pids else []
+            titles = _x11_titles(dict(env or os.environ), stats=stats) if pids else []
         if not pids:
             return {'game': None, 'reason': 'not_running', 'source': source}
         if titles is None:
-            return {'game': None, 'reason': 'unavailable', 'source': source}
+            return {'game': None, 'reason': 'unavailable', 'source': source, **stats}
+        details = {**stats, **_title_summary(titles)}
         games = {game for title in titles if (game := game_from_title(title))}
         if len(games) == 1:
-            return {'game': games.pop(), 'reason': 'detected', 'source': source}
-        return {'game': None, 'reason': 'ambiguous' if games else 'no_game', 'source': source}
+            return {'game': games.pop(), 'reason': 'detected', 'source': source, **details}
+        return {'game': None, 'reason': 'ambiguous' if games else 'no_game', 'source': source, **details}
     except (OSError, ValueError, AttributeError):
         return {'game': None, 'reason': 'unavailable', 'source': None}

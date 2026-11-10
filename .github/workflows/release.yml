@@ -68,6 +68,7 @@ jobs:
           node --test tests/test-video-overlay-regressions.cjs
           python3 -m unittest discover -s tests -p test_cloud_game.py -v
           python3 -m unittest discover -s tests -p test_support_diagnostics.py -v
+          python3 -m unittest discover -s tests -p test_menu_entry_backend.py -v
           node --test tests/test-cloud-rpc.cjs
           python3 -m unittest discover -s tests -p test_dbus_next_py315.py -v
           python3 -m unittest discover -s tests -p test_steam_display_env.py -v

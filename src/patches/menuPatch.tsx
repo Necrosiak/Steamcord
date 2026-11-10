@@ -1,3 +1,4 @@
+import { call } from "@decky/api";
 import { Dropdown } from "@decky/ui";
 import { FaDiscord } from "react-icons/fa";
 import { registerSteamMenu } from "../steamMenu";
@@ -22,13 +23,40 @@ export function menuEntryEnabled(): boolean {
   try { return localStorage.getItem(ENABLED_KEY) !== "0"; } catch { return true; }
 }
 
-export function setMenuEntryEnabled(on: boolean) {
-  try { localStorage.setItem(ENABLED_KEY, on ? "1" : "0"); } catch {}
+const apply = (on: boolean) => {
   if (on && !unregister) unregister = register();
   else if (!on && unregister) { unregister(); unregister = undefined; }
+};
+
+const storeLocal = (on: boolean) => {
+  try { localStorage.setItem(ENABLED_KEY, on ? "1" : "0"); } catch {}
+};
+
+export function setMenuEntryEnabled(on: boolean) {
+  storeLocal(on);
+  // The backend copy is what counts at the next start (#86): in Game Mode,
+  // Steam can stop without writing its localStorage to disk.
+  call("set_open_view", null, null, null, null, on ? "on" : "off").catch(() => {});
+  apply(on);
 }
 
+let started = 0;
+
 export const patchMenu = () => {
-  if (menuEntryEnabled() && !unregister) unregister = register();
-  return () => { unregister?.(); unregister = undefined; };
+  const run = ++started;
+  call<[], { menu?: "on" | "off" | null }>("get_open_view")
+    .then((b) => {
+      if (run !== started) return;
+      if (b?.menu === "on" || b?.menu === "off") {
+        storeLocal(b.menu === "on");
+        apply(b.menu === "on");
+      } else {
+        // First start with this version: keep the local choice and save it.
+        const on = menuEntryEnabled();
+        call("set_open_view", null, null, null, null, on ? "on" : "off").catch(() => {});
+        apply(on);
+      }
+    })
+    .catch(() => { if (run === started) apply(menuEntryEnabled()); });
+  return () => { started++; unregister?.(); unregister = undefined; };
 };

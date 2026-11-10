@@ -86,6 +86,33 @@ class CloudGameTests(unittest.TestCase):
                 report=cloud.detect_geforce_game('GeForce NOW', {})
                 self.assertEqual((report['reason'],report['game']), (reason,game))
 
+    def test_report_counts_window_and_title_kinds_without_titles(self):
+        self.assertEqual(cloud.classify_title('GeForce NOW'), ('branding', None))
+        self.assertEqual(cloud.classify_title('NVIDIA GeForce NOW'), ('branding', None))
+        self.assertEqual(cloud.classify_title('GeForce NOW - Library'), ('page', None))
+        self.assertEqual(cloud.classify_title('Error code: 7'), ('page', None))
+        self.assertEqual(cloud.classify_title('Portal 2\nsecret'), ('invalid', None))
+        self.assertEqual(cloud.classify_title('GeForce NOW Beta (Portal 2)'), ('unknown', None))
+        self.assertEqual(cloud.classify_title('Portal 2 on GeForce NOW'), ('game', 'Portal 2'))
+        def fake_titles(env, stats=None):
+            stats['windows'] = 9
+            return ['GeForce NOW', 'Secret Game Title - GeForce NOW Beta']
+        with patch.object(cloud.sys, 'platform', 'linux'), patch.object(cloud, '_native_linux_pids', return_value={42}), \
+                patch.object(cloud, '_x11_titles', side_effect=fake_titles):
+            report = cloud.detect_geforce_game('GeForce NOW', {})
+        self.assertEqual(report, {'game': None, 'reason': 'no_game', 'source': 'x11-title', 'windows': 9,
+                                  'gfn_windows': 2, 'title_kinds': {'branding': 1, 'unknown': 1}})
+        self.assertNotIn('Secret', repr(report))
+
+    def test_x11_reports_how_many_windows_were_inspected(self):
+        def run(args, **kwargs):
+            out = ('_NET_CLIENT_LIST(WINDOW): window id # 0x1, 0x2, 0x2' if '-root' in args else
+                   'WM_CLASS(STRING) = "steam", "Steam"\n_NET_WM_NAME(UTF8_STRING) = "Steam"')
+            return types.SimpleNamespace(returncode=0, stdout=out)
+        stats = {}
+        self.assertEqual(cloud._x11_titles({'DISPLAY': ':2'}, run=run, which=lambda *a, **k: 'fixture', stats=stats), [])
+        self.assertEqual(stats, {'windows': 2})
+
     def test_windows_uses_only_native_process_owners(self):
         host = types.SimpleNamespace(processes=lambda:[(1,r'C:\GFN\GeForceNOW.exe'), (2,r'C:\Browser\chrome.exe')])
         with patch.dict(sys.modules, {'host':host}), patch.object(cloud.sys, 'platform', 'win32'), patch.object(cloud, '_windows_titles', return_value=['Portal 2']) as titles:

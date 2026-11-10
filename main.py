@@ -1393,6 +1393,10 @@ class Plugin:
     _VIEW_SRCS = ("servers", "dms")
     # Ce que l'icône Steamcord ouvre : le panneau, ou la vue agrandie (20/09).
     _VIEW_BIGS = ("qam", "big")
+    # Entrée « Steamcord » du menu Steam (#86). Sa copie fichier fait foi : en
+    # mode Jeu, Steam peut s'arrêter sans écrire son localStorage sur le disque,
+    # et l'interrupteur revenait alors à son ancienne valeur au redémarrage.
+    _VIEW_MENUS = ("on", "off")
     # Plancher de l'opacité du voile (#52) : en dessous, l'UI Steam et le jeu
     # transparaissent au point de rendre la vue illisible.
     _VEIL_MIN = 60
@@ -1412,18 +1416,19 @@ class Plugin:
             "top": cfg.get("top") if cfg.get("top") in cls._VIEW_TOPS else None,
             "src": cfg.get("src") if cfg.get("src") in cls._VIEW_SRCS else None,
             "big": cfg.get("big") if cfg.get("big") in cls._VIEW_BIGS else None,
+            "menu": cfg.get("menu") if cfg.get("menu") in cls._VIEW_MENUS else None,
             # Opacité du voile en pourcent (#52). Bornée ici aussi : ce fichier
             # est éditable à la main, et un 0 y ferait disparaître le fond.
             "veil": veil if isinstance(veil, int) and cls._VEIL_MIN <= veil <= 100 else None,
         }
 
     @classmethod
-    async def set_open_view(cls, top=None, src=None, big=None, veil=None):
+    async def set_open_view(cls, top=None, src=None, big=None, veil=None, menu=None):
         """Chaque valeur se pose seule : le front envoie celle qui change."""
         from json import dump as _dump
         cfg = {k: v for k, v in (await cls.get_open_view()).items() if v is not None}
         for key, val, allowed in (("top", top, cls._VIEW_TOPS), ("src", src, cls._VIEW_SRCS),
-                                  ("big", big, cls._VIEW_BIGS)):
+                                  ("big", big, cls._VIEW_BIGS), ("menu", menu, cls._VIEW_MENUS)):
             if val is None:
                 continue
             if val not in allowed:
@@ -2169,6 +2174,13 @@ class Plugin:
                 } else "unavailable",
                 "source": status.get("source") if status.get("source") in {"windows-title", "x11-title"} else None,
                 "game_detected": bool(status.get("game")),
+                # Counts only, never titles: X11 windows seen, GeForce NOW
+                # windows among them, and what kind of title each one had.
+                **{k: status[k] for k in ("windows", "gfn_windows")
+                   if isinstance(status.get(k), int) and not isinstance(status.get(k), bool)},
+                **({"title_kinds": {k: v for k, v in status["title_kinds"].items()
+                                    if k in {"game", "branding", "page", "invalid", "unknown"} and isinstance(v, int)}}
+                   if isinstance(status.get("title_kinds"), dict) else {}),
             },
             "session": (await cls.get_share_env()).get("env"),
         })
