@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.45.2 — 2026-11-12
+
+### Fixes
+
+- Steamcord no longer blocks other plugins' sign-in windows. Vesktop's debugging port moves from 9223 to 39223, away from the 9222–9224 range that other Decky plugins use for their own browser windows; Unifideck's Microsoft sign-in works again while Steamcord runs. After the update, Vesktop restarts once on its own ([#95](https://github.com/Necrosiak/Steamcord/issues/95)).
+- On Linux, Steamcord now checks that this port belongs to Vesktop before connecting, as it already did on Windows. If another program uses it, Steamcord leaves it alone and logs which program it is.
+
+### Thanks
+
+Thanks to [@humzakh](https://github.com/humzakh) for the detailed report and the tested workaround ([#95](https://github.com/Necrosiak/Steamcord/issues/95)).
+
+**Full changelog:** [v1.45.1...v1.45.2](https://github.com/Necrosiak/Steamcord/compare/v1.45.1...v1.45.2)
+
 ## 1.45.1 — 2026-11-10
 
 ### Fixes
