@@ -43,7 +43,7 @@ BUILDS = {
               "09a29c4872a3f92da056d85a71d91c66b9751e6dc519c734f970d79c12411a5e"),
 }
 RELEASE_URL = "https://github.com/Vencord/Vesktop/releases/download/v{version}/{asset}"
-CDP_PORT = 9223  # same debugging port as the Linux unit
+CDP_PORT = host.CDP_PORT  # same debugging port as the Linux unit (#95)
 _STEAM_EPOCH = 76561197960265728
 
 # Windows process creation flags.

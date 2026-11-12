@@ -261,7 +261,7 @@ async def watchdog(tab: Tab):
         # "Cannot write to closing transport" case seen when Vesktop dies but the
         # socket lingers in a closing state). And probing the CDP endpoint
         # (vesktop.is_up) n'attrape PAS un restart RAPIDE de Vesktop : le nouveau
-        # process ré-expose :9223 avant la sonde suivante → is_up() reste True
+        # process ré-expose le port CDP avant la sonde suivante → is_up() reste True
         # alors que NOTRE onglet est mort → jamais ré-injecté → QAM bloqué sur
         # « Initialisation… » (vécu 19/07 après un systemctl restart). On sonde
         # donc l'ONGLET lui-même : un evaluate trivial avec timeout — s'il ne

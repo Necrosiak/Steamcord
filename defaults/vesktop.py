@@ -19,7 +19,7 @@ import host
 if host.WINDOWS:
     import vesktop_win
 
-VESKTOP_CDP = "http://127.0.0.1:9223"
+VESKTOP_CDP = f"http://127.0.0.1:{host.CDP_PORT}"
 VESKTOP_APP = "dev.vencord.Vesktop"
 
 
@@ -301,7 +301,7 @@ def _user_env():
     INHERITS root's XDG_RUNTIME_DIR=/run/user/0 + DBUS pointing at the root bus,
     even after dropping to uid 1000. Trusting those (os.environ.get) makes every
     `systemctl --user` hit the wrong/forbidden bus → DISPLAY/XAUTHORITY come back
-    empty → Vesktop launches with no graphical env → 9223 never opens. So ALWAYS
+    empty → Vesktop launches with no graphical env → the CDP port never opens. So ALWAYS
     derive both from our real uid; the plugin always runs as the target user."""
     if host.WINDOWS:
         return dict(os.environ)
@@ -336,8 +336,37 @@ async def _port_is_up():
         return False
 
 
+_foreign_logged = set()
+
+
+def _owns_cdp_linux():
+    """False only when the port is proven to belong to another program (#95:
+    another plugin's browser on the same port must never receive our client).
+    An owner we cannot inspect keeps the previous behaviour."""
+    owners = host.listening_pids(host.CDP_PORT)
+    if not owners:
+        return True
+    if owners & set(proc_pids(cmdline=_PROC_PATTERN)):
+        return True
+    names = []
+    for pid in sorted(owners):
+        try:
+            with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
+                names.append(f.read().strip())
+        except OSError:
+            names.append("?")
+    key = tuple(sorted(owners))
+    if key not in _foreign_logged:
+        _foreign_logged.add(key)
+        logger.warning(f"[cdp] port {host.CDP_PORT} is used by another program "
+                       f"({', '.join(names)}), not Vesktop — not connecting to it")
+    return False
+
+
 async def is_up():
     if host.WINDOWS and not vesktop_win.owns_cdp():
+        return False
+    if not host.WINDOWS and not _owns_cdp_linux():
         return False
     return await _port_is_up()
 
@@ -470,7 +499,7 @@ def _any_display(runtime_dir):
 async def _wait_for_display(runtime_dir, timeout=120):
     """Block until a usable display exists (see _any_display). Launching Vesktop
     with no display at all gives Electron nothing to render on so it never opens
-    the CDP debug port — that was the infinite 'initialize() failed ... 9223
+    the CDP debug port — that was the infinite 'initialize() failed ... <CDP port>
     ConnectionRefused' loop at cold gamemode boot."""
     for _ in range(timeout):
         if _any_display(runtime_dir):
@@ -558,7 +587,7 @@ def _pick_wayland(session_env, runtime_dir, gamescope):
 
     Le socket de la session n'est PAS toujours wayland-0 : chez le rapporteur de
     l'issue #49 (bureau CachyOS) elle vivait sur wayland-1, et annoncer wayland-0
-    donnait à Electron un socket inexistant — aucune fenêtre, CDP 9223 jamais
+    donnait à Electron un socket inexistant — aucune fenêtre, le port CDP jamais
     ouvert, « Initialisation… » sans fin. Hors gamescope on prend donc celui que
     la session déclare, à condition qu'il existe VRAIMENT.
 
@@ -592,7 +621,7 @@ async def launch():
     # inherit the user's graphical session env. `systemd-run --user` runs the transient
     # unit under the user MANAGER, which inherits what the manager imported — but at a
     # cold gamemode boot that import is empty/late, so Vesktop launched without DISPLAY/
-    # WAYLAND_DISPLAY never renders and 9223 never opens. Fix: read the session env and
+    # WAYLAND_DISPLAY never renders and the CDP port never opens. Fix: read the session env and
     # pass it to the unit EXPLICITLY via --setenv (env= on this call only affects the
     # systemd-run client, not the resulting unit). Target the host wayland-0 (what worked
     # in Big Picture) rather than gamescope's nested socket.
@@ -626,7 +655,7 @@ async def launch():
     # [launchdiag] Gamemode-specific stuck-on-Initializing diagnosis: capture exactly
     # which compositor sockets exist and what graphical env the manager exported. In
     # pure gamemode the root compositor is gamescope (not KWin), so wayland-0 may be
-    # gamescope's socket — or absent — which would keep Vesktop from rendering and 9223
+    # gamescope's socket — or absent — which would keep Vesktop from rendering and the CDP port
     # from ever opening. This logs even when the user is away in gamemode.
     try:
         socks = sorted(
@@ -680,7 +709,7 @@ async def launch():
         except Exception:
             pass
     # Stopping the unit is NOT enough: the sandboxed app (bwrap) can escape the
-    # unit's cgroup, keep 9223 open, and Electron is single-instance — a new
+    # unit's cgroup, keep the CDP port open, and Electron is single-instance — a new
     # `flatpak run` would just wake the OLD instance (old profile) and exit.
     # Seen live on the first multisession switch (unit inactive, vesktop.bin
     # alive since boot). So always flatpak-kill any leftover before spawning.
@@ -790,7 +819,7 @@ async def launch():
         *stop_props,
         *setenv,
         *cmd,
-        "--remote-debugging-port=9223",
+        f"--remote-debugging-port={host.CDP_PORT}",
         "--remote-allow-origins=*",
         # Issue #36 : la fenêtre Vesktop n'est JAMAIS affichée (--start-minimized,
         # tout l'UI visible est notre QAM). Garder les trois flags anti-throttling
@@ -822,11 +851,11 @@ async def launch():
     )
     for i in range(60):
         if await is_up():
-            logger.info(f"[launchdiag] Vesktop CDP 9223 up after ~{i}s")
+            logger.info(f"[launchdiag] Vesktop CDP {host.CDP_PORT} up after ~{i}s")
             return True
         await sleep(1)
     logger.warning(
-        "[launchdiag] Vesktop launched but CDP 9223 never opened after 60s "
+        f"[launchdiag] Vesktop launched but CDP {host.CDP_PORT} never opened after 60s "
         "(Electron likely got no usable display) — QAM will stay on 'Initializing'"
     )
     for line in await _unit_journal_tail(VESKTOP_UNIT):

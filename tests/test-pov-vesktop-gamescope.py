@@ -77,7 +77,7 @@ async def main():
     env = dict(os.environ, DISPLAY=":0")
 
     async with aiohttp.ClientSession() as session:
-        async with session.get("http://127.0.0.1:9223/json") as response:
+        async with session.get("http://127.0.0.1:39223/json") as response:
             pages = await response.json()
         page = next(p for p in pages if p.get("type") == "page" and
                     p.get("url", "").startswith("https://discord.com/"))

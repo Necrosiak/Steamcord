@@ -21,6 +21,12 @@ from pathlib import Path
 WINDOWS = sys.platform == "win32"
 NAME = "windows" if WINDOWS else "linux"
 
+# Vesktop's local debugging (CDP) port, shared by vesktop.py, vesktop_win.py
+# and main.py. Kept away from 9222-9224, which other Decky plugins use for their
+# own Chromium/Edge windows (Unifideck's Microsoft sign-in, #95), and from the
+# proxy bridge ports (39021-39025, see discord_client/netproxy.py).
+CDP_PORT = 39223
+
 # Features that only exist on Linux: they sit on PipeWire, gamescope, KWin,
 # v4l2loopback, evdev or the SteamOS session. Everything else (voice, chat,
 # DMs, QR login, notifications, Rich Presence, Go Live video, clips, one
@@ -228,6 +234,44 @@ def kill_tree(pid):
     return run_quiet(["taskkill", "/PID", str(pid), "/T", "/F"], 20).returncode == 0
 
 
+def _linux_listening_pids(port, proc=Path("/proc")):
+    """Linux: sockets listening on 127.0.0.1/0.0.0.0:`port` in /proc/net/tcp,
+    then the processes holding them. Processes we may not inspect are skipped,
+    so an empty result means "owner unknown", not "nobody"."""
+    inodes = set()
+    try:
+        for line in (proc / "net/tcp").read_text().splitlines()[1:]:
+            fields = line.split()
+            if len(fields) < 10 or fields[3] != "0A":  # LISTEN
+                continue
+            addr, _, hex_port = fields[1].partition(":")
+            if int(hex_port, 16) == port and addr in ("0100007F", "00000000"):
+                inodes.add(fields[9])
+    except (OSError, ValueError):
+        return set()
+    inodes.discard("0")
+    if not inodes:
+        return set()
+    wanted = {f"socket:[{inode}]" for inode in inodes}
+    owners = set()
+    try:
+        entries = [p for p in proc.iterdir() if p.name.isdigit()]
+    except OSError:
+        return set()
+    for entry in entries:
+        try:
+            for fd in (entry / "fd").iterdir():
+                try:
+                    if os.readlink(fd) in wanted:
+                        owners.add(int(entry.name))
+                        break
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return owners
+
+
 def listening_pids(port):
     """Owners of IPv4 TCP listeners, used to prove the local CDP endpoint is ours.
 
@@ -236,7 +280,7 @@ def listening_pids(port):
     An unavailable table returns no owner: never attach to an unproven process.
     """
     if not WINDOWS:
-        return set()
+        return _linux_listening_pids(port)
     import ctypes
     import socket
     from ctypes import wintypes
