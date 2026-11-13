@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.45.3 — 2026-11-13
+
+### Fixes
+
+- Chat Mix no longer lowers an application further each time it reopens. WirePlumber gives an application's new audio stream the volume Steamcord had set on the previous one, and Steamcord took it as the normal volume and lowered it again (100 → 50 → 25 → 12 → 6 %). Steamcord now remembers each application's own volume, even across restarts, and restores it once the call ends; a volume you set yourself is left alone ([#96](https://github.com/Necrosiak/Steamcord/issues/96)).
+- The voice overlay switch shows the right state when Steamcord turns the remembered overlay on at the start of a call ([#92](https://github.com/Necrosiak/Steamcord/issues/92)).
+- No more stray red line from your name to the deafened icon in the voice overlay ([#92](https://github.com/Necrosiak/Steamcord/issues/92)).
+- The expanded view is no longer cut off at the bottom when opened over Steam's menus in Game Mode: its height now follows the space left under Steam's top bar ([#98](https://github.com/Necrosiak/Steamcord/issues/98)).
+- The loading icon shown while Steamcord starts is no longer cropped ([#98](https://github.com/Necrosiak/Steamcord/issues/98)).
+
+### Improved
+
+- The warning shown when Steam's game recording runs during a screen share now also mentions an image split into copies, the other symptom it causes ([#91](https://github.com/Necrosiak/Steamcord/issues/91), thanks to [@BeanieBoy981](https://github.com/BeanieBoy981) for testing).
+- The voice overlay log now records the screen and window size it uses, to look into centred positions that sit too high ([#92](https://github.com/Necrosiak/Steamcord/issues/92)).
+
+### Thanks
+
+Thanks to [@arsaban](https://github.com/arsaban) ([#96](https://github.com/Necrosiak/Steamcord/issues/96)) and [@nawavon](https://github.com/nawavon) ([#92](https://github.com/Necrosiak/Steamcord/issues/92), [#98](https://github.com/Necrosiak/Steamcord/issues/98)) for their detailed reports.
+
+**Full changelog:** [v1.45.2...v1.45.3](https://github.com/Necrosiak/Steamcord/compare/v1.45.2...v1.45.3)
+
 ## 1.45.2 — 2026-11-12
 
 ### Fixes
