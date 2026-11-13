@@ -1540,14 +1540,14 @@ const ContentBody = () => {
     }
     // La connexion à Discord peut prendre ~1 min → spinner Steam animé pour
     // montrer que ça travaille (un titre statique ressemble à un plantage).
-    // ⚠️ Le SteamSpinner rend ~110pt quel que soit son conteneur (centré, il
-    // DÉBORDE d'une boîte plus petite — dans 48px il recouvrait le titre,
-    // capture 19/07). Boîte à sa taille naturelle + overflow hidden, titre
-    // DESSOUS, à bonne distance.
+    // ⚠️ Le SteamSpinner « medium » rend ~110pt quel que soit son conteneur
+    // (dans 48px il recouvrait le titre, capture 19/07) ; la boîte de 110px
+    // en overflow hidden le rognait sur un Deck (#98). Steam propose une
+    // taille « small » : rendue à sa taille naturelle, sans rognage.
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "16px", minHeight: "60vh" }}>
-        <div style={{ width: "110px", height: "110px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <SteamSpinner background="transparent" />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <SteamSpinner background="transparent" {...({ size: "small" } as any)} />
         </div>
         <h2 style={{ margin: "0", fontSize: "15px", opacity: 0.85 }}>{t("initializing")}</h2>
         {slowInit && (

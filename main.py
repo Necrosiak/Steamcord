@@ -768,6 +768,13 @@ class Plugin:
     _chat_mix_enabled = True
     _chat_mix_lock = None
     _mix_touched = {}          # sink-inputs dont on a changé le volume
+    # #96 : par APPLICATION, le volume qu'on a appliqué et celui d'origine.
+    # WirePlumber mémorise le dernier volume d'une application et le redonne à
+    # son PROCHAIN flux : sans cette mémoire, Steamcord prenait ce volume déjà
+    # réduit pour une nouvelle référence et le réduisait encore (100→50→25→12→6 %
+    # pour Edge chez arsaban), et rien ne le remettait après l'appel.
+    _mix_apps = None           # {clé appli: {"applied", "original", "restore"}}
+    _MIX_APPS_CFG = host.settings_file("steamcord-chatmix-apps.json")
 
 
     @classmethod
@@ -3174,6 +3181,8 @@ class Plugin:
     # (même mécanisme que l'aperçu QAM retiré en septembre) → le partage fige.
     # On ne peut pas l'empêcher depuis Steamcord : on prévient, une fois par
     # partage, et seulement quand les deux tournent EN MÊME TEMPS.
+    # #91 (BeanieBoy981, 07/11) : même cause, autre symptôme — l'image partagée
+    # découpée en quatre copies ; corrigé chez lui en coupant l'enregistrement.
     _steam_rec_warned = False
 
     @staticmethod
@@ -3208,15 +3217,17 @@ class Plugin:
             return
         cls._steam_rec_warned = True
         logger.warning("[screendiag] enregistrement de jeu Steam actif pendant le partage "
-                       "d'écran → deux lecteurs sur le node gamescope, le partage peut figer (#69)")
+                       "d'écran → deux lecteurs sur le node gamescope, le partage peut figer "
+                       "ou être découpé en copies (#69, #91)")
         # Conseil SANS couper l'enregistrement en pleine partie : le faire a
         # planté Steam le 06/10 (« Driver deadlock in hardware accelerated
         # desktop capture » → fatal assert, 1 coupure sur 3). D'où l'abandon de
         # la pause automatique testée le même jour.
         await cls._toast("Steamcord",
                          "Steam's game recording started before your screen share, which can "
-                         "freeze it. Next time, start the share before the recording, or turn "
-                         "off background recording before launching the game.")
+                         "freeze it or split the image into copies. Next time, start the share "
+                         "before the recording, or turn off background recording before "
+                         "launching the game.")
 
     # Nombre de tours de screendiag (15 s chacun) pendant lesquels un
     # consommateur fantôme doit persister avant qu'on redémarre Vesktop.
@@ -3610,7 +3621,7 @@ class Plugin:
                 elif cls._golive_bridge_mods:
                     await cls._golive_route_game(True)
                 # Nouveau flux (jeu lancé, appel rejoint) : il arrive à 100 %.
-                if cls._chat_mix != 50 or cls._mix_touched:
+                if cls._chat_mix != 50 or cls._mix_touched or cls._load_mix_apps():
                     await cls._apply_chat_mix()
             except Exception:
                 pass
@@ -3667,6 +3678,36 @@ class Plugin:
         except Exception:
             return False
 
+    @staticmethod
+    def _mix_app_key(props):
+        """Same application across its streams (not the PID, which changes)."""
+        return str(props.get("application.process.binary") or props.get("application.name") or "")
+
+    @classmethod
+    def _load_mix_apps(cls):
+        if cls._mix_apps is None:
+            from json import load
+            try:
+                with open(cls._MIX_APPS_CFG, encoding="utf-8") as f:
+                    data = load(f)
+                cls._mix_apps = {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, dict)
+                                 and all(isinstance(v.get(x), list) for x in ("applied", "original", "restore"))} \
+                    if isinstance(data, dict) else {}
+            except Exception:
+                cls._mix_apps = {}
+        return cls._mix_apps
+
+    @classmethod
+    def _save_mix_apps(cls):
+        from json import dump
+        try:
+            os.makedirs(os.path.dirname(cls._MIX_APPS_CFG), exist_ok=True)
+            with open(cls._MIX_APPS_CFG + ".tmp", "w", encoding="utf-8") as f:
+                dump(cls._mix_apps or {}, f)
+            os.replace(cls._MIX_APPS_CFG + ".tmp", cls._MIX_APPS_CFG)
+        except Exception as e:
+            logger.warning(f"[chatmix] save {cls._MIX_APPS_CFG}: {e!r}")
+
     @classmethod
     async def _apply_chat_mix_locked(cls):
         from json import loads
@@ -3674,7 +3715,9 @@ class Plugin:
         # changed, and only if their volume still matches our last write.
         active = cls._chat_mix_enabled and cls._chat_mix_game_mode() and cls._in_call()
         m = cls._chat_mix if active else 50
-        if m == 50 and not cls._mix_touched:
+        apps = cls._load_mix_apps()
+        apps_before = repr(apps)
+        if m == 50 and not cls._mix_touched and not apps:
             return
         try:
             inputs = loads(await cls._pactl("list", "sink-inputs", want_json=True) or "[]")
@@ -3703,14 +3746,28 @@ class Plugin:
                 if saved and saved["identity"] != identity:
                     cls._mix_touched.pop(idx, None)
                     saved = None
+                key = cls._mix_app_key(props)
+                # A new stream that starts at the volume we set for this
+                # application inherited it from WirePlumber (#96): its real
+                # baseline is the one we remembered, not the reduced volume.
+                inherited = apps.get(key) if key and saved is None else None
+                if inherited and volumes != inherited["applied"]:
+                    inherited = None
                 if m == 50 or str(si.get("sink")) != real_idx:
                     if saved:
                         if volumes == saved["applied"]:
                             await cls._pactl("set-sink-input-volume", idx, *saved["restore"])
                         cls._mix_touched.pop(idx, None)
+                        apps.pop(key, None)
+                    elif inherited and m == 50:
+                        await cls._pactl("set-sink-input-volume", idx, *inherited["restore"])
+                        apps.pop(key, None)
                     continue
                 # An external mixer changed this stream: keep its new baseline.
-                if saved is None or volumes != saved["applied"]:
+                if inherited:
+                    saved = {"identity": identity, "original": list(inherited["original"]),
+                             "restore": list(inherited["restore"])}
+                elif saved is None or volumes != saved["applied"]:
                     saved = {"identity": identity, "original": volumes,
                              "restore": [str(v.get("value")) if isinstance(v.get("value"), int) else str(v.get("value_percent", "100%"))
                                          for v in (si.get("volume") or {}).values()]}
@@ -3722,8 +3779,13 @@ class Plugin:
                     await cls._pactl("set-sink-input-volume", idx, *target)
                 saved["applied"] = target
                 cls._mix_touched[idx] = saved
+                if key:
+                    apps[key] = {"applied": target, "original": saved["original"],
+                                 "restore": saved["restore"]}
         except Exception as e:
             logger.warning(f"[chatmix] {e!r}")
+        if repr(apps) != apps_before:
+            cls._save_mix_apps()
 
     @classmethod
     @linux_only({"ok": False})

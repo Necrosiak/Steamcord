@@ -27,9 +27,13 @@ def methods(names, source='main.py', klass='Plugin', **namespace):
 class ChatMixTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.p = methods({'_apply_chat_mix', '_apply_chat_mix_locked', '_chat_mix_levels',
-                          'get_chat_mix', 'set_chat_mix_enabled'})
+                          'get_chat_mix', 'set_chat_mix_enabled', '_mix_app_key',
+                          '_load_mix_apps', '_save_mix_apps'})
         self.p._chat_mix, self.p._chat_mix_enabled = 75, True
         self.p._mix_touched, self.p._chat_mix_lock = {}, None
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.p._mix_apps, self.p._MIX_APPS_CFG = None, os.path.join(self.tmp.name, 'chatmix-apps.json')
         self.p._in_call = Mock(return_value=True)
         self.p._chat_mix_game_mode = Mock(return_value=True)
         self.p._real_output_sink = AsyncMock(return_value='speakers')
@@ -101,6 +105,39 @@ class ChatMixTests(unittest.IsolatedAsyncioTestCase):
         self.writes.clear()
         for _ in range(4):
             await self.p._apply_chat_mix()
+        self.assertFalse(self.writes)
+
+    async def test_reopened_app_is_not_reduced_again_and_is_restored_after_the_call(self):
+        # #96: WirePlumber gives an application's next stream the volume we set
+        # on its previous one. That must not become a new, lower baseline.
+        self.inputs = [self.stream(1, 'edge', [100, 100])]
+        await self.p._apply_chat_mix()                       # mix 75 -> game at 50 %
+        self.assertEqual(self.inputs[0]['volume']['0']['value_percent'], '50%')
+        for idx in (2, 3, 4):                                # Edge closed, reopened 3 times
+            self.inputs = [self.stream(idx, 'edge', [50, 50])]
+            await self.p._apply_chat_mix()
+            self.assertEqual([v['value_percent'] for v in self.inputs[0]['volume'].values()], ['50%', '50%'])
+        self.p._in_call.return_value = False                 # call ends: back to 100 %
+        await self.p._apply_chat_mix()
+        self.assertEqual([v['value_percent'] for v in self.inputs[0]['volume'].values()], ['100%', '100%'])
+        self.assertFalse(self.p._mix_apps)
+
+    async def test_inherited_volume_is_restored_after_a_restart_when_the_call_is_over(self):
+        self.inputs = [self.stream(1, 'edge', [100, 100])]
+        await self.p._apply_chat_mix()
+        self.p._mix_apps, self.p._mix_touched = None, {}     # plugin restarted
+        self.p._in_call.return_value = False
+        self.inputs = [self.stream(5, 'edge', [50, 50])]     # Edge reopened later
+        await self.p._apply_chat_mix()
+        self.assertEqual([v['value_percent'] for v in self.inputs[0]['volume'].values()], ['100%', '100%'])
+
+    async def test_a_user_chosen_volume_is_not_mistaken_for_ours(self):
+        self.inputs = [self.stream(1, 'edge', [100, 100])]
+        await self.p._apply_chat_mix()
+        self.inputs = [self.stream(2, 'edge', [30, 30])]     # user set 30 % meanwhile
+        self.p._in_call.return_value = False
+        self.writes.clear()
+        await self.p._apply_chat_mix()
         self.assertFalse(self.writes)
 
     async def test_volume_calls_are_serialized(self):

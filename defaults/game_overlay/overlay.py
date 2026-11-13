@@ -199,6 +199,10 @@ def build_window():
             print("[overlay] input passthrough failed:", e, flush=True)
         print("[overlay] mapped xid=%s atom=%s passthrough=%s"
               % (hex(xid), ok, passthrough), flush=True)
+        # #92: centred positions looked ~50 px high on a Deck. Log what GTK
+        # reports so a report shows whether the window matches the screen.
+        print("[overlay] screen %dx%d window %dx%d" % (sw, sh, win.get_allocated_width(),
+                                                      win.get_allocated_height()), flush=True)
 
     win.connect("map", on_map)
     win.connect("destroy", Gtk.main_quit)
@@ -581,6 +585,9 @@ class RosterArea(Gtk.DrawingArea):
             self._draw_mute(cr, x, y, size)
             return
         cr.save()
+        # #92: the username layout leaves Cairo's current point at the text;
+        # without a fresh path, arc() drew a line from the name to the icon.
+        cr.new_path()
         cr.translate(x, y)
         cr.scale(size / 16, size / 16)
         cr.set_line_width(1.6)

@@ -778,18 +778,29 @@ function OverlayMenuContent() {
   // helper se replie sur un rendu GTK/Cairo qui n'affiche que le vocal (#22).
   const [povSupported, setPovSupported] = useState(true);
 
-  useEffect(() => {
+  const loadStatus = (withSettings: boolean) =>
     call<[], any>("get_overlay_status")
       .then((r) => {
         if (!r) return;
         setVoiceOn(!!r.voice_on);
         setPovOn(!!r.pov_on);
         setPovSupported(r.pov_supported !== false);
+        if (!withSettings) return;
         if (r.voice) setVoice((v: any) => ({ ...v, ...r.voice }));
         if (r.pov) setPov((v: any) => ({ ...v, ...r.pov }));
       })
       .catch(() => {});
-  }, []);
+
+  useEffect(() => { loadStatus(true); }, []);
+  // #92: the backend starts the remembered voice overlay on its own when a call
+  // begins, possibly while this panel is already mounted. Re-read the On/Off
+  // state while the section is open so the switches match the screen.
+  useEffect(() => {
+    if (!open) return;
+    loadStatus(false);
+    const timer = setInterval(() => loadStatus(false), 3000);
+    return () => clearInterval(timer);
+  }, [open]);
 
   const toggleVoice = async (next: boolean) => {
     setVoiceOn(next);

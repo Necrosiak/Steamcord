@@ -56,6 +56,51 @@ const SIDEBAR_FIT = `.sc-xv-side::-webkit-scrollbar { display: none; }
   .sc-xv-foot { padding-top: 6px !important; }
 }`;
 
+// #98 (nawavon) : par-dessus les menus Steam, la fenêtre modale de Steam
+// commence SOUS la barre du haut (mesuré BC-250 : position absolute, top 40 px)
+// alors que la vue gardait 80vh : sur un Deck (533 px CSS), elle dépassait
+// d'environ 30 px sur la barre du bas. On borne la hauteur à la place réelle
+// entre le haut de la vue et le bas de la fenêtre modale.
+function useFitHeight(marker: { current: HTMLDivElement | null }) {
+  const [height, setHeight] = useState<number | null>(null);
+  useEffect(() => {
+    // Plugin code runs in SharedJSContext but renders into the Big Picture
+    // window: sizes must come from the window that shows the view.
+    let view: Window | null = null;
+    const fit = () => {
+      const m = marker.current;
+      const win = m?.ownerDocument?.defaultView;
+      if (!m || !win) return;
+      if (view !== win) {
+        view?.removeEventListener("resize", fit);
+        view = win;
+        win.addEventListener("resize", fit);
+      }
+      // Measure the modal box itself, not our own top: Steam centres a
+      // shorter view vertically, so our top moves with the height we set.
+      let box = m.parentElement, pad = 0;
+      while (box) {
+        const cs = win.getComputedStyle(box);
+        // Only the space above us: the bottom padding is free to use (in
+        // game the view always overlapped it), only the box's edge is not.
+        pad += (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0);
+        if (cs.position === "absolute" || cs.position === "fixed") break;
+        box = box.parentElement;
+      }
+      if (!box) return;
+      // clientHeight ignores the opening animation's transform.
+      const free = box.clientHeight - pad - 8;
+      const next = Math.round(Math.max(240, Math.min(win.innerHeight * 0.8, free)));
+      setHeight((h) => (h === next ? h : next));
+    };
+    fit();
+    // The modal slides in: measure again once it has settled.
+    const timers = [100, 350, 800, 1500].map((ms) => setTimeout(fit, ms));
+    return () => { timers.forEach(clearTimeout); view?.removeEventListener("resize", fit); };
+  }, []);
+  return height;
+}
+
 function Avatar({ dm }: { dm: Dm }) {
   const name = dm.name || "?";
   const url = dm.type === 3 && dm.icon ? `https://cdn.discordapp.com/channel-icons/${dm.id}/${dm.icon}.webp?size=64`
@@ -135,6 +180,8 @@ function EventRow({ ev }: { ev: SCEvent }) {
 }
 
 export function DiscordExpandedModal({ closeModal, serverContent, callContent, settingsContent, onClosed }: { closeModal?: () => void; serverContent?: any; callContent?: any; settingsContent?: any; onClosed?: () => void }) {
+  const fitMarker = useRef<HTMLDivElement | null>(null);
+  const fitHeight = useFitHeight(fitMarker);
   // Démontage = vue refermée, quel que soit le chemin (B, bouton, Steam).
   const closedRef = useRef(onClosed);
   closedRef.current = onClosed;
@@ -263,9 +310,10 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
     {/* #43 : le marqueur HORS du panneau — dedans, l'effacement du cadre Steam
         remontait jusqu'à notre propre fond et rendait la vue transparente. */}
     <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
+    <div ref={fitMarker} style={{ height: 0 }} />
     <Focusable flow-children="row" onScroll={pinTop}
       // L1 = 5, R1 = 6 (GamepadButton de @decky/ui) ; même mécanisme que B dans backNav.
-      onButtonDown={(e: any) => { const b = e?.detail?.button; if (b === 5) navOnce(back); else if (b === 6) navOnce(forward); }} style={{ ...FULL_BLEED, height: "80vh", display: "flex", overflow: "hidden", borderRadius: 12, background: "#11151d", boxShadow: "0 22px 60px rgba(0,0,0,.55)" }}>
+      onButtonDown={(e: any) => { const b = e?.detail?.button; if (b === 5) navOnce(back); else if (b === 6) navOnce(forward); }} style={{ ...FULL_BLEED, height: fitHeight ?? "80vh", display: "flex", overflow: "hidden", borderRadius: 12, background: "#11151d", boxShadow: "0 22px 60px rgba(0,0,0,.55)" }}>
       <Focusable flow-children="column" className="sc-xv-side" style={{ width: 268, flexShrink: 0, padding: 14, overflowX: "hidden", overflowY: "auto", scrollbarWidth: "none", display: "flex", flexDirection: "column", background: "#20252f", borderRight: "1px solid rgba(255,255,255,.08)" } as any}>
         <style>{SIDEBAR_FIT}</style>
         <div className="sc-xv-brand" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px 17px", fontSize: 18, fontWeight: 800, flexShrink: 0 }}><SteamcordLogo size={32} /> Steamcord</div>
