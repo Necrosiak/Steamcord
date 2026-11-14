@@ -155,12 +155,22 @@ async def _initialize_discord():
     import vesktop
     # #66 : « Ne pas lancer Vesktop en mode Bureau » → on attend le retour en
     # mode Jeu au lieu de lancer (ceux qui ont un autre Discord sur le bureau).
+    # #99 : cette attente était muette — le QAM affichait « Initialisation… »
+    # sans fin, et l'interrupteur n'est visible qu'une fois Discord chargé. Sur
+    # une distribution sans mode Jeu (EndeavourOS…), impossible d'en sortir
+    # sans éditer le fichier de réglages. L'état `waiting_game_mode` permet au
+    # QAM de l'expliquer et de proposer de couper l'option.
     waited = False
-    while Plugin._vesktop_desktop_off() and _desktop_session():
-        if not waited:
-            logger.info("[desktop-off] mode Bureau : Vesktop pas lancé avant le retour en mode Jeu")
-            waited = True
-        await sleep(5)
+    try:
+        while Plugin._vesktop_desktop_off() and _desktop_session():
+            if not waited:
+                logger.info("[desktop-off] mode Bureau : Vesktop pas lancé avant le retour en mode Jeu")
+                waited = True
+                Plugin._set_waiting_game_mode(True)
+            await sleep(5)
+    finally:
+        if waited:
+            Plugin._set_waiting_game_mode(False)
     if not host.WINDOWS:
         _log_tool_report()
     # defaults/ d'abord : même piège que discord_client/tab_utils — la copie
@@ -310,6 +320,13 @@ async def watchdog(tab: Tab):
         Plugin.evt_handler.reset_stream_state()
     except Exception as e:
         logger.warning(f"reset_stream_state: {e!r}")
+    # L'onglet mort est remplacé par initialize() : refermer sa session aiohttp,
+    # sinon elle part au ramasse-miettes et aiohttp journalise « Unclosed client
+    # session » à chaque relance de Discord (mesuré le 14/11).
+    try:
+        await wait_for(tab.close_websocket(), 5)
+    except Exception:
+        pass
 
     while True:
         try:
@@ -5616,6 +5633,11 @@ class Plugin:
             logger.warning(f"save {cls._VOICE_ENV_CFG} failed: {e!r}")
             return str(e)
         return None
+
+    @classmethod
+    def _set_waiting_game_mode(cls, waiting):
+        cls.evt_handler.waiting_game_mode = bool(waiting)
+        cls.evt_handler.state_changed_event.set()
 
     @classmethod
     async def set_vesktop_desktop_off(cls, off=False):

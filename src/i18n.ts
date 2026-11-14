@@ -34,6 +34,9 @@ let _locale: Locale | null = null;
 
 const T: Record<Locale, Dict> = {
   en: {
+    waiting_game_mode_title: "Discord starts in Game Mode",
+    waiting_game_mode_desc: "“Don’t run Vesktop in Desktop Mode” is on, so Steamcord waits for Game Mode before starting Discord.",
+    waiting_game_mode_start: "Turn this option off and start Discord",
     threads_search: "Search threads",
     forum_search: "Search posts",
     threads_results: "{count} result(s)",
@@ -377,6 +380,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is installed. Close and reopen the Quick Access menu to load it.",
   },
   fr: {
+    waiting_game_mode_title: "Discord démarre en mode Jeu",
+    waiting_game_mode_desc: "« Ne pas lancer Vesktop en mode Bureau » est activé : Steamcord attend le mode Jeu pour démarrer Discord.",
+    waiting_game_mode_start: "Désactiver cette option et démarrer Discord",
     threads_search: "Rechercher un fil",
     forum_search: "Rechercher une publication",
     threads_results: "{count} résultat(s)",
@@ -720,6 +726,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} est installé. Ferme puis rouvre le menu d'accès rapide pour le charger.",
   },
   de: {
+    waiting_game_mode_title: "Discord startet im Spielmodus",
+    waiting_game_mode_desc: "„Vesktop nicht im Desktop-Modus ausführen“ ist an: Steamcord wartet auf den Spielmodus, um Discord zu starten.",
+    waiting_game_mode_start: "Option ausschalten und Discord starten",
     threads_search: "Threads suchen",
     forum_search: "Beiträge suchen",
     threads_results: "{count} Ergebnis(se)",
@@ -1057,6 +1066,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} ist installiert. Schließe das Schnellzugriffsmenü und öffne es erneut, um es zu laden.",
   },
   es: {
+    waiting_game_mode_title: "Discord se inicia en el modo Juego",
+    waiting_game_mode_desc: "«No ejecutar Vesktop en el modo Escritorio» está activado: Steamcord espera al modo Juego para iniciar Discord.",
+    waiting_game_mode_start: "Desactivar esta opción e iniciar Discord",
     threads_search: "Buscar hilos",
     forum_search: "Buscar publicaciones",
     threads_results: "{count} resultado(s)",
@@ -1394,6 +1406,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} está instalado. Cierra y vuelve a abrir el menú de acceso rápido para cargarlo.",
   },
   it: {
+    waiting_game_mode_title: "Discord si avvia in modalità Gioco",
+    waiting_game_mode_desc: "«Non avviare Vesktop in modalità Desktop» è attivo: Steamcord attende la modalità Gioco per avviare Discord.",
+    waiting_game_mode_start: "Disattiva l'opzione e avvia Discord",
     threads_search: "Cerca thread",
     forum_search: "Cerca post",
     threads_results: "{count} risultato/i",
@@ -1731,6 +1746,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} è installato. Chiudi e riapri il menu di accesso rapido per caricarlo.",
   },
   pt: {
+    waiting_game_mode_title: "O Discord inicia no modo Jogo",
+    waiting_game_mode_desc: "“Não executar o Vesktop no Modo Ambiente de Trabalho” está ativado: o Steamcord espera o modo Jogo para iniciar o Discord.",
+    waiting_game_mode_start: "Desativar esta opção e iniciar o Discord",
     threads_search: "Pesquisar tópicos",
     forum_search: "Pesquisar publicações",
     threads_results: "{count} resultado(s)",
@@ -2068,6 +2086,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "O Steamcord {v} está instalado. Fecha e volta a abrir o menu de acesso rápido para o carregar.",
   },
   nl: {
+    waiting_game_mode_title: "Discord start in de spelmodus",
+    waiting_game_mode_desc: "‘Vesktop niet uitvoeren in Bureaubladmodus’ staat aan: Steamcord wacht op de spelmodus om Discord te starten.",
+    waiting_game_mode_start: "Deze optie uitzetten en Discord starten",
     threads_search: "Threads zoeken",
     forum_search: "Berichten zoeken",
     threads_results: "{count} resultaat/resultaten",
@@ -2405,6 +2426,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is geïnstalleerd. Sluit het snelmenu en open het opnieuw om het te laden.",
   },
   pl: {
+    waiting_game_mode_title: "Discord uruchamia się w trybie gry",
+    waiting_game_mode_desc: "Włączono „Nie uruchamiaj Vesktop w trybie pulpitu”: Steamcord czeka na tryb gry, aby uruchomić Discord.",
+    waiting_game_mode_start: "Wyłącz tę opcję i uruchom Discord",
     threads_search: "Szukaj wątków",
     forum_search: "Szukaj postów",
     threads_results: "Wyniki: {count}",
@@ -2742,6 +2766,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} jest zainstalowany. Zamknij i otwórz ponownie menu szybkiego dostępu, aby go wczytać.",
   },
   ru: {
+    waiting_game_mode_title: "Discord запускается в игровом режиме",
+    waiting_game_mode_desc: "Включено «Не запускать Vesktop в режиме рабочего стола»: Steamcord ждёт игровой режим, чтобы запустить Discord.",
+    waiting_game_mode_start: "Отключить параметр и запустить Discord",
     threads_search: "Поиск веток",
     forum_search: "Поиск публикаций",
     threads_results: "Результатов: {count}",

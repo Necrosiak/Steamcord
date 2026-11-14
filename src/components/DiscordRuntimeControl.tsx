@@ -48,3 +48,30 @@ export function DiscordRuntimeControl() {
     {error && <div role="alert" style={{ color: "#ff6b6b", fontSize: 12, marginTop: 6 }}>{t("discord_runtime_error")}</div>}
   </div>;
 }
+
+// #99 : « Ne pas lancer Vesktop en mode Bureau » est actif et on est en mode
+// Bureau : Discord attend le mode Jeu. Sans cet écran, le QAM restait sur
+// « Initialisation… » et l'interrupteur, rangé dans les réglages d'un Discord
+// chargé, était hors d'atteinte — sans issue sur une distribution sans mode Jeu.
+export function WaitingGameMode() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const start = async () => {
+    if (busy) return;
+    setBusy(true); setError(false);
+    try {
+      const result = await call<[boolean], { ok: boolean }>("set_vesktop_desktop_off", false);
+      if (!result?.ok) { setError(true); setBusy(false); }
+      // Sinon on reste « occupé » : Discord démarre et l'écran disparaît seul.
+    } catch { setError(true); setBusy(false); }
+  };
+  return <div style={{ padding: "8px 0", width: "100%", maxWidth: "100%", minWidth: 0,
+    boxSizing: "border-box", overflowWrap: "anywhere" }}>
+    <div style={{ fontWeight: 600, marginBottom: 6 }}>{t("waiting_game_mode_title")}</div>
+    <div style={{ fontSize: 12, opacity: .75, marginBottom: 8 }}>{t("waiting_game_mode_desc")}</div>
+    <Button disabled={busy} onClick={start} style={buttonStyle}>
+      {busy ? t("initializing") : t("waiting_game_mode_start")}
+    </Button>
+    {error && <div role="alert" style={{ color: "#ff6b6b", fontSize: 12, marginTop: 6 }}>{t("discord_runtime_error")}</div>}
+  </div>;
+}

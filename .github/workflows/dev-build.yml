@@ -63,6 +63,8 @@ jobs:
           python3 -m unittest discover -s tests -p test_menu_entry_backend.py -v
           python3 -m unittest discover -s tests -p test_cdp_port.py -v
           python3 -m unittest discover -s tests -p test_threads_backend.py -v
+          python3 -m unittest discover -s tests -p test_desktop_off_wait.py -v
+          python3 -m unittest discover -s tests -p test_cdp_sessions.py -v
           node --test tests/test-cloud-rpc.cjs
           python3 -m unittest discover -s tests -p test_dbus_next_py315.py -v
           python3 -m unittest discover -s tests -p test_steam_display_env.py -v

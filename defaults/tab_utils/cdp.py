@@ -26,12 +26,31 @@ class Tab:
             await self.open_websocket()
 
     async def open_websocket(self):
-        self.client = ClientSession()
-        self.websocket = await self.client.ws_connect(self.ws_url)
+        # Chaque ouverture crée une ClientSession aiohttp. L'ancienne partait à
+        # la poubelle sans être fermée (rouverture par ensure_open), tout comme
+        # la nouvelle quand Vesktop ne répond pas : aiohttp le journalisait en
+        # ERROR « Unclosed client session » — par paquets toutes les 30 s tant
+        # que Vesktop est arrêté en mode Bureau (mesuré le 14/11, #44 #99).
+        # Une session dont la socket est encore ouverte n'est jamais fermée ici.
+        old_client, old_ws = self.client, self.websocket
+        client = ClientSession()
+        try:
+            websocket = await client.ws_connect(self.ws_url)
+        except BaseException:
+            await client.close()
+            raise
+        self.client, self.websocket = client, websocket
+        if old_client is not None and old_client is not client and (old_ws is None or old_ws.closed):
+            try:
+                await old_client.close()
+            except Exception:
+                pass
 
     async def close_websocket(self):
-        await self.websocket.close()
-        await self.client.close()
+        if self.websocket is not None:
+            await self.websocket.close()
+        if self.client is not None:
+            await self.client.close()
 
     async def listen_for_message(self):
         async for message in self.websocket:

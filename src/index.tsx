@@ -88,7 +88,7 @@ import { DMBrowser } from "./components/DMBrowser";
 import { ServerHub } from "./components/ServerHub";
 import { useOpenChat } from "./components/ExpandedNav";
 import { TextChat } from "./components/TextChat";
-import { DiscordRuntimeControl } from "./components/DiscordRuntimeControl";
+import { DiscordRuntimeControl, WaitingGameMode } from "./components/DiscordRuntimeControl";
 import { ProxySection } from "./components/ProxySettings";
 import { t, errText } from "./i18n";
 import {
@@ -1526,6 +1526,9 @@ const ContentBody = () => {
 
   if (state?.discord_enabled === false) {
     return <SP><DiscordRuntimeControl /></SP>;
+  }
+  if (state?.waiting_game_mode) {
+    return <SP><WaitingGameMode /></SP>;
   }
   if (!state?.loaded) {
     // stand-alone : sans flatpak NI vesktop natif (backend === null), le spinner

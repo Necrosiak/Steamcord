@@ -88,15 +88,21 @@ class EventHandler:
         self.on_golive_wait = None
 
     def build_state_dict(self):
+        # #99 : en attente du mode Jeu, Vesktop est arrêté. `loaded` peut rester
+        # vrai d'avant la bascule en mode Bureau : on ne le présente pas.
+        waiting = getattr(self, "waiting_game_mode", False)
+        live = getattr(self, "discord_enabled", True) and not waiting
         return {
             "discord_enabled": getattr(self, "discord_enabled", True),
-            "loaded": self.loaded and getattr(self, "discord_enabled", True),
-            "logged_in": self.logged_in and getattr(self, "discord_enabled", True),
+            "loaded": self.loaded and live,
+            "logged_in": self.logged_in and live,
             "me": self.me.to_dict(),
             "vc": self._build_vc_dict(),
             "qr_login": self.remote_auth.qr_b64,
             "qr_scanned": self._qr_scanned,
             "captcha_needed": self._captcha_needed,
+            # #99 : Vesktop volontairement pas lancé en mode Bureau (option #66).
+            "waiting_game_mode": waiting,
         }
 
     def _build_vc_dict(self):
