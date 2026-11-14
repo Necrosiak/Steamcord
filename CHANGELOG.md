@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.45.5 — 2026-11-14
+
+### Fixes
+
+- Steamcord no longer stays stuck on "Initializing" when "Don't run Vesktop in Desktop Mode" is on and the device is in Desktop Mode. The panel now says Discord is waiting for Game Mode, with a button to start it right away, which turns that option off ([#99](https://github.com/Necrosiak/Steamcord/issues/99)).
+- No more "Unclosed client session" errors piling up in the log. Steamcord left a connection open each time it tried to reach Vesktop while Vesktop was stopped (dozens every few minutes in Desktop Mode), and once more each time Discord restarted.
+
+**Full changelog:** [v1.45.4...v1.45.5](https://github.com/Necrosiak/Steamcord/compare/v1.45.4...v1.45.5)
+
 ## 1.45.4 — 2026-11-14
 
 ### New
