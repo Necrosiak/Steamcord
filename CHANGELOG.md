@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.45.4 — 2026-11-14
+
+### New
+
+- Server folders: the server lists (Quick Access voice and text tabs, expanded view) show your Discord folders as collapsible rows, closed by default, with a preview of their servers like in Discord. Folders you open stay open. A folder with only one visible server shows that server directly. While you reorder servers or browse hidden ones, the list stays flat ([#101](https://github.com/Necrosiak/Steamcord/issues/101)).
+- Threads: active threads appear under their text channel, and the threads button next to each channel lists all of them, archived ones included. A thread opens like any channel: read, reply, live updates ([#100](https://github.com/Necrosiak/Steamcord/issues/100)).
+- Forums: forum channels appear in the channel list and open onto their posts, most recently active first, with their tags and a "Show more" button for large forums ([#100](https://github.com/Necrosiak/Steamcord/issues/100)).
+- Search threads and forum posts by title, and filter forum posts by tag ([#100](https://github.com/Necrosiak/Steamcord/issues/100)).
+- Create a thread in a text channel, with an optional first message, or a forum post with its message and tags. The button only appears where you are allowed to post; forums that require a tag ask for one ([#100](https://github.com/Necrosiak/Steamcord/issues/100)).
+
+### Fixes
+
+- Errors coming from Steamcord's backend are shown with their actual reason instead of "Python Exception". This also brings back the automatic retry of the server lists while Discord is still starting or reconnecting, which never triggered because the reason was hidden.
+
+### Thanks
+
+Thanks to [@Torun-S](https://github.com/Torun-S) for both suggestions ([#100](https://github.com/Necrosiak/Steamcord/issues/100), [#101](https://github.com/Necrosiak/Steamcord/issues/101)).
+
+**Full changelog:** [v1.45.3...v1.45.4](https://github.com/Necrosiak/Steamcord/compare/v1.45.3...v1.45.4)
+
 ## 1.45.3 — 2026-11-13
 
 ### Fixes
