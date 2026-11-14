@@ -8,17 +8,20 @@ import { useEffect, useRef, useState } from "react";
 import { useOpenChat, useOpenMembers } from "./ExpandedNav";
 import { FaUsers } from "react-icons/fa";
 import { DANGER, ONLINE, listHalo } from "./Styled";
-import { IcChat, IcChevronDown, IcChevronUp, IcEye, IcEyeSlash, IcRefresh, IcReorder, IcSpeaker } from "./Icons";
-import { MemberAvatars } from "./ChannelBrowser";
+import { IcChat, IcChevronDown, IcChevronUp, IcEye, IcEyeSlash, IcForum, IcRefresh, IcReorder, IcSpeaker, IcThread } from "./Icons";
+import { GuildFolder, folderLabel, groupByFolder, folderColor, useOpenFolders } from "../guildFolders";
+import { ThreadInfo, isForumChannel } from "../threads";
+import { ThreadBrowser } from "./ThreadBrowser";
+import { FolderIcon, MemberAvatars } from "./ChannelBrowser";
 import { EVENT_ACTIVE, EventDetail, SCEvent, whenLabel } from "./EventsPanel";
-import { t, errText } from "../i18n";
+import { t, errCode, errText } from "../i18n";
 
 type Member = { id: string; avatar: string | null };
-type TextChannel = { id: string; name: string };
+type TextChannel = { id: string; name: string; type?: number; threads?: ThreadInfo[] };
 type VoiceChannel = { id: string; name: string; members?: Member[] };
-type TextGuild = { id: string; name: string; icon: string | null; channels: TextChannel[]; hidden?: boolean };
-type VoiceGuild = { id: string; name: string; icon: string | null; channels: VoiceChannel[]; hidden?: boolean };
-type Guild = { id: string; name: string; icon: string | null; hidden: boolean; text: TextChannel[]; voice: VoiceChannel[] };
+type TextGuild = { id: string; name: string; icon: string | null; folder?: GuildFolder | null; channels: TextChannel[]; hidden?: boolean };
+type VoiceGuild = { id: string; name: string; icon: string | null; folder?: GuildFolder | null; channels: VoiceChannel[]; hidden?: boolean };
+type Guild = { id: string; name: string; icon: string | null; folder?: GuildFolder | null; hidden: boolean; text: TextChannel[]; voice: VoiceChannel[] };
 
 const MAX_RETRIES = 10;
 
@@ -39,6 +42,17 @@ function ToolBtn({ onClick, disabled, on, children }: { onClick: () => void; dis
   return <Focusable noFocusRing onClick={act} onActivate={act} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onGamepadFocus={() => setFocused(true)} onGamepadBlur={() => setFocused(false)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minWidth: 44, height: 40, padding: "0 12px", marginBottom: 4, borderRadius: 9, fontSize: 13, fontWeight: 600, flexShrink: 0, opacity: disabled ? .3 : 1, color: on ? "#fff" : undefined, background: on ? "rgba(88,101,242,.75)" : focused ? "rgba(88,101,242,.35)" : "rgba(255,255,255,.06)", ...listHalo(focused) }}>{children}</Focusable>;
 }
 
+const ellipsis = { flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" } as const;
+
+function ThreadRow({ thread, onOpen }: { thread: ThreadInfo; onOpen: (t: ThreadInfo) => void }) {
+  return <div style={{ marginLeft: 22 }}><Row onClick={() => onOpen(thread)}>
+    <span style={{ width: 22, display: "flex", justifyContent: "center", opacity: .6 }}><IcThread /></span>
+    <span style={{ ...ellipsis, opacity: thread.archived ? .6 : 1 }}>{thread.name}</span>
+    {thread.archived ? <span style={{ opacity: .5, fontSize: 11 }}>{t("thread_archived")}</span>
+      : thread.count ? <span style={{ opacity: .5, fontSize: 12 }}>{thread.count}</span> : null}
+  </Row></div>;
+}
+
 const sectionTitle = (label: string, first?: boolean) => <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: .7, opacity: .5, margin: `${first ? 4 : 12}px 0 7px` }}>{label}</div>;
 
 export function ServerHub() {
@@ -51,6 +65,9 @@ export function ServerHub() {
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [openFolders, toggleFolder] = useOpenFolders();
+  // Salon dont la liste complète des fils (ou le forum) est dépliée.
+  const [threadsOf, setThreadsOf] = useState<string | null>(null);
   const retries = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
@@ -62,18 +79,18 @@ export function ServerHub() {
     Promise.all([call<[boolean], any>("get_text_channels", true), call<[boolean], any>("get_guilds_vc", true)]).then(([texts, voices]) => {
       if (!alive.current) return;
       const byId = new Map<string, Guild>();
-      for (const item of Array.isArray(voices) ? voices as VoiceGuild[] : []) byId.set(item.id, { id: item.id, name: item.name, icon: item.icon, hidden: !!item.hidden, text: [], voice: item.channels || [] });
+      for (const item of Array.isArray(voices) ? voices as VoiceGuild[] : []) byId.set(item.id, { id: item.id, name: item.name, icon: item.icon, folder: item.folder ?? null, hidden: !!item.hidden, text: [], voice: item.channels || [] });
       for (const item of Array.isArray(texts) ? texts as TextGuild[] : []) {
         const existing = byId.get(item.id);
-        if (existing) { existing.text = item.channels || []; existing.hidden = existing.hidden || !!item.hidden; }
-        else byId.set(item.id, { id: item.id, name: item.name, icon: item.icon, hidden: !!item.hidden, text: item.channels || [], voice: [] });
+        if (existing) { existing.text = item.channels || []; existing.hidden = existing.hidden || !!item.hidden; existing.folder = existing.folder ?? item.folder ?? null; }
+        else byId.set(item.id, { id: item.id, name: item.name, icon: item.icon, folder: item.folder ?? null, hidden: !!item.hidden, text: item.channels || [], voice: [] });
       }
       retries.current = 0;
       setError(null);
       setGuilds([...byId.values()]);
     }).catch((e: any) => {
       if (!alive.current) return;
-      const s = String(e);
+      const s = errCode(e);
       setError(errText(e));
       // Discord qui démarre encore ou se reconnecte : on réessaie seul (#28).
       if ((s.includes("stores_not_ready") || s.includes("discord_reconnecting")) && retries.current < MAX_RETRIES) {
@@ -137,7 +154,31 @@ export function ServerHub() {
     {/* flex:1 + minHeight:0 : la liste est bornée à sa colonne et défile SEULE ;
         sans borne elle grandissait et c'était la vue entière qui défilait. */}
     <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 8px 3px 3px" }}>
-      {shown.map((guild, i) => {
+      {(editMode || showHidden ? shown.map((guild, index) => ({ kind: "guild" as const, guild, index })) : groupByFolder(shown)).map((entry) => {
+        if (entry.kind === "guild") return renderGuild(entry.guild, entry.index);
+        // Dossier Discord (#101) : replié par défaut, ses serveurs dessous.
+        // Masquer/réorganiser affichent la liste à plat, serveur par serveur.
+        const f = entry.folder;
+        const guildsIn = entry.items.map((it) => it.guild);
+        const isOpen = openFolders.has(f.id);
+        const inVoice = guildsIn.reduce((n, g) => n + g.voice.reduce((m, c) => m + (c.members?.length ?? 0), 0), 0);
+        return <div key={"folder-" + f.id} style={{ marginBottom: 7 }}>
+          <Row active={isOpen} onClick={() => toggleFolder(f.id)}>
+            <FolderIcon folder={f} guilds={guildsIn} open={isOpen} size={42} />
+            <span style={{ ...ellipsis, fontWeight: 750 }}>{folderLabel(f, guildsIn)}</span>
+            <span style={{ opacity: .55, fontSize: 12 }}>{t("folder_count", { count: guildsIn.length })}</span>
+            {inVoice > 0 && <span style={{ color: ONLINE, fontSize: 12, fontWeight: 700 }}><IcSpeaker /> {inVoice}</span>}
+            <span style={{ opacity: .55, display: "flex" }}>{isOpen ? <IcChevronUp /> : <IcChevronDown />}</span>
+          </Row>
+          {isOpen && <div style={{ margin: "3px 0 0 12px", paddingLeft: 10, borderLeft: `2px solid ${folderColor(f)}` }}>
+            {entry.items.map((it) => renderGuild(it.guild, it.index))}
+          </div>}
+        </div>;
+      })}
+    </Focusable>
+  </div>;
+
+  function renderGuild(guild: Guild, i: number) {
         const isOpen = open === guild.id;
         const inVoice = guild.voice.reduce((n, c) => n + (c.members?.length ?? 0), 0);
         const evs = eventsOf(guild.id);
@@ -180,7 +221,27 @@ export function ServerHub() {
               </Focusable>;
             })}
             {guild.text.length > 0 && sectionTitle(t("xv_text_channels"), evs.length === 0)}
-            {guild.text.map((channel) => <Row key={channel.id} onClick={() => openChat(channel.id, channel.name, false)}><span style={{ width: 28, textAlign: "center", opacity: .65, fontSize: 20 }}>#</span><span style={{ flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{channel.name}</span><IcChat /></Row>)}
+            {guild.text.map((channel) => {
+              // Fils (#100) : ceux que Discord a déjà actifs s'affichent sous
+              // leur salon ; le bouton Fils charge la liste complète (archives
+              // comprises). Un forum n'a pas de messages propres : il se déplie
+              // directement sur ses publications.
+              const forum = isForumChannel(channel.type);
+              const full = threadsOf === channel.id;
+              const toggleThreads = () => setThreadsOf((c) => c === channel.id ? null : channel.id);
+              const openThread = (th: ThreadInfo) => openChat(th.id, th.name, false);
+              const known = channel.threads || [];
+              return <div key={channel.id}>
+                {forum
+                  ? <Row active={full} onClick={toggleThreads}><span style={{ width: 28, display: "flex", justifyContent: "center", opacity: .75 }}><IcForum /></span><span style={ellipsis}>{channel.name}</span><span style={{ opacity: .55, display: "flex" }}>{full ? <IcChevronUp /> : <IcChevronDown />}</span></Row>
+                  : <Focusable flow-children="row" style={{ display: "flex", gap: 5 }}>
+                    <Row flex onClick={() => openChat(channel.id, channel.name, false)}><span style={{ width: 28, textAlign: "center", opacity: .65, fontSize: 20 }}>#</span><span style={ellipsis}>{channel.name}</span><IcChat /></Row>
+                    <ToolBtn on={full} onClick={toggleThreads}><IcThread />{known.length > 0 ? ` ${known.length}` : ""}</ToolBtn>
+                  </Focusable>}
+                {full ? <div style={{ marginLeft: 22 }}><ThreadBrowser channelId={channel.id} channelName={channel.name} forum={forum} onOpen={openThread} Row={Row} Btn={ToolBtn} size={14} /></div>
+                  : known.map((th) => <ThreadRow key={th.id} thread={th} onOpen={openThread} />)}
+              </div>;
+            })}
             {guild.voice.length > 0 && sectionTitle(t("xv_voice_channels"), evs.length === 0 && guild.text.length === 0)}
             {/* Un salon vocal a aussi son chat écrit (même id que le salon) :
                 A rejoint, droite puis A ouvre ce chat (demande user 15/09). */}
@@ -192,7 +253,5 @@ export function ServerHub() {
             {evs.length === 0 && guild.text.length === 0 && guild.voice.length === 0 && <div style={{ opacity: .55, padding: "6px 4px" }}>{t("xv_no_channels_access")}</div>}
           </div>}
         </div>;
-      })}
-    </Focusable>
-  </div>;
+  }
 }

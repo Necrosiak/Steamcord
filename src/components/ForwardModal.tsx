@@ -10,7 +10,7 @@
 import { Focusable, ModalRoot, showModal } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useState } from "react";
-import { t } from "../i18n";
+import { t, errCode } from "../i18n";
 import { ACCENT, focusHalo, useFillHeight, InlineBtn, Notice } from "./Styled";
 import { IcChat, IcHome, IcUser } from "./Icons";
 
@@ -86,6 +86,8 @@ export function ForwardModal({ payload, closeModal }: { payload: ForwardPayload;
         const guilds: any[] = (await call("get_text_channels")) as any;
         for (const g of Array.isArray(guilds) ? guilds : []) {
           for (const c of g.channels || []) {
+            // Forum/média : pas de message direct possible, seulement dans un fil (#100).
+            if (c.type === 15 || c.type === 16) continue;
             if (c.id) out.push({ id: String(c.id), label: "#" + (c.name || c.id), kind: "text", guild: g.name });
           }
         }
@@ -104,7 +106,7 @@ export function ForwardModal({ payload, closeModal }: { payload: ForwardPayload;
       if (r && r.error) setErr(String(r.error));
       else setDone(target.label);
     } catch (e: any) {
-      setErr(String(e?.message ?? e));
+      setErr(errCode(e));
     } finally {
       setBusy(false);
     }

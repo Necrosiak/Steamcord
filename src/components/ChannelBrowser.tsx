@@ -1,15 +1,16 @@
 import { DialogButton, Focusable } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
-import { t, errText } from "../i18n";
+import { t, errCode, errText } from "../i18n";
 import { useFillHeight, focusHalo, ACCENT, Pill, Rail, RowBtn, Notice, MiniBtn, ONLINE } from "./Styled";
 import { useQamUi } from "../qamUi";
 import { useBackHandler } from "../backNav";
-import { IcRefresh, IcSpeaker, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
+import { IcRefresh, IcSpeaker, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder, IcFolder } from "./Icons";
+import { GuildFolder, FolderEntry, folderColor, folderLabel, groupByFolder, useOpenFolders } from "../guildFolders";
 
 interface ChannelMember { id: string; avatar: string | null; }
 interface VoiceChannel { id: string; name: string; members: ChannelMember[]; }
-interface Guild { id: string; name: string; icon: string | null; channels: VoiceChannel[]; hidden?: boolean; }
+interface Guild { id: string; name: string; icon: string | null; folder?: GuildFolder | null; channels: VoiceChannel[]; hidden?: boolean; }
 
 const Btn = DialogButton as any;
 
@@ -117,6 +118,66 @@ function GuildRowBtn({ guild, totalActive, expanded, onClick, flex }: {
   );
 }
 
+// Icône de dossier comme dans Discord : fermé, une mini-grille des icônes de
+// ses serveurs ; ouvert, le dossier à sa couleur. Fond sombre dans les deux
+// cas, sinon la couleur par défaut disparaît sur une rangée surlignée.
+export function FolderIcon({ folder, guilds, open, size }: {
+  folder: GuildFolder; guilds: { id: string; name: string; icon?: string | null }[]; open: boolean; size: number;
+}) {
+  const tile = { width: size, height: size, flexShrink: 0, borderRadius: Math.round(size * 0.32), background: "rgba(0,0,0,0.32)", boxSizing: "border-box" as const };
+  if (open || guilds.length === 0)
+    return <span style={{ ...tile, display: "flex", alignItems: "center", justifyContent: "center", fontSize: Math.round(size * 0.58), color: folderColor(folder) }}><IcFolder /></span>;
+  const cell = Math.floor((size - 3 * Math.max(2, size * 0.08)) / 2);
+  const gap = Math.max(2, Math.round(size * 0.08));
+  return (
+    <span style={{ ...tile, padding: gap, display: "grid", gridTemplateColumns: `${cell}px ${cell}px`, gridAutoRows: `${cell}px`, gap }}>
+      {guilds.slice(0, 4).map((g) => g.icon
+        ? <img key={g.id} src={`https://cdn.discordapp.com/icons/${g.id}/${g.icon}.webp?size=32`} width={cell} height={cell} style={{ borderRadius: "50%", objectFit: "cover" }} />
+        : <span key={g.id} style={{ width: cell, height: cell, borderRadius: "50%", background: ACCENT, color: "#fff", fontSize: Math.round(cell * 0.6), fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{g.name[0]}</span>)}
+    </span>
+  );
+}
+
+// Dossier Discord (#101) dans les listes du QAM : même rangée qu'un serveur,
+// icône de dossier à sa couleur. Partagé avec l'onglet texte.
+export function FolderRowBtn({ folder, guilds, open, badge, onClick }: {
+  folder: GuildFolder; guilds: { id: string; name: string; icon?: string | null }[]; open: boolean; badge?: number; onClick: () => void;
+}) {
+  const { px } = useQamUi();
+  return (
+    <RowBtn active={open} onClick={onClick}>
+      <FolderIcon folder={folder} guilds={guilds} open={open} size={px(26)} />
+      <span style={{ flex: 1, textAlign: "left", fontSize: px(13), fontWeight: open ? 600 : 500,
+                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folderLabel(folder, guilds)}</span>
+      {!!badge && <Pill color={ONLINE}>{badge}</Pill>}
+      <span style={{ opacity: 0.45, flexShrink: 0, fontSize: px(11) }}>{guilds.length}</span>
+      <span style={{ opacity: 0.45, flexShrink: 0, display: "flex" }}>{open ? <IcChevronUp /> : <IcChevronDown />}</span>
+    </RowBtn>
+  );
+}
+
+// Liste à plat en réorganisation ou en parcours des masqués ; regroupée par
+// dossier sinon. Le rendu d'un serveur reste celui de l'appelant.
+export function FolderedList<G extends { id: string; name: string; icon?: string | null; folder?: GuildFolder | null }>({ guilds, flat, renderGuild, badge }: {
+  guilds: G[]; flat: boolean; renderGuild: (g: G, index: number) => any; badge?: (gs: G[]) => number;
+}) {
+  const [open, toggle] = useOpenFolders();
+  const entries: FolderEntry<G>[] = flat ? guilds.map((guild, index) => ({ kind: "guild" as const, guild, index })) : groupByFolder(guilds);
+  return <>{entries.map((e) => {
+    if (e.kind === "guild") return renderGuild(e.guild, e.index);
+    const gs = e.items.map((it) => it.guild);
+    const isOpen = open.has(e.folder.id);
+    return (
+      <div key={"folder-" + e.folder.id} style={{ marginBottom: 5 }}>
+        <FolderRowBtn folder={e.folder} guilds={gs} open={isOpen} badge={badge?.(gs)} onClick={() => toggle(e.folder.id)} />
+        {isOpen && <div style={{ marginTop: 4, marginLeft: 6, paddingLeft: 6, borderLeft: `2px solid ${folderColor(e.folder)}` }}>
+          {e.items.map((it) => renderGuild(it.guild, it.index))}
+        </div>}
+      </div>
+    );
+  })}</>;
+}
+
 // Salon vocal sous un serveur déplié — même rangée, en plus petit (`sub`),
 // posée derrière le rail d'accent du serveur.
 function ChannelRowBtn({ channel, joining, onClick }: {
@@ -170,7 +231,7 @@ export function ChannelBrowser() {
       else setError(t("error") + JSON.stringify(res));
     }).catch(e => {
       if (!alive.current) return;
-      const s = String(e);
+      const s = errCode(e);
       const transient = s.includes("stores_not_ready") || s.includes("discord_reconnecting");
       setError(errText(e));
       if (transient && retries.current < MAX_RETRIES) {
@@ -255,7 +316,9 @@ export function ChannelBrowser() {
         <TinyIconBtn onClick={refresh}><IcRefresh /></TinyIconBtn>
       </Focusable>
       <div ref={fill.ref} style={{ maxHeight: fill.height, overflowY: "auto", margin: "0 -3px", padding: 3, boxSizing: "border-box" }}>
-        {visibleGuilds.map((guild, i) => {
+        <FolderedList guilds={visibleGuilds} flat={editMode || showHidden}
+          badge={(gs) => gs.reduce((n, g) => n + g.channels.reduce((m, c) => m + (c.members?.length ?? 0), 0), 0)}
+          renderGuild={(guild, i) => {
           const totalActive = guild.channels.reduce((n, c) => n + (c.members?.length ?? 0), 0);
           return (
             <div key={guild.id} style={{ marginBottom: 5, opacity: guild.hidden ? 0.5 : 1 }}>
@@ -291,7 +354,7 @@ export function ChannelBrowser() {
               )}
             </div>
           );
-        })}
+        }} />
       </div>
     </div>
   );

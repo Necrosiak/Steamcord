@@ -196,6 +196,12 @@ class StoreAccess:
     async def get_text_channels(self):
         return await self._store_access_request("$get_text_channels")
 
+    async def get_threads(self, channel_id, offset=0, name="", tags=None):
+        return await self._store_access_request("$get_threads", id=channel_id, offset=offset, name=name, tags=tags or [])
+
+    async def create_thread(self, channel_id, name, content="", tags=None):
+        return await self._store_access_request("$create_thread", id=channel_id, name=name, content=content, tags=tags or [])
+
     async def get_events(self):
         return await self._store_access_request("$events")
 

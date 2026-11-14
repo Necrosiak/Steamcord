@@ -2,13 +2,16 @@ import { DialogButton, Focusable, NavEntryPositionPreferences, showModal, TextFi
 import { addEventListener, call, removeEventListener } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { t, errText } from "../i18n";
-import { useFillHeight, focusHalo, ACCENT, MiniBtn, Notice, Rail, RowBtn } from "./Styled";
+import { useFillHeight, focusHalo, ACCENT, InlineBtn, MiniBtn, Notice, Rail, RowBtn } from "./Styled";
 import { useChatPanelHeight } from "../chatPanelLayout";
 import { useQamUi } from "../qamUi";
 import { useBackHandler } from "../backNav";
-import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder } from "./Icons";
+import { IcChat, IcLink, IcPaperclip, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder, IcForum, IcThread } from "./Icons";
+import { GuildFolder } from "../guildFolders";
+import { ThreadInfo, isForumChannel } from "../threads";
+import { BtnComp, RowComp, ThreadBrowser } from "./ThreadBrowser";
 import { ChatFullscreenModal, SendBtn } from "./ChatFullscreen";
-import { GuildIcon, TinyIconBtn } from "./ChannelBrowser";
+import { FolderedList, GuildIcon, TinyIconBtn } from "./ChannelBrowser";
 import { openMediaLightbox, saveAttachment, humanSize } from "./MediaLightbox";
 import { openForward } from "./ForwardModal";
 import { useSteamcordState } from "../hooks/useSteamcordState";
@@ -97,8 +100,31 @@ export const notifyTypingThrottled = (channelId: string) => {
   call("send_typing", channelId).catch(() => {});
 };
 
-interface TextChannel { id: string; name: string; type: number; }
-interface Guild { id: string; name: string; icon: string | null; channels: TextChannel[]; hidden?: boolean; }
+interface TextChannel { id: string; name: string; type: number; threads?: ThreadInfo[]; }
+interface Guild { id: string; name: string; icon: string | null; folder?: GuildFolder | null; channels: TextChannel[]; hidden?: boolean; }
+
+// Fil sous son salon dans le QAM (#100) : rangée `sub`, décalée.
+function QamThreadRow({ thread, onOpen }: { thread: ThreadInfo; onOpen: (t: ThreadInfo) => void }) {
+  const { px } = useQamUi();
+  return (
+    <div style={{ marginTop: px(2), marginLeft: px(14) }}>
+      <RowBtn sub onClick={() => onOpen(thread)}>
+        <span style={{ opacity: 0.55, flexShrink: 0, display: "flex" }}><IcThread /></span>
+        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: thread.archived ? 0.6 : 1 }}>{thread.name}</span>
+        {thread.archived && <span style={{ opacity: 0.5, fontSize: px(10), flexShrink: 0 }}>{t("thread_archived")}</span>}
+      </RowBtn>
+    </div>
+  );
+}
+
+// Rangée et bouton du QAM pour la liste des fils.
+const QamRow: RowComp = ({ onClick, active, children }) => <RowBtn sub active={active} onClick={onClick}>{children}</RowBtn>;
+const QamBtn: BtnComp = ({ onClick, on, disabled, children }) => <div style={{ flexShrink: 0 }}><InlineBtn on={on} disabled={disabled} onClick={onClick}><span style={{ padding: "0 8px", whiteSpace: "nowrap" }}>{children}</span></InlineBtn></div>;
+
+function QamThreadList({ channelId, channelName, forum, onOpen }: { channelId: string; channelName: string; forum: boolean; onOpen: (t: ThreadInfo) => void }) {
+  const { px } = useQamUi();
+  return <div style={{ marginLeft: px(14) }}><ThreadBrowser channelId={channelId} channelName={channelName} forum={forum} onOpen={onOpen} Row={QamRow} Btn={QamBtn} size={px(12)} /></div>;
+}
 interface DMRecipient { id: string; username: string; avatar: string | null; }
 interface DMChannel {
   id: string; type: number; name: string; icon: string | null;
@@ -886,6 +912,8 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
   // que l'onglet vocal (ChannelBrowser). Les MP ne sont pas concernés.
   const [showHidden, setShowHidden] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  // Salon dont la liste complète des fils (ou le forum) est dépliée (#100).
+  const [threadsOf, setThreadsOf] = useState<string | null>(null);
 
   // Charge la liste (serveurs ou MP) au montage, selon la source.
   // `guilds` contient TOUJOURS l'ensemble complet (masqués inclus, flag
@@ -1226,7 +1254,7 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
             </TinyIconBtn>
           </Focusable>
           <div ref={fillList.ref} style={{ maxHeight: fillList.height, overflowY: "scroll", margin: "4px -3px 0", padding: 3, boxSizing: "border-box", WebkitOverflowScrolling: "touch" } as any}>
-            {visibleGuilds.map((guild, i) => {
+            <FolderedList guilds={visibleGuilds} flat={editMode || showHidden} renderGuild={(guild, i) => {
               // Exactement la rangée de l'onglet vocal (RowBtn + GuildIcon) :
               // c'était la MÊME liste, dessinée de deux façons différentes
               // selon l'onglet — le reproche exact de #45.
@@ -1260,19 +1288,44 @@ export function TextChat({ source }: { source: "servers" | "dms" }) {
                   ) : rowBtn(false)}
                   {open && (
                     <Rail>
-                      {guild.channels.map((ch) => (
-                        <div key={ch.id} style={{ marginTop: px(2) }}>
-                          <RowBtn sub onClick={() => openChannel(ch.id, ch.name, false)}>
-                            <span style={{ opacity: 0.55, flexShrink: 0, fontWeight: 700 }}>#</span>
-                            <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>
-                          </RowBtn>
-                        </div>
-                      ))}
+                      {guild.channels.map((ch) => {
+                        // Forum : se déplie sur ses publications. Salon texte :
+                        // fils actifs connus dessous, liste complète via l'icône.
+                        const forum = isForumChannel(ch.type);
+                        const full = threadsOf === ch.id;
+                        const toggleThreads = () => setThreadsOf((c) => c === ch.id ? null : ch.id);
+                        const openThread = (th: ThreadInfo) => openChannel(th.id, th.name, false);
+                        const known = ch.threads || [];
+                        const label = <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch.name}</span>;
+                        return (
+                          <div key={ch.id} style={{ marginTop: px(2) }}>
+                            {forum ? (
+                              <RowBtn sub active={full} onClick={toggleThreads}>
+                                <span style={{ opacity: 0.6, flexShrink: 0, display: "flex" }}><IcForum /></span>
+                                {label}
+                                <span style={{ opacity: 0.45, flexShrink: 0, display: "flex" }}>{full ? <IcChevronUp /> : <IcChevronDown />}</span>
+                              </RowBtn>
+                            ) : (
+                              <Focusable flow-children="row" style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <RowBtn sub flex onClick={() => openChannel(ch.id, ch.name, false)}>
+                                  <span style={{ opacity: 0.55, flexShrink: 0, fontWeight: 700 }}>#</span>
+                                  {label}
+                                </RowBtn>
+                                <TinyIconBtn onClick={toggleThreads} title={t("threads")}>
+                                  <span style={{ color: full ? "#5865f2" : undefined, display: "flex" }}><IcThread /></span>
+                                </TinyIconBtn>
+                              </Focusable>
+                            )}
+                            {full ? <QamThreadList channelId={ch.id} channelName={ch.name} forum={forum} onOpen={openThread} />
+                              : known.map((th) => <QamThreadRow key={th.id} thread={th} onOpen={openThread} />)}
+                          </div>
+                        );
+                      })}
                     </Rail>
                   )}
                 </div>
               );
-            })}
+            }} />
           </div>
         </>
       )}

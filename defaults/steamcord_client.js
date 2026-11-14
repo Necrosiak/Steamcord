@@ -80,6 +80,76 @@ window.rpcExecTail = (s) => String(s || "")
     .slice(-2)
     .join("/");
 
+// ── Dossiers de serveurs (#101) ──────────────────────────────────────────────
+// SortedGuildStore.getGuildFolders() renvoie l'arborescence de la barre de
+// gauche de Discord. Un serveur hors dossier y figure aussi, mais SANS folderId :
+// seuls les vrais dossiers sont retenus. Absent ou en erreur → aucun dossier,
+// la liste reste plate comme avant.
+window.__sc_folderMap = (SGS) => {
+    const map = {};
+    try {
+        const folders = SGS?.getGuildFolders?.() || [];
+        for (const f of folders) {
+            if (!f || f.folderId == null || !Array.isArray(f.guildIds)) continue;
+            const info = {
+                id: String(f.folderId),
+                name: f.folderName ? String(f.folderName) : null,
+                color: Number.isFinite(f.folderColor) ? Number(f.folderColor) : null,
+            };
+            for (const gid of f.guildIds) map[String(gid)] = info;
+        }
+    } catch (_) {}
+    return map;
+};
+
+// ── Fils et forums (#100) ────────────────────────────────────────────────────
+// Un fil est un salon à part entière : messages, envoi et suivi temps réel
+// passent par son propre id, sans rien de spécial. Seule la liste est neuve.
+window.__sc_threadArchived = (t) => !!(t?.threadMetadata?.archived ?? t?.thread_metadata?.archived);
+window.__sc_mapThread = (t) => ({
+    id: String(t.id),
+    name: String(t.name || ""),
+    parent_id: String(t.parent_id ?? t.parentId ?? ""),
+    archived: window.__sc_threadArchived(t),
+    count: Number(t.message_count ?? t.messageCount ?? 0) || 0,
+    last: String(t.last_message_id ?? t.lastMessageId ?? t.id),
+    tags: (t.applied_tags ?? t.appliedTags ?? []).map(String),
+});
+// Snowflakes : plus long = plus récent, sinon ordre lexical (pas de Number,
+// au-delà de 2^53 il perd des chiffres).
+window.__sc_newerFirst = (a, b) => (b.last.length - a.last.length) || (a.last < b.last ? 1 : a.last > b.last ? -1 : 0);
+// Fils actifs que le client connaît déjà (rejoints, ou synchronisés en ouvrant
+// le salon) : gratuit, sans requête. La liste complète vient de $get_threads.
+window.__sc_storeThreads = (parentId) => {
+    try {
+        const CS = Vencord.Webpack.Common.ChannelStore;
+        const list = CS?.getAllThreadsForParent?.(parentId) || [];
+        return list.filter(t => t && t.id && !window.__sc_threadArchived(t)).map(window.__sc_mapThread).sort(window.__sc_newerFirst);
+    } catch (_) { return []; }
+};
+
+// Ce que le salon parent permet : publier/créer un fil, tags du forum.
+// PermissionStore absent → on laisse tenter, Discord refusera s'il le faut.
+window.__sc_threadParent = (id) => {
+    const W = Vencord.Webpack.Common;
+    const ch = W.ChannelStore?.getChannel?.(id);
+    const can = (bit) => { try { return W.PermissionStore?.can ? !!W.PermissionStore.can(1n << BigInt(bit), ch) : true; } catch (_) { return true; } };
+    const forum = ch?.type === 15 || ch?.type === 16;
+    const manage = can(34);   // MANAGE_THREADS : seuls ceux-là posent les tags modérés
+    const tags = forum ? (ch.availableTags || ch.available_tags || [])
+        .filter(tg => tg && tg.id && (!tg.moderated || manage))
+        .map(tg => ({ id: String(tg.id), name: String(tg.name || ""), emoji: tg.emojiName ?? tg.emoji_name ?? null })) : [];
+    return {
+        kind: forum ? "forum" : "text",
+        // Forum : SEND_MESSAGES. Salon texte : CREATE_PUBLIC_THREADS. Un salon
+        // média (16) exige une pièce jointe, hors de portée ici.
+        can_create: !!ch && ch.type !== 16 && can(forum ? 11 : 35),
+        require_tag: forum && ((Number(ch.flags) || 0) & 16) !== 0 && tags.length > 0,
+        tags,
+        auto_archive: [60, 1440, 4320, 10080].includes(ch?.defaultAutoArchiveDuration) ? ch.defaultAutoArchiveDuration : 1440,
+    };
+};
+
 // ── Mapping message Discord → forme attendue par le frontend QAM ─────────────
 // Partagé entre $get_messages (chargement/pagination) et l'intercepteur Flux
 // MESSAGE_CREATE/UPDATE (push temps réel du salon suivi) — même forme des deux
@@ -2248,6 +2318,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const sortedIds = SGS?.getFlattenedGuildIds?.() ?? SGS?.getGuilds?.()?.map(g => g.id) ?? Object.keys(GS.getGuilds());
                                     const allGuilds = GS.getGuilds();
                                     result = [];
+                                    const folderOf = window.__sc_folderMap(SGS);
                                     for (const guildId of sortedIds) {
                                         const guild = allGuilds[guildId];
                                         if (!guild) continue;
@@ -2267,7 +2338,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     return { id: chId, name: chName, members };
                                                 })
                                                 .filter(Boolean);
-                                            if (vocal.length > 0) result.push({ id: String(guild.id), name: String(guild.name), icon: guild.icon || null, channels: vocal });
+                                            if (vocal.length > 0) result.push({ id: String(guild.id), name: String(guild.name), icon: guild.icon || null, folder: folderOf[String(guild.id)] || null, channels: vocal });
                                         } catch (_) {}
                                     }
                                     break;
@@ -2423,6 +2494,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const sortedIds = SGS?.getFlattenedGuildIds?.() ?? Object.keys(GS.getGuilds());
                                     const allGuilds = GS.getGuilds();
                                     result = [];
+                                    const folderOf = window.__sc_folderMap(SGS);
                                     for (const gid of sortedIds) {
                                         const guild = allGuilds[gid];
                                         if (!guild) continue;
@@ -2432,14 +2504,107 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             const channels = list
                                                 .map(e => {
                                                     const ch = e.channel ?? e;
-                                                    if (!ch || (ch.type !== 0 && ch.type !== 5)) return null;
-                                                    return { id: String(ch.id), name: String(ch.name), type: ch.type };
+                                                    // 15 = forum, 16 = média : des listes de publications
+                                                    // (chacune est un fil), pas de messages directs (#100).
+                                                    if (!ch || (ch.type !== 0 && ch.type !== 5 && ch.type !== 15 && ch.type !== 16)) return null;
+                                                    const out = { id: String(ch.id), name: String(ch.name), type: ch.type };
+                                                    if (ch.type === 0 || ch.type === 5) out.threads = window.__sc_storeThreads(ch.id).slice(0, 10);
+                                                    return out;
                                                 })
                                                 .filter(Boolean);
                                             if (channels.length)
-                                                result.push({ id: String(guild.id), name: String(guild.name), icon: guild.icon || null, channels });
+                                                result.push({ id: String(guild.id), name: String(guild.name), icon: guild.icon || null, folder: folderOf[String(guild.id)] || null, channels });
                                         } catch (_) { }
                                     }
+                                    break;
+                                }
+                                case "$get_threads": {
+                                    // Fils d'un salon texte ou publications d'un forum (#100),
+                                    // par pages de 25, archivés compris (un forum en compte des
+                                    // milliers). `name` cherche dans les titres (tri par
+                                    // pertinence), `tags` filtre sur au moins un des tags.
+                                    // Sans filtre, la première page reprend aussi les fils déjà
+                                    // connus du client et nos fils privés archivés ; si la
+                                    // recherche est refusée, les archives publiques la remplacent.
+                                    const id = String(data.id || "");
+                                    if (!/^\d+$/.test(id)) throw new Error("bad_channel");
+                                    const offset = Math.max(0, Math.floor(Number(data.offset) || 0));
+                                    const name = String(data.name || "").trim().slice(0, 100);
+                                    const tags = (Array.isArray(data.tags) ? data.tags : []).map(String).filter(x => /^\d+$/.test(x)).slice(0, 10);
+                                    const filtered = !!name || tags.length > 0;
+                                    const byId = new Map();
+                                    if (offset === 0 && !filtered) for (const t of window.__sc_storeThreads(id)) byId.set(t.id, t);
+                                    const add = (t) => { if (t && t.id && !byId.has(String(t.id))) byId.set(String(t.id), window.__sc_mapThread(t)); };
+                                    const get = async (url) => {
+                                        const res = await Vencord.Webpack.Common.RestAPI.get({ url });
+                                        const body = res?.body || {};
+                                        if (Array.isArray(body.threads)) body.threads.forEach(add);
+                                        return body;
+                                    };
+                                    let search = `/channels/${id}/threads/search?sort_by=${name ? "relevance" : "last_message_time"}&sort_order=desc&limit=25&offset=${offset}`;
+                                    if (name) search += `&name=${encodeURIComponent(name)}`;
+                                    for (const tg of tags) search += `&tag=${tg}`;
+                                    if (tags.length) search += "&tag_setting=match_some";
+                                    let hasMore = false, next = offset, total = null, searched = false, failed = 0;
+                                    try {
+                                        const body = await get(search);
+                                        searched = true;
+                                        hasMore = !!body.has_more;
+                                        total = Number.isFinite(body.total_results) ? body.total_results : null;
+                                        next = offset + (Array.isArray(body.threads) ? body.threads.length : 0);
+                                    } catch (_) { failed++; }
+                                    if (offset === 0 && !filtered) {
+                                        const extra = [`/channels/${id}/users/@me/threads/archived/private?limit=25`];
+                                        if (!searched) extra.unshift(`/channels/${id}/threads/archived/public?limit=25`);
+                                        for (const url of extra) { try { await get(url); } catch (_) { failed++; } }
+                                        if (byId.size === 0 && failed === extra.length + 1) throw new Error("threads_unavailable");
+                                    } else if (!searched) throw new Error("threads_unavailable");
+                                    const list = [...byId.values()];
+                                    result = {
+                                        // La pertinence de Discord prime quand on cherche un nom.
+                                        threads: name ? list : list.sort(window.__sc_newerFirst),
+                                        has_more: hasMore && searched,
+                                        next,
+                                        total,
+                                    };
+                                    if (offset === 0) result.parent = window.__sc_threadParent(id);
+                                    break;
+                                }
+                                case "$create_thread": {
+                                    // Nouveau fil (salon texte) ou nouvelle publication (forum).
+                                    // Forum : titre + message + tags en une requête. Salon texte :
+                                    // fil public puis, s'il y en a un, le premier message dedans.
+                                    const id = String(data.id || "");
+                                    if (!/^\d+$/.test(id)) throw new Error("bad_channel");
+                                    const name = String(data.name || "").trim();
+                                    const content = String(data.content || "").trim();
+                                    if (!name || name.length > 100) throw new Error("thread_bad_name");
+                                    if (content.length > 2000) throw new Error("thread_too_long");
+                                    const parent = window.__sc_threadParent(id);
+                                    if (!parent.can_create) throw new Error("thread_not_allowed");
+                                    const allowed = new Set(parent.tags.map(tg => tg.id));
+                                    const tags = (Array.isArray(data.tags) ? data.tags : []).map(String).filter(x => allowed.has(x)).slice(0, 5);
+                                    const RestAPI = Vencord.Webpack.Common.RestAPI;
+                                    let created;
+                                    if (parent.kind === "forum") {
+                                        if (!content) throw new Error("thread_need_message");
+                                        if (parent.require_tag && tags.length === 0) throw new Error("thread_need_tag");
+                                        created = (await RestAPI.post({
+                                            url: `/channels/${id}/threads?use_nested_fields=true`,
+                                            body: { name, auto_archive_duration: parent.auto_archive, applied_tags: tags, message: { content } },
+                                        }))?.body;
+                                    } else {
+                                        const channel = Vencord.Webpack.Common.ChannelStore?.getChannel?.(id);
+                                        created = (await RestAPI.post({
+                                            url: `/channels/${id}/threads`,
+                                            // 10 = fil d'annonces (salon type 5), 11 = fil public.
+                                            body: { name, type: channel?.type === 5 ? 10 : 11, auto_archive_duration: parent.auto_archive },
+                                        }))?.body;
+                                        if (created?.id && content)
+                                            await RestAPI.post({ url: `/channels/${created.id}/messages`, body: { content } });
+                                    }
+                                    if (!created?.id) throw new Error("thread_create_failed");
+                                    result = window.__sc_mapThread(created);
                                     break;
                                 }
                                 case "$get_messages": {

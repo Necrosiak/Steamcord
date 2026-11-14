@@ -50,6 +50,8 @@ jobs:
         run: |
           node tests/steam-menu-lifecycle.test.cjs
           node --test tests/test-menu-entry-toggle.cjs
+          node --test tests/test-guild-folders-threads.cjs
+          node --test tests/test-err-code.cjs
           node --test tests/test-host-capabilities.cjs tests/test-desktop-capture.cjs
           node --test tests/test-stream-visibility.cjs tests/test-video-visibility-leases.cjs
           python3 -m unittest discover -s tests -p test_video_visibility.py -v
@@ -70,6 +72,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_support_diagnostics.py -v
           python3 -m unittest discover -s tests -p test_menu_entry_backend.py -v
           python3 -m unittest discover -s tests -p test_cdp_port.py -v
+          python3 -m unittest discover -s tests -p test_threads_backend.py -v
           node --test tests/test-cloud-rpc.cjs
           python3 -m unittest discover -s tests -p test_dbus_next_py315.py -v
           python3 -m unittest discover -s tests -p test_steam_display_env.py -v

@@ -2852,6 +2852,33 @@ class Plugin:
         # concernés — liste séparée, get_dm_channels).
         return cls._apply_guild_prefs(guilds, include_hidden)
 
+    @staticmethod
+    def _thread_tags(tags):
+        if not isinstance(tags, (list, tuple)):
+            return []
+        return [str(t) for t in tags if str(t).isdigit()][:10]
+
+    @classmethod
+    async def get_threads(cls, channel_id, offset=0, name="", tags=None):
+        # Fils d'un salon texte ou publications d'un forum (#100), par pages
+        # (`offset` = `next` de la page précédente), filtrables par titre et
+        # par tags. Lecture et envoi passent ensuite par get_messages /
+        # send_message avec l'id du fil.
+        try:
+            offset = max(0, int(offset or 0))
+        except (TypeError, ValueError):
+            offset = 0
+        name = str(name or "").strip()[:100]
+        return await cls.evt_handler.api.get_threads(str(channel_id), offset, name, cls._thread_tags(tags))
+
+    @classmethod
+    async def create_thread(cls, channel_id, name, content="", tags=None):
+        # Nouveau fil ou nouvelle publication de forum. Les règles (titre,
+        # message obligatoire en forum, tag imposé, droits) sont vérifiées
+        # côté client Discord, qui connaît le salon.
+        return await cls.evt_handler.api.create_thread(
+            str(channel_id), str(name or "").strip(), str(content or "").strip(), cls._thread_tags(tags))
+
     # ── Événements programmés (demande user 06/09) ───────────────────────────
     # Lecture + participation, rien d'autre : pas de création ni de modification.
     # En mode jeu ce qui a de la valeur, c'est de voir ce qui arrive et de s'y

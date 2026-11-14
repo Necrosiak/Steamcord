@@ -4,7 +4,7 @@
 // texte voisin. Les TOASTS gardent leurs emojis (texte brut, pas de JSX).
 import {
   BsArrowDownUp, BsArrowRepeat, BsBell, BsBoxArrowRight, BsCamera, BsCameraVideo,
-  BsChatDots, BsCheckCircle, BsChevronDown, BsChevronUp, BsCircle, BsCircleFill, BsController,
+  BsChatDots, BsChatLeftText, BsChatSquareText, BsCheckCircle, BsChevronDown, BsChevronUp, BsCircle, BsCircleFill, BsController,
   BsDisplay, BsExclamationTriangle, BsEye, BsEyeSlash, BsFilm, BsFolder2Open, BsGear,
   BsGithub, BsHeadphones, BsHouseDoor, BsInfoCircle, BsJoystick,
   BsLayoutSidebarInsetReverse, BsLink45Deg, BsMic, BsMicMute, BsMicMuteFill, BsMoon, BsPaperclip,
@@ -71,6 +71,8 @@ export const IcGear = mk(BsGear);
 export const IcWarn = mk(BsExclamationTriangle);
 export const IcBell = mk(BsBell);
 export const IcFolder = mk(BsFolder2Open);
+export const IcThread = mk(BsChatLeftText);
+export const IcForum = mk(BsChatSquareText);
 export const IcChat = mk(BsChatDots);
 export const IcUser = mk(BsPerson);
 export const IcHome = mk(BsHouseDoor);
