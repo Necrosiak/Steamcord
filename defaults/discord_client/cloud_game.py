@@ -42,6 +42,9 @@ def classify_title(title):
         return 'page', None
     if not title or is_geforce_launcher(title):
         return 'branding', None
+    # SDL's own hidden graphics window, opened by the Linux app (measured 14/11).
+    if status == 'sdlgraphicscontext':
+        return 'page', None
     if status in {
         'games', 'home', 'library', 'settings', 'sign in', 'login', 'jeux',
         'accueil', 'bibliothèque', 'paramètres', 'connexion', 'nvidia',
@@ -191,7 +194,48 @@ def _title_summary(titles):
     return {'gfn_windows': len(titles or ()), 'title_kinds': kinds}
 
 
-def detect_geforce_game(steam_game, env=None):
+def _x11_displays(env, socket_dir=Path('/tmp/.X11-unix')):
+    """Steam's display first, then gamescope's other XWayland displays.
+
+    Gamescope starts several XWayland servers. Steam is on one of them, while
+    the GeForce NOW Flatpak opens its windows on another (measured 14/11 on
+    SteamOS-style gamescope: Steam on :0, GeForce NOW on :1, issue #88).
+    """
+    first = env.get('DISPLAY')
+    if not first:
+        return []
+    displays = [first]
+    main = first.split('.', 1)[0]
+    try:
+        numbers = sorted(int(p.name[1:]) for p in socket_dir.iterdir() if re.fullmatch(r'X\d{1,3}', p.name))
+    except OSError:
+        numbers = []
+    for number in numbers:
+        display = ':%d' % number
+        if display != main and len(displays) < 3:
+            displays.append(display)
+    return displays
+
+
+def _gamescope_x11_titles(env, run=subprocess.run, which=shutil.which, stats=None, displays=None):
+    """Titles from every gamescope display. Steam's display must answer; another
+    display that cannot be queried is skipped, as it cannot hold Steam's game."""
+    titles, windows = [], 0
+    for index, display in enumerate(_x11_displays(env) if displays is None else displays):
+        found = {}
+        got = _x11_titles({**env, 'DISPLAY': display}, run=run, which=which, stats=found)
+        if got is None:
+            if index == 0:
+                return None
+            continue
+        windows += found.get('windows', 0)
+        titles += got
+    if stats is not None:
+        stats['windows'] = windows
+    return titles
+
+
+def detect_geforce_game(steam_game, env=None, gamescope=False):
     """A fresh snapshot. No retained last-game value that could go stale."""
     if not is_geforce_launcher(steam_game):
         return {'game': None, 'reason': 'not_gfn', 'source': None}
@@ -206,7 +250,8 @@ def detect_geforce_game(steam_game, env=None):
         else:
             pids = _native_linux_pids()
             source = 'x11-title'
-            titles = _x11_titles(dict(env or os.environ), stats=stats) if pids else []
+            read = _gamescope_x11_titles if gamescope else _x11_titles
+            titles = read(dict(env or os.environ), stats=stats) if pids else []
         if not pids:
             return {'game': None, 'reason': 'not_running', 'source': source}
         if titles is None:

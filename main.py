@@ -2224,7 +2224,7 @@ class Plugin:
                 report["reason"] = "disabled"
             else:
                 try:
-                    env = None
+                    env, gamescope = None, False
                     if not host.WINDOWS:
                         import vesktop
                         env = dict(vesktop._user_env())
@@ -2232,7 +2232,8 @@ class Plugin:
                             env.update(await vesktop._show_env())
                         else:
                             env.update(vesktop._steam_display_env())
-                    report = await to_thread(detect_geforce_game, game, env)
+                            gamescope = True
+                    report = await to_thread(detect_geforce_game, game, env, gamescope)
                 except Exception:
                     report = {"game": None, "reason": "unavailable", "source": None}
         # A Steam game or preference may have changed while querying X11.

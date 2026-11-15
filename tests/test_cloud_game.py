@@ -137,7 +137,7 @@ class CloudRpcTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload['cloud_game'],'Portal 2')
         self.assertEqual(payload['game'],'GeForce NOW')
         self.assertEqual(payload['procs'],[])
-        self.detector.assert_called_once_with('GeForce NOW',{'DISPLAY':':7','XAUTHORITY':'current'})
+        self.detector.assert_called_once_with('GeForce NOW',{'DISPLAY':':7','XAUTHORITY':'current'},True)
 
     async def test_manual_title_disabled_detection_or_disabled_presence_skip_queries(self):
         with patch.dict(sys.modules,self.mods):
@@ -263,3 +263,67 @@ class XpropEncodingTests(unittest.TestCase):
                 return types.SimpleNamespace(returncode=0,stdout=out)
             with self.subTest(literal=literal):
                 self.assertEqual(cloud._x11_titles({'DISPLAY':':9'},run=run,which=lambda *a,**k:'fixture'),[expected])
+
+
+class GamescopeDisplays(unittest.TestCase):
+    """#88: in Game Mode, GeForce NOW's windows are on gamescope's second XWayland
+    display (:1) while Steam is on :0 (measured 14/11)."""
+
+    def sockets(self, *names):
+        d = Path(tempfile.mkdtemp())
+        for n in names:
+            (d / n).touch()
+        return d
+
+    def test_steam_display_first_then_other_gamescope_displays(self):
+        d = self.sockets('X0', 'X1', 'X2', 'X5', 'lock', 'Xfoo')
+        self.assertEqual(cloud._x11_displays({'DISPLAY': ':0'}, d), [':0', ':1', ':2'])
+        self.assertEqual(cloud._x11_displays({'DISPLAY': ':1.0'}, d), [':1.0', ':0', ':2'])
+        self.assertEqual(cloud._x11_displays({}, d), [])
+        self.assertEqual(cloud._x11_displays({'DISPLAY': ':0'}, d / 'missing'), [':0'])
+
+    @staticmethod
+    def screens(windows_by_display, failing=()):
+        def run(args, **kwargs):
+            display = kwargs['env']['DISPLAY']
+            if display in failing:
+                return types.SimpleNamespace(returncode=1, stdout='')
+            windows = windows_by_display[display]
+            if '-root' in args:
+                return types.SimpleNamespace(returncode=0, stdout='_NET_CLIENT_LIST(WINDOW): window id # ' + ', '.join(windows))
+            return types.SimpleNamespace(returncode=0, stdout=windows[args[args.index('-id') + 1]])
+        return run
+
+    STEAM = {'0x1': 'WM_CLASS(STRING) = "steamwebhelper", "steam"\n_NET_WM_NAME(UTF8_STRING) = "Steam"',
+             '0x2': 'WM_CLASS(STRING) = "vesktop", "vesktop"\n_NET_WM_NAME(UTF8_STRING) = "Discord"'}
+    GFN = {'0x9': 'WM_CLASS(STRING) = "GeForceNOW", "GeForceNOW"\n_NET_WM_NAME(UTF8_STRING) = "Portal 2 on GeForce NOW"'}
+
+    def test_game_found_on_the_second_display(self):
+        run = self.screens({':0': self.STEAM, ':1': self.GFN})
+        stats = {}
+        titles = cloud._gamescope_x11_titles({'DISPLAY': ':0'}, run=run, which=lambda *a, **k: 'fixture',
+                                             stats=stats, displays=[':0', ':1'])
+        self.assertEqual(titles, ['Portal 2 on GeForce NOW'])
+        self.assertEqual(stats['windows'], 3)
+
+    def test_unreadable_extra_display_is_skipped_but_steam_display_is_required(self):
+        which = lambda *a, **k: 'fixture'
+        run = self.screens({':0': self.STEAM, ':1': self.GFN}, failing={':2'})
+        self.assertEqual(cloud._gamescope_x11_titles({'DISPLAY': ':0'}, run=run, which=which, displays=[':0', ':1', ':2']),
+                         ['Portal 2 on GeForce NOW'])
+        run = self.screens({':1': self.GFN}, failing={':0'})
+        self.assertIsNone(cloud._gamescope_x11_titles({'DISPLAY': ':0'}, run=run, which=which, displays=[':0', ':1']))
+
+    def test_detection_reads_every_display_only_in_game_mode(self):
+        with patch.object(cloud.sys, 'platform', 'linux'), patch.object(cloud, '_native_linux_pids', return_value={42}), \
+                patch.object(cloud, '_x11_titles', return_value=[]) as single, \
+                patch.object(cloud, '_gamescope_x11_titles', return_value=['Portal 2 on GeForce NOW']) as every:
+            self.assertEqual(cloud.detect_geforce_game('GeForce NOW', {'DISPLAY': ':0'}, True)['game'], 'Portal 2')
+            self.assertEqual(cloud.detect_geforce_game('GeForce NOW', {'DISPLAY': ':0'})['reason'], 'no_game')
+        self.assertEqual(every.call_count, 1)
+        self.assertEqual(single.call_count, 1)
+
+    def test_sdl_helper_window_is_not_a_game(self):
+        self.assertEqual(cloud.classify_title('SDLGraphicsContext'), ('page', None))
+        self.assertIsNone(cloud.game_from_title('SDLGraphicsContext'))
+        self.assertEqual(cloud.game_from_title('Portal 2 on GeForce NOW'), 'Portal 2')
