@@ -28,6 +28,15 @@ export function groupByFolder<G extends { folder?: GuildFolder | null }>(list: G
   return out.map((e) => e.kind === "folder" && e.items.length === 1 ? { kind: "guild" as const, ...e.items[0] } : e);
 }
 
+// Liste à plat (réorganisation, masqués) : le dossier Discord de chaque
+// serveur, pour le décaler sous un trait de sa couleur (#101). Même règle
+// qu'en groupé : un dossier dont un seul serveur est affiché ne compte pas.
+export function folderMarks<G extends { folder?: GuildFolder | null }>(list: G[]): (GuildFolder | null)[] {
+  const count = new Map<string, number>();
+  list.forEach((g) => { const id = g.folder?.id; if (id) count.set(id, (count.get(id) ?? 0) + 1); });
+  return list.map((g) => g.folder?.id && (count.get(g.folder.id) ?? 0) > 1 ? g.folder : null);
+}
+
 // Dossier sans nom : Discord affiche les noms de ses serveurs, on fait pareil.
 export function folderLabel(folder: GuildFolder, guilds: { name: string }[]): string {
   if (folder.name && folder.name.trim()) return folder.name;

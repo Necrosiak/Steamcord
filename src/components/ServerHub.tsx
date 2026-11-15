@@ -9,7 +9,7 @@ import { useOpenChat, useOpenMembers } from "./ExpandedNav";
 import { FaUsers } from "react-icons/fa";
 import { DANGER, ONLINE, listHalo } from "./Styled";
 import { IcChat, IcChevronDown, IcChevronUp, IcEye, IcEyeSlash, IcForum, IcRefresh, IcReorder, IcSpeaker, IcThread } from "./Icons";
-import { GuildFolder, folderLabel, groupByFolder, folderColor, useOpenFolders } from "../guildFolders";
+import { GuildFolder, folderLabel, folderMarks, groupByFolder, folderColor, useOpenFolders } from "../guildFolders";
 import { ThreadInfo, isForumChannel } from "../threads";
 import { ThreadBrowser } from "./ThreadBrowser";
 import { FolderIcon, MemberAvatars } from "./ChannelBrowser";
@@ -140,6 +140,7 @@ export function ServerHub() {
 
   const hiddenCount = guilds.filter((g) => g.hidden).length;
   const shown = showHidden ? guilds : guilds.filter((g) => !g.hidden);
+  const marks = folderMarks(shown);
   const eventsOf = (id: string) => events.filter((ev) => ev.guild_id === id);
 
   return <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -155,7 +156,12 @@ export function ServerHub() {
         sans borne elle grandissait et c'était la vue entière qui défilait. */}
     <Focusable flow-children="column" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 8px 3px 3px" }}>
       {(editMode || showHidden ? shown.map((guild, index) => ({ kind: "guild" as const, guild, index })) : groupByFolder(shown)).map((entry) => {
-        if (entry.kind === "guild") return renderGuild(entry.guild, entry.index);
+        if (entry.kind === "guild") {
+          // À plat, un serveur rangé dans un dossier reste décalé sous sa couleur (#101).
+          const f = editMode || showHidden ? marks[entry.index] : null;
+          return f ? <div key={"in-" + entry.guild.id} style={{ marginLeft: 12, paddingLeft: 10, borderLeft: `2px solid ${folderColor(f)}` }}>{renderGuild(entry.guild, entry.index)}</div>
+            : renderGuild(entry.guild, entry.index);
+        }
         // Dossier Discord (#101) : replié par défaut, ses serveurs dessous.
         // Masquer/réorganiser affichent la liste à plat, serveur par serveur.
         const f = entry.folder;

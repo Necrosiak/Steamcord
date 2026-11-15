@@ -6,7 +6,7 @@ import { useFillHeight, focusHalo, ACCENT, Pill, Rail, RowBtn, Notice, MiniBtn, 
 import { useQamUi } from "../qamUi";
 import { useBackHandler } from "../backNav";
 import { IcRefresh, IcSpeaker, IcChevronUp, IcChevronDown, IcEye, IcEyeSlash, IcReorder, IcFolder } from "./Icons";
-import { GuildFolder, FolderEntry, folderColor, folderLabel, groupByFolder, useOpenFolders } from "../guildFolders";
+import { GuildFolder, FolderEntry, folderColor, folderLabel, folderMarks, groupByFolder, useOpenFolders } from "../guildFolders";
 
 interface ChannelMember { id: string; avatar: string | null; }
 interface VoiceChannel { id: string; name: string; members: ChannelMember[]; }
@@ -163,8 +163,13 @@ export function FolderedList<G extends { id: string; name: string; icon?: string
 }) {
   const [open, toggle] = useOpenFolders();
   const entries: FolderEntry<G>[] = flat ? guilds.map((guild, index) => ({ kind: "guild" as const, guild, index })) : groupByFolder(guilds);
+  const marks = flat ? folderMarks(guilds) : [];
   return <>{entries.map((e) => {
-    if (e.kind === "guild") return renderGuild(e.guild, e.index);
+    if (e.kind === "guild") {
+      const f = marks[e.index];
+      return f ? <div key={"in-" + e.guild.id} style={{ marginLeft: 6, paddingLeft: 6, borderLeft: `2px solid ${folderColor(f)}` }}>{renderGuild(e.guild, e.index)}</div>
+        : renderGuild(e.guild, e.index);
+    }
     const gs = e.items.map((it) => it.guild);
     const isOpen = open.has(e.folder.id);
     return (

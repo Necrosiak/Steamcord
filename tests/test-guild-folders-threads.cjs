@@ -33,6 +33,13 @@ async function exec(name, nextCase, opts) {
   return out === undefined ? out : JSON.parse(JSON.stringify(out));
 }
 
+test('folderMarks : en liste à plat, seuls les dossiers à plusieurs serveurs affichés décalent (#101)', () => {
+  const { folderMarks } = loadFolders();
+  const f = { id: 'f', name: null, color: null }, g = { id: 'g', name: null, color: null };
+  const marks = JSON.parse(JSON.stringify(folderMarks([{ id: 'a', folder: f }, { id: 'x' }, { id: 'b', folder: f }, { id: 'c', folder: g }])));
+  assert.deepEqual(marks, [f, null, f, null]);
+});
+
 test('groupByFolder regroupe à la place du premier membre et garde les index', () => {
   const { groupByFolder } = loadFolders();
   const f = { id: '9', name: 'News', color: 0xff0000 };
