@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.45.6 — 2026-11-15
+
+### Fixes
+
+- GeForce NOW game detection now works in Game Mode. Gamescope runs more than one X display, and the GeForce NOW app opens its windows on a different one from Steam's, so Steamcord never saw them. It now looks at all of them. A hidden technical window of the app is no longer mistaken for a game name ([#88](https://github.com/Necrosiak/Steamcord/issues/88)).
+
+### Improvements
+
+- While you reorder or browse hidden servers, servers that belong to a Discord folder stay indented under a line in the folder's color, so you can still tell which folder they are in ([#101](https://github.com/Necrosiak/Steamcord/issues/101)).
+
+### Thanks
+
+Thanks to [@j2v454sj](https://github.com/j2v454sj) for the diagnostics report and to [@Torun-S](https://github.com/Torun-S) for the suggestion.
+
+**Full changelog:** [v1.45.5...v1.45.6](https://github.com/Necrosiak/Steamcord/compare/v1.45.5...v1.45.6)
+
 ## 1.45.5 — 2026-11-14
 
 ### Fixes
