@@ -76,12 +76,13 @@ class SupportDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     async def test_game_report_keeps_only_whitelisted_window_counts(self):
         self.p.get_cloud_game_status.return_value = {
             'game': None, 'reason': 'no_game', 'source': 'x11-title', 'windows': 7, 'gfn_windows': True,
-            'title_kinds': {'branding': 1, 'private title': 3, 'page': 'private'}}
+            'title_kinds': {'branding': 1, 'private title': 3, 'page': 'private'},
+            'unknown_shapes': ['Aaaa na GeForce NOW', 3, 'x' * 200, 'b', 'c']}
         with patch.dict('sys.modules', {'discord_client.cloud_game': self.cloud}):
             report = await self.p.get_game_diagnostics()
         self.assertEqual(report['geforce_now'], {
             'reason': 'no_game', 'source': 'x11-title', 'game_detected': False,
-            'windows': 7, 'title_kinds': {'branding': 1}})
+            'windows': 7, 'title_kinds': {'branding': 1}, 'unknown_shapes': ['Aaaa na GeForce NOW', 'x' * 150]})
         self.assertNotIn('private', json.dumps(report))
 
     async def test_video_report_retains_capture_data_and_adds_windows_build(self):

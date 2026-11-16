@@ -2205,6 +2205,9 @@ class Plugin:
                 **({"title_kinds": {k: v for k, v in status["title_kinds"].items()
                                     if k in {"game", "branding", "page", "invalid", "unknown"} and isinstance(v, int)}}
                    if isinstance(status.get("title_kinds"), dict) else {}),
+                # Masked format of unknown titles (#88): no letters or digits of the title.
+                **({"unknown_shapes": [x[:150] for x in status["unknown_shapes"][:3] if isinstance(x, str)]}
+                   if isinstance(status.get("unknown_shapes"), list) and status["unknown_shapes"] else {}),
             },
             "session": (await cls.get_share_env()).get("env"),
         })

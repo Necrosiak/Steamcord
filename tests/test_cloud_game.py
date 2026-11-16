@@ -101,7 +101,8 @@ class CloudGameTests(unittest.TestCase):
                 patch.object(cloud, '_x11_titles', side_effect=fake_titles):
             report = cloud.detect_geforce_game('GeForce NOW', {})
         self.assertEqual(report, {'game': None, 'reason': 'no_game', 'source': 'x11-title', 'windows': 9,
-                                  'gfn_windows': 2, 'title_kinds': {'branding': 1, 'unknown': 1}})
+                                  'gfn_windows': 2, 'title_kinds': {'branding': 1, 'unknown': 1},
+                                  'unknown_shapes': ['Aaaaaa Aaaa Aaaaa - GeForce NOW Aaaa']})
         self.assertNotIn('Secret', repr(report))
 
     def test_x11_reports_how_many_windows_were_inspected(self):
@@ -327,3 +328,13 @@ class GamescopeDisplays(unittest.TestCase):
         self.assertEqual(cloud.classify_title('SDLGraphicsContext'), ('page', None))
         self.assertIsNone(cloud.game_from_title('SDLGraphicsContext'))
         self.assertEqual(cloud.game_from_title('Portal 2 on GeForce NOW'), 'Portal 2')
+
+    def test_title_shape_keeps_the_format_but_no_game_name(self):
+        self.assertEqual(cloud.title_shape('Portal 2 na GeForce NOW'), 'Aaaaaa 0 na GeForce NOW')
+        self.assertEqual(cloud.title_shape('NVIDIA GeForce NOW (Cyberpunk 2077)'), 'GeForce NOW (Aaaaaaaaa 0000)')
+        self.assertEqual(cloud.title_shape('Doom auf GeForceNOW'), 'Aaaa auf GeForce NOW')
+        self.assertEqual(cloud.title_shape('GeForce NOW ne peut pas continuer'), 'GeForce NOW ne aaaa pas aaaaaaaaa')
+        self.assertEqual(cloud.title_shape('Ведьмак 3 на GeForce NOW'), 'Aaaaaaa 0 на GeForce NOW')
+        self.assertEqual(cloud.title_shape('a\nb'), 'ab')
+        self.assertIsNone(cloud.title_shape(None))
+        self.assertLessEqual(len(cloud.title_shape('x' * 500)), 120)

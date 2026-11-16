@@ -185,13 +185,44 @@ def _windows_titles(pids):
     return titles
 
 
+_BRAND = re.compile(r'(?:NVIDIA\s+)?GeForce\s*NOW', re.I)
+
+
+def _mask_words(text):
+    def word(m):
+        w = m.group(0)
+        # Short lowercase words are the joining words a format needs
+        # ("on", "na", "auf"...), never enough to name a game.
+        if len(w) <= 3 and w.islower() and not any(c.isdigit() for c in w):
+            return w
+        return ''.join('0' if c.isdigit() else 'A' if c.isupper() else 'a' for c in w)
+    return re.sub(r'\w+', word, text)
+
+
+def title_shape(title):
+    """The format of a title without its content, for the diagnostics (#88):
+    letters become a/A, digits 0; only the GeForce NOW name, punctuation and
+    short joining words stay. "Portal 2 na GeForce NOW" -> "Aaaaaa 0 na GeForce NOW"."""
+    if not isinstance(title, str):
+        return None
+    title = ''.join(c for c in unicodedata.normalize('NFKC', title)[:120] if ord(c) >= 32)
+    out, pos = [], 0
+    for m in _BRAND.finditer(title):
+        out += [_mask_words(title[pos:m.start()]), 'GeForce NOW']
+        pos = m.end()
+    out.append(_mask_words(title[pos:]))
+    return ''.join(out)
+
+
 def _title_summary(titles):
-    """Counts only: how many GFN windows had a title, and of which kind."""
-    kinds = {}
+    """Counts, plus the masked shape of titles in an unknown format."""
+    kinds, shapes = {}, []
     for title in titles or ():
         kind = classify_title(title)[0]
         kinds[kind] = kinds.get(kind, 0) + 1
-    return {'gfn_windows': len(titles or ()), 'title_kinds': kinds}
+        if kind == 'unknown' and len(shapes) < 3:
+            shapes.append(title_shape(title))
+    return {'gfn_windows': len(titles or ()), 'title_kinds': kinds, 'unknown_shapes': shapes}
 
 
 def _x11_displays(env, socket_dir=Path('/tmp/.X11-unix')):
