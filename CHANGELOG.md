@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.45.7 — 2026-11-16
+
+### Improvements
+
+- The game detection diagnostics now show the format of GeForce NOW window titles Steamcord doesn't recognise yet, with every letter and digit masked: only the GeForce NOW name, punctuation and short joining words stay visible, never the game's name. This tells which title format to read next ([#88](https://github.com/Necrosiak/Steamcord/issues/88)).
+
+**Full changelog:** [v1.45.6...v1.45.7](https://github.com/Necrosiak/Steamcord/compare/v1.45.6...v1.45.7)
+
 ## 1.45.6 — 2026-11-15
 
 ### Fixes
