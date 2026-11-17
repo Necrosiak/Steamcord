@@ -24,6 +24,7 @@ class EventHandler:
             "REMOTE_AUTH_TICKET": self._remote_auth_ticket,
             "STREAM_START": self._stream_start,
             "STREAM_STOP": self._stream_stop,
+            "STREAM_VIEWERS": self._stream_viewers,
             "CONNECTION_CLOSED": self._logout,
             "LOGOUT": self._logout,
             "VOICE_STATE_UPDATES": self._voice_state_updates,
@@ -128,6 +129,8 @@ class EventHandler:
                 user.is_live = self.me.is_live
             else:
                 user.is_live = user.id in self.streaming_users
+            # #92 : regarde mon Go Live (seulement tant que je stream).
+            user.is_watching_me = bool(self.me.is_live) and user.id in getattr(self, "stream_viewers", ())
 
         return {
             "channel_id": self.vc_channel_id,
@@ -640,6 +643,7 @@ class EventHandler:
         STREAM_START pour tout partage réellement actif au tour suivant.
         """
         self.streaming_users = set()
+        self.stream_viewers = set()
         if self.me is not None:
             self.me.is_live = False
         for user in self.vc_members.values():
@@ -662,6 +666,10 @@ class EventHandler:
             member = self.vc_members.get(owner_id)
             if member:
                 self._notify_video_event(member, "stream_start")
+
+    async def _stream_viewers(self, data):
+        ids = data.get("ids") if isinstance(data, dict) else None
+        self.stream_viewers = {str(i) for i in ids[:100] if isinstance(i, (str, int))} if isinstance(ids, list) else set()
 
     async def _stream_stop(self, data):
         stream_key = data.get("streamKey", "") or ""

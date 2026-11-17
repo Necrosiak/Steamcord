@@ -218,6 +218,28 @@ class OverlayTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(user[flag], flag)
 
 
+    def test_viewers_of_my_stream_are_flagged_only_while_i_stream(self):
+        # #92 : l'overlay vocal montre qui regarde mon Go Live.
+        handler = methods({'_build_vc_dict', '_stream_viewers'}, source='defaults/discord_client/event_handler.py',
+                          klass='EventHandler')()
+        handler.me = types.SimpleNamespace(id='self', is_muted=False, is_deafened=False, is_speaking=False, is_live=True)
+        members = {}
+        for uid in ('self', 'a', 'b'):
+            m = types.SimpleNamespace(id=uid, is_muted=False, is_deafened=False, is_video=False)
+            m.to_dict = (lambda m: lambda: vars(m))(m)
+            members[uid] = m
+        handler.vc_channel_id, handler.vc_members, handler.streaming_users = 'c', members, set()
+        handler.api = types.SimpleNamespace(_channel_name='voice', _guild_name='server')
+        asyncio.run(handler._stream_viewers({'ids': ['a', 42, None]}))
+        self.assertEqual(handler.stream_viewers, {'a', '42'})
+        users = {u['id']: u for u in handler._build_vc_dict()['users']}
+        self.assertTrue(users['a']['is_watching_me'])
+        self.assertFalse(users['b']['is_watching_me'])
+        handler.me.is_live = False
+        self.assertFalse({u['id']: u for u in handler._build_vc_dict()['users']}['a']['is_watching_me'])
+        asyncio.run(handler._stream_viewers({'ids': 'junk'}))
+        self.assertEqual(handler.stream_viewers, set())
+
 class OverlayCairoTests(unittest.TestCase):
     def test_centered_cairo_roster_tracks_participant_count_and_both_badges(self):
         renderer = methods({'on_draw'}, source='defaults/game_overlay/overlay.py', klass='RosterArea',
@@ -248,6 +270,17 @@ class OverlayCairoTests(unittest.TestCase):
                 self.assertAlmostEqual((rows[0][2] + rows[-1][2] + row_h) / 2, 400)
                 self.assertEqual(renderer._draw_badge.call_count, count * 2)
                 cr.paint_with_alpha.assert_called_once_with(.6)
+        # #103 : haut / bas au centre, rangées centrées horizontalement.
+        for pos, top in (('top-center', True), ('bottom-center', False)):
+            renderer._rounded.reset_mock()
+            renderer.voice = {'enabled': True, 'settings': {'pos': pos},
+                              'users': [{'username': 'self'}] * 2}
+            renderer.on_draw(None, Mock())
+            rows = [call.args for call in renderer._rounded.call_args_list]
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                self.assertAlmostEqual(row[1] + row[3] / 2, 640)
+            self.assertEqual(rows[0][2] < 400, top)
 
 
 class AudioSettingsTests(unittest.TestCase):

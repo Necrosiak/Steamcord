@@ -3275,6 +3275,21 @@ window.Vencord.Plugins.plugins.Steamcord = {
                             }
                         }
                         steamcordStreamKeys = now;
+                        // #92 : qui regarde MON Go Live (pour l'overlay vocal).
+                        const myId = Vencord.Webpack.Common.UserStore.getCurrentUser()?.id;
+                        const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
+                        const viewers = new Set();
+                        if (vcid && myId) {
+                            for (const { key, s } of window.__sc_streamsForChannel(vcid)) {
+                                if ((s && (s.ownerId || s.userId)) !== myId) continue;
+                                for (const id of (ASS?.getViewerIds?.(key) || [])) if (id !== myId) viewers.add(String(id));
+                            }
+                        }
+                        const sig = [...viewers].sort().join(",");
+                        if (sig !== window.__sc_viewersSig) {
+                            window.__sc_viewersSig = sig;
+                            window.STEAMCORD_WS.send(JSON.stringify({ type: "STREAM_VIEWERS", ids: [...viewers] }));
+                        }
                     } catch (_) {}
                 }, 2000);
 

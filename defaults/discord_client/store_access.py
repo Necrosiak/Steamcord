@@ -15,6 +15,7 @@ class User:
         self.is_live = False        # partage d'écran (Go Live)
         self.is_video = False       # caméra activée
         self.is_speaking = False
+        self.is_watching_me = False  # #92 : regarde mon Go Live
 
     @classmethod
     def from_vc(self, data):
@@ -44,6 +45,7 @@ class User:
             "is_live": self.is_live,
             "is_video": self.is_video,
             "is_speaking": self.is_speaking,
+            "is_watching_me": self.is_watching_me,
         }
 
     def __str__(self) -> str:

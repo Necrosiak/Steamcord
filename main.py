@@ -6182,6 +6182,7 @@ class Plugin:
                     "is_muted": bool((st.get("me") or {}).get("is_muted") if u.get("id") == (st.get("me") or {}).get("id") else u.get("is_muted")),
                     "is_deafened": bool((st.get("me") or {}).get("is_deafened") if u.get("id") == (st.get("me") or {}).get("id") else u.get("is_deafened")),
                     "is_live": bool(u.get("is_live")),
+                    "is_watching_me": bool(u.get("is_watching_me")),
                 })
             s = cls._load_overlay_settings()
             payload = {
