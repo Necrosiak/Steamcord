@@ -2575,6 +2575,30 @@ export default definePlugin(() => {
   };
   addEventListener("webrtc", webrtcEventListener);
 
+  // #88 #102 : une mise à jour automatique est écrite sur le disque, mais le
+  // backend ne peut pas se recharger (le loader est à root) : l'ancien code
+  // tournait jusqu'au prochain démarrage, sous le nouveau numéro de version et
+  // avec ce panneau-ci déjà neuf. Le loader, lui, peut recharger le plugin ; on
+  // le lui demande une seule fois par version, pour ne jamais boucler.
+  const reloadOnce = (key: string, why: unknown) => {
+    const w = window as any;
+    if (w.__scReloadTried === key) return;
+    w.__scReloadTried = key;
+    console.log("[Steamcord] backend older than the installed files — asking the loader to reload", why);
+    w.DeckyBackend?.call?.("loader/reload_plugin", "Steamcord")?.catch?.(() => {});
+  };
+  const reloadIfPending = () => {
+    call<[], { pending?: boolean; installed?: string }>("get_reload_pending").then((r) => {
+      if (r?.pending) reloadOnce(String(r.installed), r);
+    }).catch((e) => {
+      // Un backend d'avant 1.45.8 n'a pas cette méthode : c'est justement
+      // l'ancien code qui tourne sous ce panneau neuf.
+      if (/get_reload_pending/.test(String((e as any)?.pythonTraceback ?? "") + String(e))) reloadOnce("legacy", e);
+    });
+  };
+  reloadIfPending();
+  addEventListener("reload_pending", reloadIfPending);
+
   // Réception vidéo (voir le Go Live/cam des autres dans leur bloc).
   initVideoRelay();
   startVideoVisibility();
@@ -2679,6 +2703,7 @@ export default definePlugin(() => {
       stopStatusSync();
       releaseKeepAwake();
       removeEventListener("webrtc", webrtcEventListener);
+      removeEventListener("reload_pending", reloadIfPending);
       try {
         appLifetimeUnregister();
         settingsChangeUnregister();

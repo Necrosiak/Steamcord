@@ -10,8 +10,8 @@ from test_audio_overlay_regressions import methods
 class SupportDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.updater = types.SimpleNamespace(get_current_version=lambda: '1.44.0')
-        self.p = methods({'_diagnostic_system', 'get_game_diagnostics', 'get_video_diagnostics'},
-                         updater=self.updater, dumps=json.dumps)
+        self.p = methods({'_diagnostic_system', 'get_game_diagnostics', 'get_video_diagnostics', 'get_reload_pending'},
+                         updater=self.updater, dumps=json.dumps, RUNNING_VERSION='1.44.0')
         self.host = self.p._diagnostic_system.__func__.__globals__['host']
         self.host.NAME = 'linux'
         self.p.get_share_env = AsyncMock(return_value={'env': 'gamescope'})
@@ -31,6 +31,23 @@ class SupportDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report, {'host': 'linux', 'kernel': 'fixture-kernel',
                                   'steamcord_version': '1.44.0',
                                   'distribution': {'ID': 'steamos', 'VERSION_ID': '3.9.5'}})
+
+    async def test_report_shows_running_code_and_flags_unloaded_update(self):
+        # #88 #102 : la mise à jour automatique écrit 1.45.7 sur le disque sans
+        # recharger le backend ; le rapport doit montrer le code qui tourne.
+        self.updater.get_current_version = lambda: '1.45.7'
+        with patch('platform.freedesktop_os_release', side_effect=OSError):
+            report = self.p._diagnostic_system()
+        self.assertEqual(report['steamcord_version'], '1.44.0')
+        self.assertEqual(report['installed_version'], '1.45.7')
+        self.assertEqual(await self.p.get_reload_pending(), {'running': '1.44.0', 'installed': '1.45.7', 'pending': True})
+
+    async def test_no_reload_when_disk_matches_or_is_unreadable(self):
+        self.assertFalse((await self.p.get_reload_pending())['pending'])
+        with patch('platform.freedesktop_os_release', side_effect=OSError):
+            self.assertNotIn('installed_version', self.p._diagnostic_system())
+        self.updater.get_current_version = lambda: '0.0.0'
+        self.assertFalse((await self.p.get_reload_pending())['pending'])
 
     async def test_missing_linux_release_file_does_not_break_support_report(self):
         with patch('platform.freedesktop_os_release', side_effect=OSError):

@@ -72,6 +72,11 @@ if not _upath.exists():
 _uspec = _ilu.spec_from_file_location("sc_updater", str(_upath))
 updater = _ilu.module_from_spec(_uspec)
 _uspec.loader.exec_module(updater)
+# Version du code réellement chargé. package.json peut être plus récent : la
+# mise à jour automatique écrit les fichiers mais ne peut pas recharger ce
+# backend (le loader est à root). Le numéro lu sur le disque annonçait alors la
+# nouvelle version pendant que l'ancien code tournait (#88, #102).
+RUNNING_VERSION = updater.get_current_version()
 
 # vesktop.py a le MÊME problème que updater.py : le deploy synchronise defaults/
 # mais PAS la copie racine → `import vesktop` chargeait une version figée au
@@ -1200,13 +1205,13 @@ class Plugin:
                 # ne prendra effet qu'au prochain démarrage de Steam. On le dit.
                 logger.info(
                     f"[updater] {info['latest']} written to disk; loader restart "
-                    "refused (plugin is not root) — active at next Steam start"
+                    "refused (plugin is not root) — the panel asks the loader to reload"
                 )
-                await cls._toast(
-                    "Steamcord",
-                    f"Update {info['latest']} installed — it becomes active the "
-                    "next time Steam starts.",
-                )
+                # Le panneau, lui, peut demander ce rechargement au loader : il
+                # le fait dès qu'il est chargé (get_reload_pending), ou tout de
+                # suite s'il l'est déjà.
+                await emit("reload_pending", {"version": info["latest"]})
+                await cls._toast("Steamcord", f"Update {info['latest']} installed — reloading…")
                 return
             # Les DEUX chemins ont échoué. Le toast disait « Update failed: <errno> »
             # et s'arrêtait là : l'utilisateur n'avait aucun moyen de savoir que la
@@ -1233,6 +1238,14 @@ class Plugin:
     @classmethod
     async def get_version(cls):
         return updater.get_current_version()
+
+    @classmethod
+    async def get_reload_pending(cls):
+        """Fichiers d'une autre version que le code chargé : le panneau demande
+        au loader (root) de recharger le plugin, ce que ce backend ne peut pas."""
+        installed = updater.get_current_version()
+        return {"running": RUNNING_VERSION, "installed": installed,
+                "pending": installed != "0.0.0" and installed != RUNNING_VERSION}
 
     @classmethod
     async def apply_update(cls, url):
@@ -3038,8 +3051,10 @@ class Plugin:
     @classmethod
     def _diagnostic_system(cls):
         import platform
-        data = {"host": host.NAME, "kernel": platform.release(),
-                "steamcord_version": updater.get_current_version()}
+        data = {"host": host.NAME, "kernel": platform.release(), "steamcord_version": RUNNING_VERSION}
+        installed = updater.get_current_version()
+        if installed != RUNNING_VERSION:
+            data["installed_version"] = installed
         if host.WINDOWS:
             release, version, _, _ = platform.win32_ver()
             data["windows"] = {"release": release, "version": version or platform.version()}
