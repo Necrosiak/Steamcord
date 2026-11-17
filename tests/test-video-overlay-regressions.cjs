@@ -58,3 +58,35 @@ test('WebKit overlay renders centered roster, self badges and escaped names', as
   assert.ok(roster.innerHTML.includes('&lt;self&gt;'));
   assert.equal((roster.innerHTML.match(/<svg /g)||[]).length,2);
 });
+
+test('WebKit overlay accepts the top and bottom center positions (#103)', async () => {
+  const html = fs.readFileSync(path.join(__dirname, '../defaults/game_overlay/voice.html'), 'utf8');
+  for (const pos of ['top-center', 'bottom-center', 'nowhere']) {
+    const roster = {style:{setProperty(){}},className:'',innerHTML:''};
+    const pov = {style:{setProperty(){}},className:'',innerHTML:''};
+    const data = {voice:{enabled:true, settings:{pos}, users:[{username:'a'}],events:[]},pov:{enabled:false}};
+    vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], {
+      window:{OVERLAY_CFG:{stateUrl:'fixture'}}, document:{getElementById: id => id==='roster'?roster:pov},
+      fetch:async()=>({ok:true,text:async()=>JSON.stringify(data)}),setInterval(){},setTimeout(){}, console,
+    });
+    for(let i=0;i<8;i++) await Promise.resolve();
+    assert.equal(roster.className, 'on ' + (pos === 'nowhere' ? 'bottom-left' : pos));
+  }
+  assert.match(html, /#roster\.top-center\s*\{[^}]*left: 50%/);
+  assert.match(html, /#roster\.bottom-center\s*\{[^}]*left: 50%/);
+});
+
+test('WebKit overlay shows an eye next to viewers of my stream (#92)', async () => {
+  const html = fs.readFileSync(path.join(__dirname, '../defaults/game_overlay/voice.html'), 'utf8');
+  const roster = {style:{setProperty(){}},className:'',innerHTML:''};
+  const pov = {style:{setProperty(){}},className:'',innerHTML:''};
+  const data = {voice:{enabled:true, settings:{}, users:[{username:'a', is_watching_me:true},{username:'b'}],events:[]},pov:{enabled:false}};
+  vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], {
+    window:{OVERLAY_CFG:{stateUrl:'fixture'}}, document:{getElementById: id => id==='roster'?roster:pov},
+    fetch:async()=>({ok:true,text:async()=>JSON.stringify(data)}),setInterval(){},setTimeout(){}, console,
+  });
+  for(let i=0;i<8;i++) await Promise.resolve();
+  const [a, b] = roster.innerHTML.split('<div class="row');
+  assert.equal((roster.innerHTML.match(/stroke="#5a66f2"/g)||[]).length, 1);
+  assert.ok(roster.innerHTML.indexOf('#5a66f2') < roster.innerHTML.indexOf('>b<'));
+});

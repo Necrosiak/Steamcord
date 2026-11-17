@@ -24,6 +24,8 @@
   #roster.center-right { top: 50%; right: 18px; transform: translateY(-50%); align-items: flex-end; }
   #roster.bottom-left  { bottom: 18px; left: 18px; }
   #roster.bottom-right { bottom: 18px; right: 18px; align-items: flex-end; }
+  #roster.top-center    { top: 18px; left: 50%; transform: translateX(-50%); align-items: center; }
+  #roster.bottom-center { bottom: 18px; left: 50%; transform: translateX(-50%); align-items: center; }
   .row {
     display: flex; align-items: center; gap: calc(7px * var(--scale));
     background: rgba(0,0,0,0.55); border-radius: calc(16px * var(--scale));
@@ -98,6 +100,7 @@
     + '<path d="M12.5 6.5a4.1 4.1 0 0 1-.45 1.86l1.1 1.1a5.57 5.57 0 0 0 .85-2.96h-1.5z"/></svg>';
 
   const DEAF_SVG = '<svg class="mute" viewBox="0 0 16 16" fill="none" stroke="#ed4245" stroke-width="1.7"><path d="M2 10V8a6 6 0 0112 0v2M2 9v4h3V9zM11 9v4h3V9zM1 1l14 14"/></svg>';
+  const WATCH_SVG = '<svg class="mute" viewBox="0 0 16 16" fill="none" stroke="#5a66f2" stroke-width="1.6"><path d="M1 8c3-5 11-5 14 0c-3 5-11 5-14 0z"/><circle cx="8" cy="8" r="2.2"/></svg>';
   const LIVE_SVG = '<svg class="mute" viewBox="0 0 16 16" fill="none" stroke="#23a55a" stroke-width="1.5"><rect x="1" y="2" width="14" height="10" rx="1"/><path d="M8 12v3M4 15h8"/></svg>';
 
   // ── ① Roster vocal ─────────────────────────────────────────────────────
@@ -110,13 +113,13 @@
     lastVoice = v;
     if (!v || !v.enabled) { roster.className = ""; roster.innerHTML = ""; return; }
     const s = v.settings || {};
-    const pos = ["top-left","top-right","center-left","center-right","bottom-left","bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
+    const pos = ["top-left","top-center","top-right","center-left","center-right","bottom-left","bottom-center","bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
     roster.className = "on " + pos;
     roster.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 85) / 100);
     roster.style.setProperty("--scale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
     const rows = (v.users || []).map((u) => {
       const cls = "row" + (u.is_speaking ? " speaking" : "");
-      const mute = (u.is_deafened ? DEAF_SVG : u.is_muted ? MUTE_SVG : "") + (u.is_live ? LIVE_SVG : "");
+      const mute = (u.is_deafened ? DEAF_SVG : u.is_muted ? MUTE_SVG : "") + (u.is_live ? LIVE_SVG : "") + (u.is_watching_me ? WATCH_SVG : "");
       return '<div class="' + cls + '"><img class="avatar" src="' + (u.avatar_url || "") + '">'
         + '<span class="name">' + esc(u.username) + '</span>' + mute + '</div>';
     }).join("");

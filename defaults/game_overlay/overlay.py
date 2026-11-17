@@ -469,7 +469,8 @@ class RosterArea(Gtk.DrawingArea):
 
         st = v.get("settings") or {}
         pos = st.get("pos") if st.get("pos") in (
-            "top-left", "top-right", "center-left", "center-right", "bottom-left", "bottom-right") else "bottom-left"
+            "top-left", "top-center", "top-right", "center-left", "center-right",
+            "bottom-left", "bottom-center", "bottom-right") else "bottom-left"
         opacity = st.get("opacity")
         opacity = (opacity if isinstance(opacity, (int, float)) else 85) / 100.0
         scale = st.get("scale")
@@ -485,6 +486,8 @@ class RosterArea(Gtk.DrawingArea):
         gap_row = self.GAP_ROW * scale
         row_h = av + 2 * pad_v
         right = pos.endswith("right")
+        # Haut / bas au centre (#103) : rangées centrées, nom à droite de l'avatar.
+        centered = pos.endswith("-center")
 
         W = self.get_allocated_width()
         H = self.get_allocated_height()
@@ -496,7 +499,7 @@ class RosterArea(Gtk.DrawingArea):
             lay = self._layout(cr, u.get("username") or "", self.FONT_PX * scale,
                                self.NAME_MAX * scale)
             tw, th = lay.get_pixel_size()
-            badges = (["deaf" if u.get("is_deafened") else "mute"] if muted else []) + (["live"] if u.get("is_live") else [])
+            badges = (["deaf" if u.get("is_deafened") else "mute"] if muted else []) + (["live"] if u.get("is_live") else []) + (["watch"] if u.get("is_watching_me") else [])
             w = pad_in + av + gap + tw + len(badges) * (gap + mute_sz) + pad_out
             rows.append({"u": u, "lay": lay, "tw": tw, "th": th, "w": w, "badges": badges})
 
@@ -524,7 +527,7 @@ class RosterArea(Gtk.DrawingArea):
 
         def draw_events(y):
             for e in ev_rows:
-                x = (W - self.MARGIN - e["w"]) if right else self.MARGIN
+                x = (W - e["w"]) / 2 if centered else (W - self.MARGIN - e["w"]) if right else self.MARGIN
                 cr.set_source_rgba(0, 0, 0, 0.45)
                 self._rounded(cr, x, y, e["w"], ev_h, 12 * scale)
                 cr.fill()
@@ -544,7 +547,7 @@ class RosterArea(Gtk.DrawingArea):
             y = draw_events(y)
         for r in rows:
             u = r["u"]
-            x = (W - self.MARGIN - r["w"]) if right else self.MARGIN
+            x = (W - r["w"]) / 2 if centered else (W - self.MARGIN - r["w"]) if right else self.MARGIN
 
             cr.set_source_rgba(0, 0, 0, 0.55)
             self._rounded(cr, x, y, r["w"], row_h, radius)
@@ -591,7 +594,13 @@ class RosterArea(Gtk.DrawingArea):
         cr.translate(x, y)
         cr.scale(size / 16, size / 16)
         cr.set_line_width(1.6)
-        if kind == "live":
+        if kind == "watch":
+            # #92 : œil — cette personne regarde mon Go Live.
+            cr.set_source_rgb(0.35, 0.40, 0.95)
+            cr.move_to(1, 8); cr.curve_to(4, 3, 12, 3, 15, 8)
+            cr.curve_to(12, 13, 4, 13, 1, 8)
+            cr.new_sub_path(); cr.arc(8, 8, 2.2, 0, 6.28318)
+        elif kind == "live":
             cr.set_source_rgb(0.14, 0.65, 0.35)
             cr.rectangle(1, 2, 14, 10)
             cr.move_to(8, 12); cr.line_to(8, 15)

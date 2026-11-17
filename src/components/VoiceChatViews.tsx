@@ -847,10 +847,12 @@ function OverlayMenuContent() {
                 selectedOption={voice.pos}
                 rgOptions={[
                   { data: "top-left", label: t("overlay_pos_tl") },
+                  { data: "top-center", label: t("overlay_pos_tc") },
                   { data: "top-right", label: t("overlay_pos_tr") },
                   { data: "center-left", label: t("overlay_pos_cl") },
                   { data: "center-right", label: t("overlay_pos_cr") },
                   { data: "bottom-left", label: t("overlay_pos_bl") },
+                  { data: "bottom-center", label: t("overlay_pos_bc") },
                   { data: "bottom-right", label: t("overlay_pos_br") },
                 ]}
                 onChange={(e: any) => pushVoice({ pos: e.data })}
