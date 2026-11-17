@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.45.9 — 2026-11-17
+
+### New
+
+- Voice overlay: new Top center and Bottom center positions ([#103](https://github.com/Necrosiak/Steamcord/issues/103)).
+- Voice overlay: while you're streaming (Go Live), an eye appears next to the people watching your stream ([#92](https://github.com/Necrosiak/Steamcord/issues/92)).
+
+**Full changelog:** [v1.45.8...v1.45.9](https://github.com/Necrosiak/Steamcord/compare/v1.45.8...v1.45.9)
+
 ## 1.45.8 — 2026-11-17
 
 ### Fixes
