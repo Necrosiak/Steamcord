@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.45.8 — 2026-11-17
+
+### Fixes
+
+- An update installed automatically now actually loads. Steamcord wrote the new files but could not reload itself, so the previous version kept running until the next reboot, while the panel and the diagnostics already showed the new version number. After a Steam restart, the new panel then ran on top of the old backend, which can break features such as the overlays. The panel now asks Decky to reload Steamcord as soon as it notices, including when it was updated from an earlier version ([#88](https://github.com/Necrosiak/Steamcord/issues/88), [#102](https://github.com/Necrosiak/Steamcord/issues/102)).
+- The diagnostics report the version that is actually running, and the installed version when the two differ.
+
+**Full changelog:** [v1.45.7...v1.45.8](https://github.com/Necrosiak/Steamcord/compare/v1.45.7...v1.45.8)
+
 ## 1.45.7 — 2026-11-16
 
 ### Improvements
