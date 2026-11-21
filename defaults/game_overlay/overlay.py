@@ -247,6 +247,14 @@ def run_webkit(state_dir, state_path):
 # CSS (26 px d'avatar, 13 px de texte, rayon 16 px…), mises à l'échelle par le
 # réglage « taille » du menu QAM.
 class RosterArea(Gtk.DrawingArea):
+    @staticmethod
+    def _display_scale(width, height, percent):
+        # Référence Steam Deck : conserver une taille relative lisible sur une
+        # TV 4K, sans modifier le pourcentage enregistré par le joueur (#110).
+        percent = percent if isinstance(percent, (int, float)) and math.isfinite(percent) else 100
+        screen = max(1.0, min(6.0, min(width / 1280.0, height / 800.0)))
+        return screen * max(0.6, min(4.0, percent / 100.0))
+
     AVATAR = 26.0
     PAD_V = 3.0
     PAD_IN = 4.0       # côté avatar
@@ -341,13 +349,17 @@ class RosterArea(Gtk.DrawingArea):
         self.queue_draw()
 
     def set_pov_frame(self, uid, data, width, height):
-        if not self.pov.get("enabled") or width < 1 or height < 1 or width > 1920 or height > 1080:
+        # Un partage vertical peut dépasser 1080 en hauteur (640×1424 dans
+        # #102). Même budget que le 1080p, quelle que soit l'orientation.
+        if (not self.pov.get("enabled") or width < 1 or height < 1
+                or max(width, height) > 1920 or width * height > 1920 * 1080):
             if self.pov.get("enabled") and not self._pov_first_reject_logged:
                 print("[overlay] POV frame rejected: dimensions=%dx%d" % (width, height), flush=True)
                 self._pov_first_reject_logged = True
             return False
         stride = len(data) // height
-        if stride * height != len(data) or stride < width * 4 or stride % 4:
+        if (stride * height != len(data) or stride < width * 4 or stride % 4
+                or len(data) > 1920 * 1080 * 4):
             if not self._pov_first_reject_logged:
                 print("[overlay] POV frame rejected: invalid stride", flush=True)
                 self._pov_first_reject_logged = True
@@ -474,7 +486,7 @@ class RosterArea(Gtk.DrawingArea):
         opacity = st.get("opacity")
         opacity = (opacity if isinstance(opacity, (int, float)) else 85) / 100.0
         scale = st.get("scale")
-        scale = (scale if isinstance(scale, (int, float)) else 100) / 100.0
+        scale = self._display_scale(self.get_allocated_width(), self.get_allocated_height(), scale)
 
         av = self.AVATAR * scale
         pad_v = self.PAD_V * scale
@@ -618,26 +630,34 @@ class RosterArea(Gtk.DrawingArea):
             return
         st = self.pov.get("settings") or {}
         layout = st.get("layout")
-        if layout not in ("right", "left", "top", "bottom", "corners"):
+        if layout not in ("right", "left", "top", "bottom", "corners",
+                          "top-left", "top-right", "bottom-left", "bottom-right"):
             layout = "right"
         raw_scale = st.get("scale")
-        scale = max(0.5, min(1.8, (raw_scale if isinstance(raw_scale,
-                    (int, float)) else 100) / 100.0))
+        scale = self._display_scale(self.get_allocated_width(), self.get_allocated_height(), raw_scale)
         opacity = max(0.0, min(1.0, (st.get("opacity") if isinstance(st.get("opacity"),
                     (int, float)) else 90) / 100.0))
         width, height = self.get_allocated_width(), self.get_allocated_height()
         frames = list(self.pov_frames.items())[:4]
         count, gap, margin = len(frames), 8.0, 16.0
         tile_w = 280.0 * scale
+        tile_w = min(tile_w, width - margin * 2)
         if layout in ("top", "bottom"):
             tile_w = min(tile_w, (width - margin * 2 - gap * (count - 1)) / count)
-        elif layout in ("right", "left"):
+        elif layout in ("right", "left", "top-left", "top-right", "bottom-left", "bottom-right"):
             tile_w = min(tile_w, (height - margin * 2 - gap * (count - 1)) / count * 16 / 9)
+        elif layout == "corners":
+            tile_w = min(tile_w, (width - margin * 2 - gap) / 2,
+                         (height - margin * 2 - gap) / 2 * 16 / 9)
         tile_w = max(48.0, tile_w)
         tile_h = tile_w * 9 / 16
         cr.push_group()
         for index, (uid, (_, surface, video_w, video_h, _)) in enumerate(frames):
-            if layout == "right":
+            if layout in ("top-left", "top-right", "bottom-left", "bottom-right"):
+                x = margin if layout.endswith("left") else width - margin - tile_w
+                y = (margin + index * (tile_h + gap) if layout.startswith("top") else
+                     height - margin - count * tile_h - (count - 1) * gap + index * (tile_h + gap))
+            elif layout == "right":
                 x = width - margin - tile_w
                 y = (height - count * tile_h - (count - 1) * gap) / 2 + index * (tile_h + gap)
             elif layout == "left":
@@ -665,7 +685,7 @@ class RosterArea(Gtk.DrawingArea):
             username = next((u.get("username") for u in (self.voice.get("users") or [])
                              if str(u.get("id")) == uid), None)
             if username:
-                label = self._layout(cr, username, 11 * min(scale, 1.2), tile_w - 16)
+                label = self._layout(cr, username, 11 * scale, tile_w - 16)
                 _, label_h = label.get_pixel_size()
                 cr.set_source_rgba(0, 0, 0, 0.7)
                 cr.rectangle(x, y + tile_h - label_h - 9, tile_w, label_h + 9)

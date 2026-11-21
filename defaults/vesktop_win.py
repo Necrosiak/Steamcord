@@ -275,6 +275,7 @@ def _command(account, extra_flags=()):
     profile = profile_dir(account)
     return [
         str(exe()),
+        "--remote-debugging-address=127.0.0.1",
         f"--remote-debugging-port={CDP_PORT}",
         "--remote-allow-origins=*",
         # Chromium's own profile, and with it the single-instance lock: without

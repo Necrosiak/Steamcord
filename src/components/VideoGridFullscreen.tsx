@@ -5,7 +5,7 @@ import { t } from "../i18n";
 import { getStream, getTrackKind, isWatching, stopVideo, subscribe, watchVideo } from "../videoRelay";
 import { useSteamcordState } from "../hooks/useSteamcordState";
 import { IcCameraVideo, IcFilm, IcMicMuteFill, IcMonitor } from "./Icons";
-import { ACCENT, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
+import { ACCENT, VIDEO_FULL_BLEED, videoFullscreenMarkerRef } from "./Styled";
 import { FullscreenVideoModal } from "./VoiceChatViews";
 
 const ModalRootAny = ModalRoot as any;
@@ -196,12 +196,12 @@ export function VideoGridModal({ closeModal }: { closeModal?: () => void }) {
         flow-children="grid"
         style={{
           display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gridAutoRows: "1fr",
-          gap: 8, height: "80vh", ...FULL_BLEED,
+          gap: 8, ...VIDEO_FULL_BLEED,
         }}
       >
         {/* Marqueur chrome-hide (cf. Styled.tsx) ; display:none = ignoré par
             la grille CSS. */}
-        <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
+        <div ref={videoFullscreenMarkerRef} style={{ display: "none" }} />
         {tiles.map((tl) => tl.track
           ? <VideoTile key={tl.key} user={tl.user} kind={tl.kind!} track={tl.track} />
           : <AvatarTile key={tl.key} user={tl.user} />)}

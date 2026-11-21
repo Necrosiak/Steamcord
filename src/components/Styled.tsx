@@ -19,6 +19,13 @@ export const FULL_BLEED = {
   width: "96vw", marginLeft: "calc((100% - 96vw) / 2)", boxSizing: "border-box" as const,
 };
 
+// La vidéo occupe le viewport entier ; le titre se superpose à l'image.
+// Le ratio reste intact (bandes noires si la source n'a pas le ratio écran).
+export const VIDEO_FULL_BLEED = {
+  width: "100vw", height: "100vh", marginLeft: "calc((100% - 100vw) / 2)",
+  boxSizing: "border-box" as const, position: "relative" as const,
+};
+
 // Efface le chrome du dialog Steam autour d'un contenu full-bleed (panneau
 // bleu/gris `DialogContent` rgb(14,20,27), ombre, bord — retour user : « c'est
 // pas très beau le fond ») et remplace le voile plein écran (un DÉGRADÉ,
@@ -135,6 +142,22 @@ const hideDialogChromeFrom = (marker: HTMLElement) => {
 export const chromeHideMarkerRef = (el: HTMLDivElement | null) => {
   if (!el) { [0, 400, 1200].forEach((ms) => setTimeout(releaseClosed, ms)); return; }
   [0, 300, 800].forEach((ms) => setTimeout(() => hideDialogChromeFrom(el), ms));
+};
+
+export const videoFullscreenMarkerRef = (el: HTMLDivElement | null) => {
+  chromeHideMarkerRef(el);
+  if (!el) return;
+  [0, 300, 800].forEach(ms => setTimeout(() => {
+    if (!el.isConnected) return;
+    // Le cadre du dialog Steam ajoute marges et limite de hauteur. Les
+    // styles empruntés sont rendus à la fermeture par releaseClosed().
+    let p = el.parentElement?.parentElement;
+    for (let i = 0; p && i < 12; i++, p = p.parentElement) {
+      if (p.classList.contains("ModalOverlayContent")) break;
+      for (const [key, value] of [["max-width", "none"], ["max-height", "none"],
+        ["padding", "0"], ["overflow", "visible"]]) setOwned(p, el, key, value);
+    }
+  }, ms));
 };
 
 // Cadre commun des fenêtres Steamcord ouvertes depuis les notifications.

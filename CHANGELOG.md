@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.46.0 — 2026-11-21
+
+### New
+
+- Choose cameras, screen shares, or the previous screen-first behaviour in the video overlay. Its positions now include each corner. Settings are shared by the Quick Access panel and expanded view (#103).
+
+### Fixes
+
+- Voice and video overlays scale with the screen resolution, including 4K. Manual size controls now reach 400%, with video tiles kept within the screen (#110).
+- Portrait streams appear in the Cairo overlay instead of being rejected above 1080 pixels in height (#102).
+- A new Go Live audio return no longer inherits an old reduced volume from WirePlumber. Only the new internal bridge is reset; game and headset volume settings stay unchanged (#107).
+- Chat Mix leaves streams marked as interface events or notifications alone (#106).
+- The Desktop Mode option recognises desktops other than KDE, including GNOME and Sway (#104).
+- Fullscreen video and the video grid use the whole viewport, with the title over the image (#105).
+
+### Security
+
+- Local WebSocket and WebRTC helpers listen on 127.0.0.1. Vesktop's debugging launch arguments explicitly request loopback (#108).
+
+### Known issues
+
+- The reproduced audio and rendering cases pass isolated tests. Confirmation in real Discord calls is still needed, particularly for intermittent volume changes and missing Steam UI sound after suspend (#106, #107).
+- GeForce NOW detection (#88) and a shortcut in Steam's native Quick Access tabs (#109) are not changed in this release.
+
+### Thanks
+
+Thanks to [@Matchaccia](https://github.com/Matchaccia), [@numeraltrace](https://github.com/numeraltrace) and [@smijaa](https://github.com/smijaa) for their reports and testing.
+
+**Full changelog:** [v1.45.9...v1.46.0](https://github.com/Necrosiak/Steamcord/compare/v1.45.9...v1.46.0)
+
 ## 1.45.9 — 2026-11-17
 
 ### New

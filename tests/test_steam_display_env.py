@@ -67,6 +67,25 @@ class SteamDisplayEnvTest(unittest.TestCase):
              mock.patch.object(self.v, "_steam_pids", return_value=[]):
             self.assertEqual(self.v._steam_display_env(), {})
 
+    def test_desktop_detection_covers_non_kde_and_nested_gamescope(self):
+        for desktop in ('kwin_wayland', 'gnome-shell', 'sway', 'Hyprland', 'i3', 'niri', 'xfwm4'):
+            for nested in (False, True):
+                def running(comm=None, **_):
+                    return desktop in (comm or '').split('|') or nested and 'gamescope' in (comm or '').split('|')
+                with mock.patch.object(self.v.host, 'WINDOWS', False), mock.patch.object(self.v, 'proc_running', side_effect=running):
+                    self.assertTrue(self.v.desktop_session(), (desktop, nested))
+
+    def test_gamescope_session_is_gaming_and_no_compositor_is_desktop(self):
+        for gaming in (True, False):
+            with mock.patch.object(self.v.host, 'WINDOWS', False), mock.patch.object(
+                    self.v, 'proc_running', side_effect=lambda comm: gaming and comm == 'gamescope|gamescope-wl'):
+                self.assertEqual(self.v.desktop_session(), not gaming)
+
+    def test_windows_does_not_inspect_linux_processes_for_desktop_mode(self):
+        with mock.patch.object(self.v.host, 'WINDOWS', True), mock.patch.object(self.v, 'proc_running') as probe:
+            self.assertFalse(self.v.desktop_session())
+            probe.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

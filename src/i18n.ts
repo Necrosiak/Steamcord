@@ -34,6 +34,9 @@ let _locale: Locale | null = null;
 
 const T: Record<Locale, Dict> = {
   en: {
+    overlay_pov_source: "Overlay video source",
+    overlay_pov_auto: "Screen first, otherwise camera",
+    overlay_pov_camera: "Camera",
     waiting_game_mode_title: "Discord starts in Game Mode",
     waiting_game_mode_desc: "“Don’t run Vesktop in Desktop Mode” is on, so Steamcord waits for Game Mode before starting Discord.",
     waiting_game_mode_start: "Turn this option off and start Discord",
@@ -381,6 +384,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is installed. Close and reopen the Quick Access menu to load it.",
   },
   fr: {
+    overlay_pov_source: "Source vidéo de l’overlay",
+    overlay_pov_auto: "Partage en priorité, sinon caméra",
+    overlay_pov_camera: "Caméra",
     waiting_game_mode_title: "Discord démarre en mode Jeu",
     waiting_game_mode_desc: "« Ne pas lancer Vesktop en mode Bureau » est activé : Steamcord attend le mode Jeu pour démarrer Discord.",
     waiting_game_mode_start: "Désactiver cette option et démarrer Discord",
@@ -728,6 +734,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} est installé. Ferme puis rouvre le menu d'accès rapide pour le charger.",
   },
   de: {
+    overlay_pov_source: "Videoquelle des Overlays",
+    overlay_pov_auto: "Bildschirm bevorzugen, sonst Kamera",
+    overlay_pov_camera: "Kamera",
     waiting_game_mode_title: "Discord startet im Spielmodus",
     waiting_game_mode_desc: "„Vesktop nicht im Desktop-Modus ausführen“ ist an: Steamcord wartet auf den Spielmodus, um Discord zu starten.",
     waiting_game_mode_start: "Option ausschalten und Discord starten",
@@ -1069,6 +1078,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} ist installiert. Schließe das Schnellzugriffsmenü und öffne es erneut, um es zu laden.",
   },
   es: {
+    overlay_pov_source: "Fuente de vídeo de la superposición",
+    overlay_pov_auto: "Primero pantalla, si no cámara",
+    overlay_pov_camera: "Cámara",
     waiting_game_mode_title: "Discord se inicia en el modo Juego",
     waiting_game_mode_desc: "«No ejecutar Vesktop en el modo Escritorio» está activado: Steamcord espera al modo Juego para iniciar Discord.",
     waiting_game_mode_start: "Desactivar esta opción e iniciar Discord",
@@ -1410,6 +1422,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} está instalado. Cierra y vuelve a abrir el menú de acceso rápido para cargarlo.",
   },
   it: {
+    overlay_pov_source: "Sorgente video della sovrimpressione",
+    overlay_pov_auto: "Prima schermo, altrimenti fotocamera",
+    overlay_pov_camera: "Fotocamera",
     waiting_game_mode_title: "Discord si avvia in modalità Gioco",
     waiting_game_mode_desc: "«Non avviare Vesktop in modalità Desktop» è attivo: Steamcord attende la modalità Gioco per avviare Discord.",
     waiting_game_mode_start: "Disattiva l'opzione e avvia Discord",
@@ -1751,6 +1766,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} è installato. Chiudi e riapri il menu di accesso rapido per caricarlo.",
   },
   pt: {
+    overlay_pov_source: "Fonte de vídeo da sobreposição",
+    overlay_pov_auto: "Primeiro ecrã, senão câmara",
+    overlay_pov_camera: "Câmara",
     waiting_game_mode_title: "O Discord inicia no modo Jogo",
     waiting_game_mode_desc: "“Não executar o Vesktop no Modo Ambiente de Trabalho” está ativado: o Steamcord espera o modo Jogo para iniciar o Discord.",
     waiting_game_mode_start: "Desativar esta opção e iniciar o Discord",
@@ -2092,6 +2110,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "O Steamcord {v} está instalado. Fecha e volta a abrir o menu de acesso rápido para o carregar.",
   },
   nl: {
+    overlay_pov_source: "Videobron van de overlay",
+    overlay_pov_auto: "Eerst scherm, anders camera",
+    overlay_pov_camera: "Camera",
     waiting_game_mode_title: "Discord start in de spelmodus",
     waiting_game_mode_desc: "‘Vesktop niet uitvoeren in Bureaubladmodus’ staat aan: Steamcord wacht op de spelmodus om Discord te starten.",
     waiting_game_mode_start: "Deze optie uitzetten en Discord starten",
@@ -2433,6 +2454,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is geïnstalleerd. Sluit het snelmenu en open het opnieuw om het te laden.",
   },
   pl: {
+    overlay_pov_source: "Źródło wideo nakładki",
+    overlay_pov_auto: "Najpierw ekran, w przeciwnym razie kamera",
+    overlay_pov_camera: "Kamera",
     waiting_game_mode_title: "Discord uruchamia się w trybie gry",
     waiting_game_mode_desc: "Włączono „Nie uruchamiaj Vesktop w trybie pulpitu”: Steamcord czeka na tryb gry, aby uruchomić Discord.",
     waiting_game_mode_start: "Wyłącz tę opcję i uruchom Discord",
@@ -2774,6 +2798,9 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} jest zainstalowany. Zamknij i otwórz ponownie menu szybkiego dostępu, aby go wczytać.",
   },
   ru: {
+    overlay_pov_source: "Источник видео оверлея",
+    overlay_pov_auto: "Сначала экран, иначе камера",
+    overlay_pov_camera: "Камера",
     waiting_game_mode_title: "Discord запускается в игровом режиме",
     waiting_game_mode_desc: "Включено «Не запускать Vesktop в режиме рабочего стола»: Steamcord ждёт игровой режим, чтобы запустить Discord.",
     waiting_game_mode_start: "Отключить параметр и запустить Discord",

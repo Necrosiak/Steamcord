@@ -117,6 +117,18 @@ def proc_running(comm=None, cmdline=None):
     return bool(proc_pids(comm=comm, cmdline=cmdline))
 
 
+def desktop_session():
+    """Un gamescope imbriqué dans un bureau n'est pas le mode Jeu de Steam."""
+    if host.WINDOWS:
+        return False
+    # Tester les bureaux avant gamescope, qui peut tourner comme sous-fenêtre.
+    if proc_running(comm="kwin_wayland|kwin_x11|gnome-shell|sway|Hyprland|"
+                         "xfwm4|cinnamon|mutter|openbox|i3|bspwm|qtile|labwc|"
+                         "wayfire|niri|weston|marco|xfce4-session|lxqt-session"):
+        return True
+    return not proc_running(comm="gamescope|gamescope-wl")
+
+
 def proc_kill(cmdline, sig=None):
     """`pkill -f` without procps. Returns the number of processes signalled."""
     if host.WINDOWS:
@@ -639,8 +651,7 @@ async def launch():
     # gamemode, et un gamescope imbriqué par-jeu peut tourner sous KWin
     # (= bureau quand même) — le test socket seul força(it) wayland à tort
     # au bureau.
-    gamescope = (not proc_running(comm="kwin_wayland|kwin_x11")
-                 and proc_running(comm="gamescope|gamescope-wl"))
+    gamescope = not desktop_session()
 
     wayland_display = _pick_wayland(session_env, runtime_dir, gamescope)
 
@@ -819,6 +830,7 @@ async def launch():
         *stop_props,
         *setenv,
         *cmd,
+        "--remote-debugging-address=127.0.0.1",
         f"--remote-debugging-port={host.CDP_PORT}",
         "--remote-allow-origins=*",
         # Issue #36 : la fenêtre Vesktop n'est JAMAIS affichée (--start-minimized,

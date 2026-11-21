@@ -144,6 +144,27 @@ class ChatMixTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*(self.p._apply_chat_mix() for _ in range(3)))
         self.assertEqual(len(self.writes), 1)
 
+    async def test_interface_events_are_not_attenuated_or_given_another_steam_baseline(self):
+        self.inputs = [self.stream(1, 'steam', [100, 100])]
+        await self.p._apply_chat_mix()
+        ui = self.stream(2, 'steam', [50, 50])
+        ui['properties']['media.role'] = 'event'
+        self.inputs = [ui]
+        self.writes.clear()
+        await self.p._apply_chat_mix()
+        self.assertFalse(self.writes)
+        self.assertEqual(ui['volume']['0']['value_percent'], '50%')
+
+    async def test_owned_stream_becoming_an_interface_event_is_restored_once(self):
+        await self.p._apply_chat_mix()
+        self.inputs[0]['properties']['media.role'] = 'event'
+        self.writes.clear()
+        await self.p._apply_chat_mix()
+        self.assertEqual(self.inputs[0]['volume']['0']['value_percent'], '60%')
+        self.writes.clear()
+        await self.p._apply_chat_mix()
+        self.assertFalse(self.writes)
+
     async def test_disable_rejects_ambiguous_string(self):
         self.assertEqual(await self.p.set_chat_mix_enabled('false'), {'ok': False})
         self.p._save_audio_cfg.assert_not_called()
@@ -242,8 +263,9 @@ class OverlayTests(unittest.IsolatedAsyncioTestCase):
 
 class OverlayCairoTests(unittest.TestCase):
     def test_centered_cairo_roster_tracks_participant_count_and_both_badges(self):
-        renderer = methods({'on_draw'}, source='defaults/game_overlay/overlay.py', klass='RosterArea',
-                           cairo=Mock(), PangoCairo=Mock())()
+        import math
+        renderer = methods({'on_draw', '_display_scale'}, source='defaults/game_overlay/overlay.py', klass='RosterArea',
+                           cairo=Mock(), PangoCairo=Mock(), math=math)()
         tree = ast.parse((ROOT / 'defaults/game_overlay/overlay.py').read_text(encoding="utf-8"))
         actual = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'RosterArea')
         for n in actual.body:

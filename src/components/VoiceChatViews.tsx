@@ -13,7 +13,7 @@ import { SliderField, DialogButton, Dropdown, Focusable, ModalRoot, showModal, T
 import { watchVideo, stopVideo, isWatching, getStream, getTrackKind, subscribe } from "../videoRelay";
 import { isScreenCamOn, subscribeScreenCam, startSelfPreview } from "../screenCam";
 import {
-  focusHalo, ACCENT, DANGER, ONLINE, ActionCard, FULL_BLEED, chromeHideMarkerRef,
+  focusHalo, ACCENT, DANGER, ONLINE, ActionCard, VIDEO_FULL_BLEED, videoFullscreenMarkerRef,
   Card, CollapseBody, CollapseHeader, InlineBtn, Notice, Pill, SectionLabel, hexA,
   useSliderClipFix,
 } from "./Styled";
@@ -117,16 +117,17 @@ export function FullscreenVideoModal({ track, label, userId, closeModal }:
       bAllowFullSize
     >
       <VideoVisibility users={userId ? [userId] : []} />
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, ...FULL_BLEED }}>
-        <div ref={chromeHideMarkerRef} style={{ display: "none" }} />
+      <div style={{ background: "#000", ...VIDEO_FULL_BLEED }}>
+        <div ref={videoFullscreenMarkerRef} style={{ display: "none" }} />
         <div style={{
           fontSize: 14, fontWeight: 600, padding: "6px 12px", borderRadius: 8,
           background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", gap: 6,
+          position: "absolute", top: 8, left: 8, zIndex: 1, pointerEvents: "none",
         }}>{label}</div>
         <video
           ref={ref}
           autoPlay muted playsInline
-          style={{ width: "100%", maxHeight: "78vh", objectFit: "contain", background: "#000", borderRadius: 6, display: "block" }}
+          style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000", display: "block" }}
         />
       </div>
     </ModalRootAny>
@@ -773,7 +774,7 @@ function OverlayMenuContent() {
   const [voiceOn, setVoiceOn] = useState(false);
   const [povOn, setPovOn] = useState(false);
   const [voice, setVoice] = useState<any>({ pos: "bottom-left", opacity: 85, scale: 100 });
-  const [pov, setPov] = useState<any>({ layout: "right", opacity: 90, scale: 100 });
+  const [pov, setPov] = useState<any>({ layout: "right", opacity: 90, scale: 100, source: "auto" });
   // Le POV a besoin d'un moteur web (décodage MediaSource) ; sur SteamOS le
   // helper se replie sur un rendu GTK/Cairo qui n'affiche que le vocal (#22).
   const [povSupported, setPovSupported] = useState(true);
@@ -865,7 +866,7 @@ function OverlayMenuContent() {
               />
               <SliderFieldAny
                 label={<>{t("overlay_scale")} {voice.scale}%</>}
-                value={voice.scale} min={60} max={180} step={10}
+                value={voice.scale} min={60} max={400} step={10}
                 onChange={(v: number) => pushVoice({ scale: v })}
                 bottomSeparator="none"
               />
@@ -886,6 +887,16 @@ function OverlayMenuContent() {
           {povSupported && povOn && (
             <>
               <DropdownAny
+                strDefaultLabel={t("overlay_pov_source")}
+                selectedOption={pov.source || "auto"}
+                rgOptions={[
+                  { data: "auto", label: t("overlay_pov_auto") },
+                  { data: "screen", label: t("video_stream") },
+                  { data: "camera", label: t("overlay_pov_camera") },
+                ]}
+                onChange={(e: any) => pushPov({ source: e.data })}
+              />
+              <DropdownAny
                 strDefaultLabel={t("overlay_pov_layout")}
                 selectedOption={pov.layout}
                 rgOptions={[
@@ -894,6 +905,10 @@ function OverlayMenuContent() {
                   { data: "top", label: t("overlay_pov_top") },
                   { data: "bottom", label: t("overlay_pov_bottom") },
                   { data: "corners", label: t("overlay_pov_corners") },
+                  { data: "top-left", label: t("overlay_pos_tl") },
+                  { data: "top-right", label: t("overlay_pos_tr") },
+                  { data: "bottom-left", label: t("overlay_pos_bl") },
+                  { data: "bottom-right", label: t("overlay_pos_br") },
                 ]}
                 onChange={(e: any) => pushPov({ layout: e.data })}
               />
@@ -905,7 +920,7 @@ function OverlayMenuContent() {
               />
               <SliderFieldAny
                 label={<>{t("overlay_scale")} {pov.scale}%</>}
-                value={pov.scale} min={60} max={180} step={10}
+                value={pov.scale} min={60} max={400} step={10}
                 onChange={(v: number) => pushPov({ scale: v })}
                 bottomSeparator="none"
               />

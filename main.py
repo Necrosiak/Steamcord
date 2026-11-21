@@ -142,10 +142,12 @@ def _log_tool_report():
 
 
 def _desktop_session():
-    """Session Bureau (KWin) en cours ? Même signal que get_share_env."""
+    """Session Bureau, y compris GNOME, Sway et les WM sans KWin (#104)."""
+    if host.WINDOWS:
+        return False
     try:
         import vesktop
-        return vesktop.proc_running(comm="kwin_wayland|kwin_x11")
+        return vesktop.desktop_session()
     except Exception:
         return False
 
@@ -990,7 +992,7 @@ class Plugin:
         cls.runner = AppRunner(cls.server, access_log=None)
         await cls.runner.setup()
         logger.info("Starting server.")
-        await TCPSite(cls.runner, "127.0.0.1" if host.WINDOWS else "0.0.0.0", 65123).start()
+        await TCPSite(cls.runner, "127.0.0.1", 65123).start()
 
         # Same failure mode as initialize() above: while the Steam UI is still
         # (re)starting, CEF answers /json but SharedJSContext is not in the tab
@@ -3809,6 +3811,15 @@ class Plugin:
                 if saved and saved["identity"] != identity:
                     cls._mix_touched.pop(idx, None)
                     saved = None
+                # Les sons d'interface/notification ne sont pas du son de jeu
+                # (#106). Steam réutilise « steam » pour plusieurs flux : ne
+                # pas leur appliquer une base héritée d'un jeu ou du navigateur.
+                if props.get("media.role") in ("event", "notification"):
+                    if saved:
+                        if volumes == saved["applied"]:
+                            await cls._pactl("set-sink-input-volume", idx, *saved["restore"])
+                        cls._mix_touched.pop(idx, None)
+                    continue
                 key = cls._mix_app_key(props)
                 # A new stream that starts at the volume we set for this
                 # application inherited it from WirePlumber (#96): its real
@@ -4598,6 +4609,7 @@ class Plugin:
                 if not out.isdigit():
                     raise Exception(f"null-sink: {out!r}")
                 mods.append(out)
+                await cls._pactl("set-sink-volume", "steamcord_share_sink", "100%")
                 out = (await cls._pactl(
                     "load-module", "module-remap-source",
                     "master=steamcord_share_sink.monitor",
@@ -4640,6 +4652,7 @@ class Plugin:
                         f"sink_input_properties=media.name={cls._BRIDGE_TAG}")).strip()
                     if out.isdigit():
                         mods.append(out)
+                        await cls._golive_bridge_unity(out)
                 else:
                     logger.warning(f"[golive] sortie réelle introuvable ({real!r}) — "
                                    "le jeu n'est pas isolé, risque d'écho")
@@ -4659,6 +4672,7 @@ class Plugin:
                 # seule source de vérité.
             except Exception as e:
                 logger.warning(f"[golive] pont audio KO: {e!r}")
+                cls._golive_bridge_mods = mods
                 await cls._golive_share_bridge(False)
             return
 
@@ -4759,6 +4773,23 @@ class Plugin:
     _golive_bridge_real_sink = None
     # Marque posée sur nos propres flux pour que le routage ne les déplace jamais.
     _BRIDGE_TAG = "steamcord-bridge"
+
+    @classmethod
+    async def _golive_bridge_unity(cls, module_id):
+        """Un nouveau retour interne ne doit pas hériter d'un ancien Chat Mix.
+
+        WirePlumber restaure les volumes même après déchargement du loopback.
+        Initialiser uniquement les deux flux de CE module fraîchement créé,
+        jamais les flux du jeu, le casque ou une autre application (#107).
+        Le Chat Mix actif pourra ensuite appliquer son gain normalement.
+        """
+        from json import loads
+        for kind, command in (("sink-inputs", "set-sink-input-volume"),
+                              ("source-outputs", "set-source-output-volume")):
+            streams = loads(await cls._pactl("list", kind, want_json=True) or "[]")
+            for stream in streams:
+                if str(stream.get("owner_module", "")) == str(module_id):
+                    await cls._pactl(command, str(stream["index"]), "100%")
 
     @classmethod
     async def _golive_route_game(cls, into_share):
@@ -5587,7 +5618,7 @@ class Plugin:
             return {"env": "windows"}
         try:
             import vesktop
-            if vesktop.proc_running(comm="kwin_wayland|kwin_x11"):
+            if _desktop_session():
                 return {"env": "desktop"}
             if vesktop.proc_running(comm="gamescope|gamescope-wl"):
                 return {"env": "gamescope"}
@@ -6349,8 +6380,14 @@ class Plugin:
     @linux_only({"ok": False})
     async def set_pov_overlay_settings(cls, settings):
         cur = cls._load_overlay_settings()
+        previous_source = cur.get("pov", {}).get("source", "auto")
+        if "source" in (settings or {}) and settings["source"] not in ("auto", "screen", "camera"):
+            return {"ok": False}
         cur["pov"] = {**cur.get("pov", {}), **(settings or {})}
         cls._save_overlay_settings()
+        if cls._pov_ov_on and previous_source != cur["pov"].get("source", "auto"):
+            await cls.stop_pov_overlay()
+            return {**await cls.start_pov_overlay(), "settings": cur["pov"]}
         if cls._overlay_running():
             cls._write_overlay_state()
         return {"ok": True, "settings": cur["pov"]}
@@ -6381,9 +6418,13 @@ class Plugin:
             st = state or cls.evt_handler.build_state_dict()
             me = (st.get("me") or {}).get("id")
             vc = st.get("vc") or {}
+            source = cls._load_overlay_settings().get("pov", {}).get("source", "auto")
             want = []
             for u in vc.get("users") or []:
-                if u.get("id") != me and (u.get("is_live") or u.get("is_video")):
+                eligible = (u.get("is_video") if source == "camera" else
+                            u.get("is_live") if source == "screen" else
+                            u.get("is_live") or u.get("is_video"))
+                if u.get("id") != me and eligible:
                     want.append(u["id"])
                 if len(want) >= cls.POV_MAX:
                     break
@@ -6393,7 +6434,7 @@ class Plugin:
             for uid in want - cls._pov_users:
                 caps = await cls._overlay_caps()
                 await cls.evt_handler.send_client({"type": "$POV_START", "userId": uid,
-                                                   "format": caps.get("pov_format", "mp4")})
+                                                   "format": caps.get("pov_format", "mp4"), "source": source})
             for uid in cls._pov_users - want:
                 await cls.evt_handler.send_client({"type": "$POV_STOP", "userId": uid})
                 cls._pov_init.pop(uid, None)

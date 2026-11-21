@@ -52,6 +52,33 @@ So on a distro without flatpak, either install flatpak
 (`sudo pacman -S flatpak`, `sudo apt install flatpak`, …) or the native
 vesktop package.
 
+## Desktop Mode outside KDE
+
+The “Don’t run Vesktop in Desktop Mode” preference also recognises GNOME, Sway,
+Hyprland, Xfce and other common window managers. A nested gamescope window inside
+one of these desktops is still Desktop Mode. With no running gamescope session,
+Steamcord treats the session as Desktop Mode. This also keeps Chat Mix inactive
+there. Windows uses its own Big Picture path.
+
+## Local helper services
+
+The WebSocket/HTTP helper on port 65123 and GStreamer helper on port 65124 listen
+on `127.0.0.1`, on both Linux and Windows where applicable. They are used only by
+Steamcord on the same machine, not by Discord spectators over the network.
+Vesktop’s debugging endpoint is explicitly bound to loopback as well. Loopback
+binding prevents LAN access; it is not authentication against other local
+applications.
+
+## Overlay size on external displays
+
+Voice and video overlays keep their relative size on larger outputs. The
+resolution factor uses 1280×800 as its reference and never shrinks below the
+original size. For example, 3840×2160 uses a factor of 2.7 before the manual size
+setting is applied. The saved percentage stays unchanged. Both WebKit and Cairo
+use this rule, and the shared overlay menu offers 60–400% for further adjustment.
+Video tiles are limited to the available screen space. On Windows, these Linux
+overlay features remain unavailable; watching streams in Steamcord is separate.
+
 ## Screen share in Game Mode (native Go Live)
 
 gamescope has no screen-cast portal, so Steamcord ships its own: the backend

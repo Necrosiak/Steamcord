@@ -1172,7 +1172,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
         // Un encodeur par user relayé ; piste préférée = écran, sinon caméra.
         window.STEAMCORD_POV = window.STEAMCORD_POV || {}; // userId -> entry
 
-        window.STEAMCORD_startPov = (userId, format = "mp4") => {
+        window.STEAMCORD_startPov = (userId, format = "mp4", source = "auto") => {
             if (window.STEAMCORD_POV[userId]) return;
             const entry = { alive: true, streamKey: null, rec: null, kind: null, format };
             window.STEAMCORD_POV[userId] = entry;
@@ -1184,7 +1184,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     const WP = Vencord.Webpack;
                     const chId = WP.findStore("SelectedChannelStore").getVoiceChannelId();
                     const e2 = window.__sc_streamsForChannel(chId).find(x => (x.s.ownerId || x.s.userId) === userId);
-                    if (e2) {
+                    if (e2 && source !== "camera") {
                         entry.streamKey = e2.key;
                         const myId = WP.findStore("UserStore").getCurrentUser()?.id;
                         const ASS = WP.findStore("ApplicationStreamingStore");
@@ -1196,7 +1196,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 } catch (e) { /* pas de stream → cas caméra */ }
                 window.__sc_holdSinks(userId);
                 for (let i = 0; i < 50 && entry.alive; i++) {
-                    const found = window.__sc_videoTracksFor(userId);
+                    const found = window.__sc_videoTracksFor(userId).filter(x => source === "auto" || x.kind === source);
                     if (found.length) return found.find(x => x.kind === "screen") || found[0];
                     await new Promise(r => setTimeout(r, 200));
                 }
@@ -1228,7 +1228,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         // pour ne jamais envoyer un fragment avant son init.
                         sendChain = sendChain.then(async () => {
                             try {
+                                if (!entry.alive || window.STEAMCORD_POV[userId] !== entry) return;
                                 const buf = new Uint8Array(await ev2.data.arrayBuffer());
+                                if (!entry.alive || window.STEAMCORD_POV[userId] !== entry) return;
                                 let bin = ""; const CH = 0x8000;
                                 for (let i = 0; i < buf.length; i += CH)
                                     bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
@@ -1256,7 +1258,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     if (!entry.alive) break;
                     await new Promise(r => setTimeout(r, 300));
                 }
-                delete window.STEAMCORD_POV[userId];
+                if (window.STEAMCORD_POV[userId] === entry) delete window.STEAMCORD_POV[userId];
                 console.log("[Steamcord] pov: arrêté pour " + userId);
             })();
         };
@@ -1265,6 +1267,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
             const entry = window.STEAMCORD_POV[userId];
             if (!entry) return;
             entry.alive = false;
+            delete window.STEAMCORD_POV[userId];
             try { if (entry.rec && entry.rec.state !== "inactive") entry.rec.stop(); } catch (e) {}
             // Ne fermer le stream Go Live / lâcher les sinks caméra que si le
             // relais WebRTC du QAM ne regarde pas AUSSI ce user (sinon on lui
@@ -2796,7 +2799,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     return;
                                 }
                                 case "$POV_START":
-                                    window.STEAMCORD_startPov(data.userId, data.format || "mp4");
+                                    window.STEAMCORD_startPov(data.userId, data.format || "mp4", data.source || "auto");
                                     return;
                                 case "$POV_STOP":
                                     window.STEAMCORD_stopPov(data.userId);

@@ -391,9 +391,9 @@ def main():
     server = WebRTCServer(loop=loop)
     runner = web.AppRunner(server.app)
     loop.run_until_complete(runner.setup())
-    site = web.TCPSite(runner, "0.0.0.0", 65124)
+    site = web.TCPSite(runner, "127.0.0.1", 65124)
     loop.run_until_complete(site.start())
-    log.info("WebRTC screenshare server listening on :65124")
+    log.info("WebRTC screenshare server listening on 127.0.0.1:65124")
     loop.run_forever()
 
 

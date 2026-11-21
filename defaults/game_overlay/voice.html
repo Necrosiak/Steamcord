@@ -70,10 +70,14 @@
   #pov.left   { top: 50%; left: 16px;  transform: translateY(-50%); flex-direction: column; align-items: flex-start; }
   #pov.top    { top: 16px; left: 50%;  transform: translateX(-50%); flex-direction: row; }
   #pov.bottom { bottom: 16px; left: 50%; transform: translateX(-50%); flex-direction: row; }
+  #pov.top-left { top: 16px; left: 16px; flex-direction: column; }
+  #pov.top-right { top: 16px; right: 16px; flex-direction: column; }
+  #pov.bottom-left { bottom: 16px; left: 16px; flex-direction: column; }
+  #pov.bottom-right { bottom: 16px; right: 16px; flex-direction: column; }
   /* Une tuile dans chaque coin : positionnement absolu par tuile. */
   #pov.corners { inset: 0; display: block; }
   .povtile {
-    width: calc(300px * var(--pscale)); background: #000; border-radius: 8px;
+    width: calc(300px * var(--pscale)); aspect-ratio: 16 / 9; flex-shrink: 0; background: #000; border-radius: 8px;
     overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
     border: 1px solid rgba(255,255,255,0.12);
   }
@@ -105,6 +109,11 @@
 
   // ── ① Roster vocal ─────────────────────────────────────────────────────
   let lastVoice = null, lastEvKey = "";
+  const displayScale = (percent) => {
+    const width = window.innerWidth || 1280, height = window.innerHeight || 800;
+    const screen = Math.max(1, Math.min(6, width / 1280, height / 800));
+    return screen * Math.max(.6, Math.min(4, (Number.isFinite(percent) ? percent : 100) / 100));
+  };
   const liveEvents = (v) => {
     const ms = (v && v.event_ms) || 5000, now = Date.now();
     return ((v && v.events) || []).filter((e) => now - e.ts < ms);
@@ -116,7 +125,7 @@
     const pos = ["top-left","top-center","top-right","center-left","center-right","bottom-left","bottom-center","bottom-right"].includes(s.pos) ? s.pos : "bottom-left";
     roster.className = "on " + pos;
     roster.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 85) / 100);
-    roster.style.setProperty("--scale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
+    roster.style.setProperty("--scale", String(displayScale(s.scale)));
     const rows = (v.users || []).map((u) => {
       const cls = "row" + (u.is_speaking ? " speaking" : "");
       const mute = (u.is_deafened ? DEAF_SVG : u.is_muted ? MUTE_SVG : "") + (u.is_live ? LIVE_SVG : "") + (u.is_watching_me ? WATCH_SVG : "");
@@ -225,10 +234,17 @@
   // Place les tuiles selon le layout choisi et le nombre de POV présentes.
   const relayoutPov = () => {
     const s = povSettings || {};
-    const layout = ["right","left","top","bottom","corners"].includes(s.layout) ? s.layout : "right";
+    const layout = ["right","left","top","bottom","corners","top-left","top-right","bottom-left","bottom-right"].includes(s.layout) ? s.layout : "right";
     povBox.className = (povEnabled ? "on " : "") + layout;
     povBox.style.opacity = String((typeof s.opacity === "number" ? s.opacity : 90) / 100);
-    povBox.style.setProperty("--pscale", String((typeof s.scale === "number" ? s.scale : 100) / 100));
+    const width = window.innerWidth || 1280, height = window.innerHeight || 800;
+    const count = Math.max(1, Math.min(4, sources.size));
+    const horizontal = layout === "top" || layout === "bottom", corners = layout === "corners";
+    const columns = horizontal ? count : corners ? 2 : 1;
+    const rows = horizontal ? 1 : corners ? 2 : count;
+    const fit = Math.min((width - 32 - (columns - 1) * 8) / columns,
+                         (height - 32 - (rows - 1) * 8) / rows * 16 / 9) / (corners ? 280 : 300);
+    povBox.style.setProperty("--pscale", String(Math.max(.1, Math.min(displayScale(s.scale), fit))));
     povOrder = povOrder.filter((u) => sources.has(u));
     for (const uid of sources.keys()) if (!povOrder.includes(uid)) povOrder.push(uid);
     povBox.innerHTML = "";
@@ -239,6 +255,8 @@
       povBox.appendChild(src.tile);
     });
   };
+
+  window.addEventListener?.("resize", () => { renderVoice(lastVoice); relayoutPov(); });
 
   const applyPov = (p) => {
     povEnabled = !!(p && p.enabled);
