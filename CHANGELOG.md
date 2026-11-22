@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.46.1 — 2026-11-22
+
+### Fixes
+
+- GeForce NOW detection reads localised window titles that put a few lowercase words between the game name and GeForce NOW, such as the Polish "<game> w usłudze GeForce NOW". Capitalised words of a game name are never removed (#88).
+
+### Thanks
+
+Thanks to [@j2v454sj](https://github.com/j2v454sj) for the diagnostics that made this fix possible.
+
 ## 1.46.0 — 2026-11-21
 
 ### New

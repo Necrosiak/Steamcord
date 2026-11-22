@@ -33,6 +33,14 @@ class CloudGameTests(unittest.TestCase):
                             ('Cyberpunk 2077™', 'Cyberpunk 2077'),
                             ('Metro: Last Light - GeForce NOW', 'Metro: Last Light')]:
             self.assertEqual(cloud.game_from_title(title), game)
+        # Localised joiners before the brand (Polish capture, issue #88).
+        for title, game in [('Fortnite w usłudze GeForce NOW', 'Fortnite'),
+                            ('Cyberpunk 2077 w GeForce NOW', 'Cyberpunk 2077'),
+                            ('Ori and the Will of the Wisps on GeForce NOW', 'Ori and the Will of the Wisps'),
+                            ('Diablo IV über die GeForce NOW', 'Diablo IV')]:
+            self.assertEqual(cloud.game_from_title(title), game)
+        self.assertEqual(cloud.classify_title('Portal 2 Ultimate GeForce NOW')[0], 'unknown')
+        self.assertEqual(cloud.classify_title('w usłudze GeForce NOW')[0], 'unknown')
         for name in ('Terrorbane', 'The Error Within', 'Loading Human'):
             self.assertEqual(cloud.game_from_title(name+' on GeForce NOW'), name)
         for title in ('GeForce NOW', 'NVIDIA GeForce NOW', 'GeForce NOW - Games',

@@ -19,6 +19,29 @@ def is_geforce_launcher(name):
     return key in {'geforcenow', 'nvidiageforcenow'}
 
 
+def _strip_joined_brand(title, brand):
+    """Strip "<game> <1-3 lowercase words> GeForce NOW" (localised joiners).
+
+    Polish titles read "<game> w usłudze GeForce NOW" (issue #88). Only
+    all-lowercase words directly before the brand are removed (at most
+    three), so a capitalised game name is never cut.
+    """
+    m = re.search(r'\s+' + brand + r'\s*$', title, flags=re.I)
+    if not m:
+        return title
+    words = title[:m.start()].split(' ')
+    n = 0
+    def joiner(w):
+        return w.isalpha() and w == w.lower() and w != w.upper()
+    while n < len(words) and joiner(words[-1 - n]):
+        n += 1
+    # More than three lowercase words, or nothing left: unknown format.
+    game = ' '.join(words[:-n]).strip() if 0 < n <= 3 else ''
+    if game:
+        return game
+    return title
+
+
 def classify_title(title):
     """Return (kind, game) for a proven native GFN window title.
 
@@ -35,6 +58,7 @@ def classify_title(title):
     brand = r'(?:NVIDIA\s+)?GeForce\s*NOW'
     # Require a word/separator boundary; preserve punctuation inside game names.
     title = re.sub(r'\s+(?:(?:on|en|in|via)\s+|[-–—|:]\s*)' + brand + r'\s*$', '', title, flags=re.I)
+    title = _strip_joined_brand(title, brand)
     title = re.sub(r'^' + brand + r'\s*[-–—|:]\s*', '', title, flags=re.I)
     title = title.replace('®', '').replace('™', '').strip()
     status = title.casefold().rstrip(' .…')
