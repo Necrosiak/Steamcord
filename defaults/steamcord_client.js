@@ -2812,6 +2812,96 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     else { localStorage.setItem("token", JSON.stringify(t)); location.reload(); }
                                     return;
                                 }
+                                // ── Comptes multiples (#111) ─────────────────────────────
+                                // On pilote le sélecteur de comptes NATIF de Discord
+                                // (MultiAccountStore + ses actions). Rien ne sort d'ici
+                                // sinon id, pseudo, avatar et validité : aucun jeton.
+                                // Les actions sont retrouvées par leur CODE (texte
+                                // stable), pas par leurs noms minifiés qui changent à
+                                // chaque build de Discord.
+                                case "$accounts_list": {
+                                    const MAS = Vencord.Webpack.findStore("MultiAccountStore");
+                                    const me = Vencord.Webpack.Common.UserStore?.getCurrentUser?.();
+                                    const valid = new Set((MAS?.getValidUsers?.() || []).map(u => String(u.id)));
+                                    const accounts = (MAS?.getUsers?.() || []).map(u => ({
+                                        id: String(u.id), username: u.username || String(u.id), avatar: u.avatar || null,
+                                        valid: valid.has(String(u.id)), current: !!me && String(u.id) === String(me.id),
+                                    }));
+                                    if (me && !accounts.some(a => a.current))
+                                        accounts.unshift({ id: String(me.id), username: me.username, avatar: me.avatar || null, valid: true, current: true });
+                                    result = { accounts };
+                                    break;
+                                }
+                                case "$accounts_switch": {
+                                    const me = Vencord.Webpack.Common.UserStore?.getCurrentUser?.();
+                                    const id = String(data.user_id || "");
+                                    if (!id) throw new Error("account_unknown");
+                                    if (me && String(me.id) === id) { result = { ok: true }; break; }
+                                    const fn = window.__scMultiFn(s => s.includes("Switching account to"));
+                                    if (!fn) throw new Error("accounts_unavailable");
+                                    await fn(id);
+                                    result = { ok: true };
+                                    break;
+                                }
+                                case "$accounts_remove": {
+                                    const me = Vencord.Webpack.Common.UserStore?.getCurrentUser?.();
+                                    const id = String(data.user_id || "");
+                                    // Retirer le compte EN COURS = se déconnecter : c'est le
+                                    // bouton de déconnexion, avec sa confirmation, pas celui-ci.
+                                    if (!id || (me && String(me.id) === id)) throw new Error("account_is_current");
+                                    const fn = window.__scMultiFn(s => s.includes("MULTI_ACCOUNT_REMOVE_ACCOUNT") && s.length < 400);
+                                    if (!fn) throw new Error("accounts_unavailable");
+                                    fn(id);
+                                    result = { ok: true };
+                                    break;
+                                }
+                                case "$accounts_add_open": {
+                                    // Fenêtre native « Ajouter un compte » (QR inclus). Mesuré le
+                                    // 23/11 : elle s'ouvre dans la page, son QR est le même SVG
+                                    // ~160 px que la page de login, Échap la referme.
+                                    const fn = window.__scMultiFn(s => s.includes("isMultiAccount:!0") && s.includes("LOGIN_RESET") && s.includes("onBackPressed"));
+                                    if (!fn) throw new Error("accounts_unavailable");
+                                    const me = Vencord.Webpack.Common.UserStore?.getCurrentUser?.();
+                                    window.__scAccAdd = { from: me ? String(me.id) : null };
+                                    fn();
+                                    result = { ok: true };
+                                    break;
+                                }
+                                case "$accounts_add_poll": {
+                                    const me = Vencord.Webpack.Common.UserStore?.getCurrentUser?.();
+                                    const st = window.__scAccAdd;
+                                    const dialogs = [...document.querySelectorAll("[role=dialog]")];
+                                    let qr = null;
+                                    for (const d of dialogs) for (const s of d.querySelectorAll("svg")) {
+                                        const r = s.getBoundingClientRect();
+                                        if (r.width < 100 || r.width > 320 || Math.abs(r.width - r.height) > 30) continue;
+                                        let n = 0;
+                                        for (const p of s.querySelectorAll("path, rect")) n += (p.getAttribute("d") || "").length;
+                                        if (n > 3000) {
+                                            const c = s.cloneNode(true);
+                                            c.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+                                            qr = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(c))));
+                                            break;
+                                        }
+                                    }
+                                    let captcha = false;
+                                    for (const f of document.querySelectorAll("iframe")) {
+                                        if (!/hcaptcha\.com|recaptcha|arkoselabs\.com|funcaptcha/i.test(f.src || "")) continue;
+                                        const r = f.getBoundingClientRect(), cs = getComputedStyle(f);
+                                        if (r.width >= 80 && r.height >= 40 && cs.visibility !== "hidden" && cs.display !== "none") { captcha = true; break; }
+                                    }
+                                    const added = !!(st && me && st.from && String(me.id) !== st.from);
+                                    if (added) window.__scAccAdd = null;
+                                    result = { open: dialogs.length > 0, qr, captcha, added };
+                                    break;
+                                }
+                                case "$accounts_add_close": {
+                                    window.__scAccAdd = null;
+                                    if (document.querySelector("[role=dialog]"))
+                                        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+                                    result = { ok: true };
+                                    break;
+                                }
                                 case "$logout": {
                                     // Déconnexion TOTALE Discord : invalide le token côté serveur +
                                     // purge la session locale → retour page login (QR). Fallback :
@@ -3431,6 +3521,26 @@ window.Vencord.Plugins.plugins.Steamcord = {
         })();
 
         // Token login: callable from QAM via CDP
+        // Recherche d'une fonction exportée par son code source (#111). Le
+        // résultat est mémorisé par prédicat : un seul parcours du cache webpack.
+        window.__scMultiFnCache = new Map();
+        window.__scMultiFn = function(pred) {
+            const key = pred.toString();
+            const hit = window.__scMultiFnCache.get(key);
+            if (hit) return hit;
+            for (const m of Object.values(Vencord.Webpack.cache)) {
+                const e = m?.exports;
+                if (!e || typeof e !== "object") continue;
+                for (const v of Object.values(e)) {
+                    if (typeof v !== "function") continue;
+                    let src;
+                    try { src = Function.prototype.toString.call(v); } catch (_) { continue; }
+                    if (pred(src)) { window.__scMultiFnCache.set(key, v); return v; }
+                }
+            }
+            return null;
+        };
+
         window.steamcordLoginWithToken = function(token) {
             const loginMod = Vencord.Webpack.find(m => m && typeof m.loginToken === "function");
             if (loginMod) {

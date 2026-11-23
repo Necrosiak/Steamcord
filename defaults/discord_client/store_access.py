@@ -174,6 +174,19 @@ class StoreAccess:
     async def close_dm(self, channel_id):
         return await self._store_access_request("$close_dm", channel_id=channel_id)
 
+    # Comptes multiples (#111) : sélecteur natif de Discord, aucun jeton échangé.
+    async def accounts_list(self):
+        return await self._store_access_request("$accounts_list")
+
+    async def accounts_switch(self, user_id):
+        return await self._store_access_request("$accounts_switch", user_id=user_id)
+
+    async def accounts_remove(self, user_id):
+        return await self._store_access_request("$accounts_remove", user_id=user_id)
+
+    async def accounts_add(self, action):
+        return await self._store_access_request(f"$accounts_add_{action}")
+
     async def friend_block(self, user_id):
         return await self._store_access_request("$friend_block", user_id=user_id)
 

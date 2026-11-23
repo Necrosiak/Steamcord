@@ -59,6 +59,7 @@ import { ChatFullscreenModal } from "./components/ChatFullscreen";
 import { openIncomingCall } from "./components/IncomingCall";
 import { EventsPanel } from "./components/EventsPanel";
 import { openCaptchaSolver } from "./components/CaptchaSolver";
+import { AccountsSection } from "./components/Accounts";
 import {
   useSteamcordState,
   isLoaded,
@@ -2354,6 +2355,9 @@ const CfgCatContent = ({ cat }: { cat: CfgCat }) => {
       <hr />
       <CfgHead icon={<IcUser />}>{t("config_display_name")}</CfgHead>
       <DisplayNameConfig />
+      <hr />
+      <CfgHead icon={<IcUser />}>{t("accounts_title")}</CfgHead>
+      <AccountsSection />
       <LogoutSection />
     </>;
     case "status": return <>

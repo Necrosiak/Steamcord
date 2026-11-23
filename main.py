@@ -2823,6 +2823,26 @@ class Plugin:
     async def get_friends(cls):
         return await cls.evt_handler.api.get_friends()
 
+    # ── Comptes multiples (#111) ──
+    @classmethod
+    async def get_accounts(cls):
+        return await cls.evt_handler.api.accounts_list()
+
+    @classmethod
+    async def switch_account(cls, user_id):
+        return await cls.evt_handler.api.accounts_switch(str(user_id))
+
+    @classmethod
+    async def remove_account(cls, user_id):
+        return await cls.evt_handler.api.accounts_remove(str(user_id))
+
+    @classmethod
+    async def add_account(cls, action):
+        # open → fenêtre native « Ajouter un compte » ; poll → QR/état ; close.
+        if action not in ("open", "poll", "close"):
+            raise ValueError("bad_action")
+        return await cls.evt_handler.api.accounts_add(action)
+
     @classmethod
     async def open_dm(cls, user_id):
         """Conversation privée avec un utilisateur, créée si besoin."""
