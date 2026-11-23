@@ -21,7 +21,7 @@ import {
 import { Component, Suspense, useState, useEffect, useRef } from "react";
 import { FaDiscord } from "react-icons/fa";
 import {
-  IcBell, IcCheckCircle, IcChat, IcController, IcFolder, IcGear, IcGithub,
+  IcBell, IcCameraVideo, IcCheckCircle, IcChat, IcController, IcFolder, IcGear, IcGithub,
   IcHeadphones, IcHome, IcInfo, IcJoystick, IcLogout, IcMic, IcPhone,
   IcRefresh, IcSmartphone, IcSpeaker, IcStatus, IcUser, IcWarn,
 } from "./components/Icons";
@@ -2109,6 +2109,7 @@ const OpenViewConfig = () => {
   ];
   return (
     <>
+      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("open_lbl_tab")}</div></SR>
       <SR>
         <Dropdown
           rgOptions={topOpts as any}
@@ -2116,6 +2117,7 @@ const OpenViewConfig = () => {
           onChange={(o: any) => { setOpenTop(o.data); setTop(o.data); }}
         />
       </SR>
+      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("open_lbl_list")}</div></SR>
       <SR>
         <Dropdown
           rgOptions={srcOpts as any}
@@ -2128,6 +2130,7 @@ const OpenViewConfig = () => {
           {t("config_open_on_desc")}
         </div>
       </SR>
+      <SR><div style={{ fontSize: 12, opacity: 0.85, margin: "6px 0 2px" }}>{t("open_lbl_icon")}</div></SR>
       <SR>
         <Dropdown
           rgOptions={bigOpts as any}
@@ -2331,78 +2334,104 @@ const MenuEntryToggle = () => {
   );
 };
 
-const ConfigPanel = () => {
-  return (
-    <div className="sc-settings">
-      <style>{SETTINGS_GAPS}</style>
+// Réglages rangés par catégorie (demande utilisateur du 22/11 : une seule
+// longue page était une « usine à gaz »). Même panneau dans le QAM et dans la
+// vue agrandie ; la dernière catégorie ouverte est retenue.
+type CfgCat = "account" | "status" | "sound" | "notifs" | "video" | "general";
+const CFG_CAT_KEY = "steamcord_cfg_cat";
+const CFG_CATS: CfgCat[] = ["account", "status", "sound", "notifs", "video", "general"];
+const readCfgCat = (): CfgCat => {
+  try { const v = localStorage.getItem(CFG_CAT_KEY) as CfgCat; if (CFG_CATS.includes(v)) return v; } catch {}
+  return "account";
+};
+const CfgHead = ({ icon, children }: any) => (
+  <SR><div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{icon} {children}</div></SR>
+);
+const CfgCatContent = ({ cat }: { cat: CfgCat }) => {
+  switch (cat) {
+    case "account": return <>
       <SR><DiscordRuntimeControl /></SR>
       <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcController /> {t("config_status")}</div>
-      </SR>
+      <CfgHead icon={<IcUser />}>{t("config_display_name")}</CfgHead>
+      <DisplayNameConfig />
+      <LogoutSection />
+    </>;
+    case "status": return <>
+      <CfgHead icon={<IcController />}>{t("config_status")}</CfgHead>
       <StatusAutoToggle />
       <RpcToggle />
       <RpcDetectToggle />
       <RpcOverrideField />
       <SR><div style={{fontSize: 11, opacity: 0.65}}>{t("rpc_gfn_native_desc")}</div></SR>
       <DiagnosticsSetting action="get_game_diagnostics" label={t("game_diagnostics")} description={t("game_diagnostics_desc")} />
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcUser /> {t("config_display_name")}</div>
-      </SR>
-      <DisplayNameConfig />
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcChat /> {t("config_open_on")}</div>
-      </SR>
-      <OpenViewConfig />
-      <MenuEntryToggle />
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcGear /> {t("proxy_section")}</div>
-      </SR>
-      <ProxySection />
-      <HostFeature name="controller_shortcut">
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcJoystick /> {t("config_shortcut")}</div>
-      </SR>
-      <VoiceShortcutConfig />
-      </HostFeature>
+    </>;
+    case "sound": return <>
       <HostFeature name="audio_routing">
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcHeadphones /> {t("config_audio")}</div>
-      </SR>
-      <VoiceDesktopModeSetting />
-      <ScreenCamSetting />
-      <AudioDevicesConfig />
+        <CfgHead icon={<IcHeadphones />}>{t("config_audio")}</CfgHead>
+        <VoiceDesktopModeSetting />
+        <AudioDevicesConfig />
+        <hr />
       </HostFeature>
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcMic /> {t("config_mic")}</div>
-      </SR>
+      <CfgHead icon={<IcMic />}>{t("config_mic")}</CfgHead>
       <MicProcessingConfig />
-      <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcBell /> {t("config_notifs")}</div>
-      </SR>
+      <HostFeature name="controller_shortcut">
+        <hr />
+        <CfgHead icon={<IcJoystick />}>{t("config_shortcut")}</CfgHead>
+        <VoiceShortcutConfig />
+      </HostFeature>
+    </>;
+    case "notifs": return <>
+      <CfgHead icon={<IcBell />}>{t("config_notifs")}</CfgHead>
       <NotifStyleToggle />
       <NotifModeSetting ctx="in_game" />
       <NotifModeSetting ctx="idle" />
       <NotifSoundSetting />
       <StreamerModeSetting />
+    </>;
+    case "video": return <>
+      <CfgHead icon={<IcCameraVideo />}>{t("cfg_cat_video_title")}</CfgHead>
       <StreamQualitySetting />
-      <DiagnosticsSetting action="get_video_diagnostics" label={t("video_diagnostics")} description={t("video_diagnostics_desc")} />
+      <HostFeature name="audio_routing"><ScreenCamSetting /></HostFeature>
       <HostFeature name="keep_awake"><KeepAwakeSetting /></HostFeature>
+      <DiagnosticsSetting action="get_video_diagnostics" label={t("video_diagnostics")} description={t("video_diagnostics_desc")} />
+    </>;
+    default: return <>
+      <CfgHead icon={<IcChat />}>{t("config_open_on")}</CfgHead>
+      <OpenViewConfig />
+      <MenuEntryToggle />
       <hr />
-      <SR>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}><IcRefresh /> {t("config_updates")}</div>
-      </SR>
+      <CfgHead icon={<IcGear />}>{t("proxy_section")}</CfgHead>
+      <ProxySection />
+      <hr />
+      <CfgHead icon={<IcRefresh />}>{t("config_updates")}</CfgHead>
       <UpdaterSection />
       <hr />
       <AboutSection />
-      <LogoutSection />
+    </>;
+  }
+};
+
+const ConfigPanel = () => {
+  const [cat, setCatState] = useState<CfgCat>(readCfgCat);
+  const [focus, setFocus] = useState<string | null>(null);
+  const setCat = (c: CfgCat) => { setCatState(c); try { localStorage.setItem(CFG_CAT_KEY, c); } catch {} };
+  const icons: Record<CfgCat, any> = {
+    account: <IcUser />, status: <IcController />, sound: <IcHeadphones />,
+    notifs: <IcBell />, video: <IcCameraVideo />, general: <IcGear />,
+  };
+  const btn = (c: CfgCat) => (
+    <TabBtn key={c} active={cat === c} focused={focus === c} fontSize={12}
+      onClick={() => setCat(c)} onFocus={() => setFocus(c)}
+      onBlur={() => setFocus((f) => (f === c ? null : f))}>
+      {icons[c]} {t("cfg_cat_" + c)}
+    </TabBtn>
+  );
+  return (
+    <div className="sc-settings">
+      <style>{SETTINGS_GAPS}</style>
+      <TabRow>{CFG_CATS.slice(0, 3).map(btn)}</TabRow>
+      <TabRow>{CFG_CATS.slice(3).map(btn)}</TabRow>
+      <CfgCatContent key={cat} cat={cat} />
     </div>
   );
 };

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.47.0 — 2026-11-23
+
+### Changes
+
+- Tidier settings. The single long settings page is now split into six categories: Account, Status, Sound, Alerts, Video and General. Steamcord remembers the last one you opened, in the Quick Access panel and in the expanded view alike. The drop-downs for the view shown when the panel opens now say what they set.
+
+**Full changelog:** [v1.46.1...v1.47.0](https://github.com/Necrosiak/Steamcord/compare/v1.46.1...v1.47.0)
+
 ## 1.46.1 — 2026-11-22
 
 ### Fixes
