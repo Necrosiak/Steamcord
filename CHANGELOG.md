@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.48.0 — 2026-11-24
+
+### New
+
+- Switch between Discord accounts. Settings → Account lists the accounts saved on the device, with Switch and Remove for each one. **Add an account** shows a QR code to scan with the Discord app on your phone, right in Game Mode ([#111](https://github.com/Necrosiak/Steamcord/issues/111)).
+
 ## 1.47.0 — 2026-11-23
 
 ### Changes
