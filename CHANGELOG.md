@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.48.1 — 2026-11-24
+
+### New
+
+- POV video tiles: a **Show names** switch hides the name on each tile ([#112](https://github.com/Necrosiak/Steamcord/issues/112)).
+- Stay awake now also covers automatic sleep, and works while you share your own screen as well as while you watch someone else's ([#115](https://github.com/Necrosiak/Steamcord/issues/115)).
+
+### Fixes
+
+- Chat Mix: a new game audio stream is lowered as soon as it appears, instead of playing at full volume for up to 4 seconds, which caused short volume spikes ([#107](https://github.com/Necrosiak/Steamcord/issues/107)).
+- The POV button stays on from one call to the next and after a restart ([#113](https://github.com/Necrosiak/Steamcord/issues/113)).
+- POV tiles no longer have a black bar under the name; the name keeps a shadow so it stays readable ([#112](https://github.com/Necrosiak/Steamcord/issues/112)).
+
+### Security
+
+Hardening of Steamcord's local services ([#114](https://github.com/Necrosiak/Steamcord/issues/114)):
+
+- The local WebSockets only accept the client Steamcord injects into Discord, with a key drawn at each start. A web page open in a browser on the same machine can no longer connect to them.
+- Vesktop's debugging interface no longer accepts connections from web pages.
+- The screen-capture portal only serves Steamcord's own Vesktop, no longer any Electron app or process with "discord" in its name.
+- Updates: each release now ships a SHA-256 checksum and a GitHub build provenance attestation. The updater checks the checksum before installing, refuses archives with unsafe paths or links, and puts the previous files back if an update fails halfway.
+
 ## 1.48.0 — 2026-11-24
 
 ### New
