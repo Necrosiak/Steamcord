@@ -136,6 +136,12 @@ Feature-Wünsche und „läuft!“-Meldungen von ungewöhnlichen Setups sind gen
 - [@jessebofill](https://github.com/jessebofill) — Code für das Steam-Menü-Patching
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — der native Discord-Client, den Steamcord steuert
 - [@SilvertongueRED](https://github.com/SilvertongueRED) — der **Windows-Port** aus dem Fork [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), der die Anknüpfungspunkte für die Windows-Unterstützung gezeigt hat (in v1.43.0)
+- [@theupriser](https://github.com/theupriser) — **Eintrag im Steam-Hauptmenü**, der die erweiterte Ansicht öffnet ([#80](https://github.com/Necrosiak/Steamcord/pull/80), seit v1.42.4)
+- [@mweitl](https://github.com/mweitl) — **Discord-Status für Battle.net-Spiele unter Proton**, mit fertigem Patch ([#81](https://github.com/Necrosiak/Steamcord/issues/81), seit v1.42.4)
+- [@deathtenk](https://github.com/deathtenk) — **Deckys gemeinsame Benachrichtigungen bleiben unangetastet**, die anderer Plugins funktionieren wieder ([#78](https://github.com/Necrosiak/Steamcord/pull/78), seit v1.42.3)
+- [@bookcasey](https://github.com/bookcasey) — das **Auflegen-Symbol**: ein Telefon statt eines Steckers, aus dem [Steamcord-Fork](https://github.com/bookcasey/Steamcord) (seit v1.38.0)
+- [@borborisovai](https://github.com/borborisovai) — **Proxy-Unterstützung für Discord** aus dem Fork [Steamcord-proxysupport](https://github.com/borborisovai/Steamcord-proxysupport) (seit v1.45.0)
+- [@simonesessa](https://github.com/simonesessa) — **Bildschirmfreigabe über Vesktops eigene Schaltfläche** im Desktop-Modus, mit Regressionstest ([#94](https://github.com/Necrosiak/Steamcord/pull/94), seit v1.45.0)
 
 ## KI-Hinweis
 

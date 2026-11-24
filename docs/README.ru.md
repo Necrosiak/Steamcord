@@ -135,6 +135,12 @@ sudo systemctl restart plugin_loader
 - [@jessebofill](https://github.com/jessebofill) — код патчинга меню Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — нативный клиент Discord, которым управляет Steamcord
 - [@SilvertongueRED](https://github.com/SilvertongueRED) — **порт для Windows** из форка [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), который показал точки интеграции для поддержки Windows (в v1.43.0)
+- [@theupriser](https://github.com/theupriser) — **пункт в главном меню Steam**, открывающий расширенный вид ([#80](https://github.com/Necrosiak/Steamcord/pull/80), с v1.42.4)
+- [@mweitl](https://github.com/mweitl) — **статус Discord для игр Battle.net под Proton**, с готовым патчем ([#81](https://github.com/Necrosiak/Steamcord/issues/81), с v1.42.4)
+- [@deathtenk](https://github.com/deathtenk) — **общие уведомления Decky больше не подменяются**, уведомления других плагинов снова работают ([#78](https://github.com/Necrosiak/Steamcord/pull/78), с v1.42.3)
+- [@bookcasey](https://github.com/bookcasey) — **значок завершения звонка**: телефон вместо вилки, из [форка Steamcord](https://github.com/bookcasey/Steamcord) (с v1.38.0)
+- [@borborisovai](https://github.com/borborisovai) — **поддержка прокси для Discord** из форка [Steamcord-proxysupport](https://github.com/borborisovai/Steamcord-proxysupport) (с v1.45.0)
+- [@simonesessa](https://github.com/simonesessa) — **демонстрация экрана собственной кнопкой Vesktop** в режиме рабочего стола, с регрессионным тестом ([#94](https://github.com/Necrosiak/Steamcord/pull/94), с v1.45.0)
 
 ## Об использовании ИИ
 

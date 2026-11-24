@@ -184,6 +184,12 @@ Feature requests and "it works!" reports on unusual setups are just as valuable.
 - [@Memberoffoxhound](https://github.com/Memberoffoxhound) — five fixes carried over from his [GameModeCord](https://github.com/Memberoffoxhound/GameModeCord) fork (landed in v1.31.0): **the panel scaling to its own size** instead of Deck-absolute pixels, **B walking back one menu at a time**, **chat images and videos opening in the fullscreen viewer**, and two that were silently breaking screen sharing for everyone — **v4l2loopback looked up in sysfs** rather than hardcoded to `/dev/video42`, and **both share buttons no longer vanishing from DM calls**
 - [@jezonek](https://github.com/jezonek) — **push-to-talk on a keyboard key or a mouse button** ([#34](https://github.com/Necrosiak/Steamcord/pull/34)), including the backend evdev reader and its privacy constraints
 - [@SilvertongueRED](https://github.com/SilvertongueRED) — the **Windows port** from the [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) fork ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), which showed the integration points for Windows support (landed in v1.43.0)
+- [@theupriser](https://github.com/theupriser) — **Steam main menu entry** opening the expanded view ([#80](https://github.com/Necrosiak/Steamcord/pull/80), landed in v1.42.4)
+- [@mweitl](https://github.com/mweitl) — **Discord status for Battle.net games under Proton**, with a ready-made patch ([#81](https://github.com/Necrosiak/Steamcord/issues/81), landed in v1.42.4)
+- [@deathtenk](https://github.com/deathtenk) — **Decky's shared notifications left untouched**, so other plugins' notifications work again ([#78](https://github.com/Necrosiak/Steamcord/pull/78), landed in v1.42.3)
+- [@bookcasey](https://github.com/bookcasey) — the **hang-up icon**: a phone instead of a plug, from the [Steamcord fork](https://github.com/bookcasey/Steamcord) (landed in v1.38.0)
+- [@borborisovai](https://github.com/borborisovai) — **proxy support for Discord**, from the [Steamcord-proxysupport](https://github.com/borborisovai/Steamcord-proxysupport) fork (landed in v1.45.0)
+- [@simonesessa](https://github.com/simonesessa) — **screen sharing from Vesktop's own button** in Desktop Mode, with a regression test ([#94](https://github.com/Necrosiak/Steamcord/pull/94), landed in v1.45.0)
 
 ### Community bug hunters
 

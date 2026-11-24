@@ -135,6 +135,12 @@ Featureverzoeken en "het werkt!"-meldingen op ongewone setups zijn net zo waarde
 - [@jessebofill](https://github.com/jessebofill) — code voor het patchen van het Steam-menu
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — de native Discord-client die Steamcord aanstuurt
 - [@SilvertongueRED](https://github.com/SilvertongueRED) — de **Windows-port** uit de fork [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), die de aanknopingspunten voor Windows-ondersteuning liet zien (in v1.43.0)
+- [@theupriser](https://github.com/theupriser) — **item in het Steam-hoofdmenu** dat de uitgebreide weergave opent ([#80](https://github.com/Necrosiak/Steamcord/pull/80), sinds v1.42.4)
+- [@mweitl](https://github.com/mweitl) — **Discord-status voor Battle.net-games onder Proton**, met een kant-en-klare patch ([#81](https://github.com/Necrosiak/Steamcord/issues/81), sinds v1.42.4)
+- [@deathtenk](https://github.com/deathtenk) — **Decky's gedeelde meldingen blijven ongemoeid**, die van andere plugins werken weer ([#78](https://github.com/Necrosiak/Steamcord/pull/78), sinds v1.42.3)
+- [@bookcasey](https://github.com/bookcasey) — het **ophang-icoon**: een telefoon in plaats van een stekker, uit de [Steamcord-fork](https://github.com/bookcasey/Steamcord) (sinds v1.38.0)
+- [@borborisovai](https://github.com/borborisovai) — **proxy-ondersteuning voor Discord**, uit de fork [Steamcord-proxysupport](https://github.com/borborisovai/Steamcord-proxysupport) (sinds v1.45.0)
+- [@simonesessa](https://github.com/simonesessa) — **scherm delen via de eigen knop van Vesktop** in Bureaubladmodus, met regressietest ([#94](https://github.com/Necrosiak/Steamcord/pull/94), sinds v1.45.0)
 
 ## AI-vermelding
 

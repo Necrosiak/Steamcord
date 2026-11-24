@@ -41,11 +41,14 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - Screen sharing refusing to restart until a full shutdown — with the key detail that a reboot was not always enough while a full power cycle always was, which pointed at leaked PipeWire connections rather than a Discord-side problem ([#26](https://github.com/Necrosiak/Steamcord/issues/26), fixed in v1.20.0)
 - The screenshot picker hiding the most recent screenshots ([#27](https://github.com/Necrosiak/Steamcord/issues/27), fixed in v1.20.0)
 - The server list failing with a raw Python exception ([#28](https://github.com/Necrosiak/Steamcord/issues/28), fixed in v1.20.0)
+- The stream overlay staying empty, with the log that showed the stream was in portrait and taller than the overlay accepted ([#102](https://github.com/Necrosiak/Steamcord/issues/102), fixed in v1.46.0)
+- More overlay positions, and cameras in the video overlay ([#103](https://github.com/Necrosiak/Steamcord/issues/103), added in v1.45.9 and v1.46.0)
 
 ### [@humzakh](https://github.com/humzakh)
 
 - The in-plugin updater failing on root-owned installs, including the chmod/chown attempts and the follow-up reports across several fix attempts, which eventually pinned down the real cause ([#16](https://github.com/Necrosiak/Steamcord/issues/16), properly fixed in v1.18.2)
 - Broken message-list navigation and missing conversation history ([#17](https://github.com/Necrosiak/Steamcord/issues/17), fixed in v1.16.2)
+- Vesktop's debugging port clashing with other plugins' browsers and breaking Unifideck's Microsoft sign-in ([#95](https://github.com/Necrosiak/Steamcord/issues/95), fixed in v1.45.2)
 
 ### [@Strix-Vyxlor](https://github.com/Strix-Vyxlor)
 
@@ -289,9 +292,63 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 - The display check that showed the overlay running on the game's display
   instead of Steam's ([#75](https://github.com/Necrosiak/Steamcord/issues/75),
   fixed in v1.42.2)
+- Switching between Discord accounts from the plugin
+  ([#111](https://github.com/Necrosiak/Steamcord/issues/111), added in v1.48.0), and the pointer to Quick Tab for a
+  Steamcord tab in the Quick Access Menu ([#109](https://github.com/Necrosiak/Steamcord/issues/109))
 
 ### [@prozac192](https://github.com/prozac192)
 
 - The microphone kept busy by a Vesktop that never closed, and the request to
   keep Discord off across restarts
   ([#82](https://github.com/Necrosiak/Steamcord/issues/82), fixed in v1.42.5)
+
+### [@nawavon](https://github.com/nawavon)
+
+- The voice overlay suggestions: remembering the On/Off choice, centered left
+  and right positions, and your own mute, deafen and streaming indicators
+  ([#92](https://github.com/Necrosiak/Steamcord/issues/92), added in v1.44.0), then the testing that caught a stray red
+  line and a switch showing the wrong state (fixed in v1.45.3)
+- The expanded view running over the Steam Deck's bottom bar
+  ([#98](https://github.com/Necrosiak/Steamcord/issues/98), fixed in v1.45.3), and the opacity comparisons on the Deck OLED
+  ([#93](https://github.com/Necrosiak/Steamcord/issues/93))
+
+### [@arsaban](https://github.com/arsaban)
+
+- Chat Mix leaving Edge and other system sounds permanently quieter
+  ([#96](https://github.com/Necrosiak/Steamcord/issues/96), fixed in v1.45.3)
+
+### [@dengithubber](https://github.com/dengithubber)
+
+- Steamcord stuck on "Initializing" in Desktop Mode on EndeavourOS once Discord
+  was set not to run there ([#99](https://github.com/Necrosiak/Steamcord/issues/99), fixed in v1.45.5)
+
+### [@Torun-S](https://github.com/Torun-S)
+
+- Threads and forums out of reach ([#100](https://github.com/Necrosiak/Steamcord/issues/100), fixed in v1.45.4), and
+  server folders, tested thoroughly, with the idea of keeping folder members
+  visible in the flat list ([#101](https://github.com/Necrosiak/Steamcord/issues/101), v1.45.6)
+
+### [@GlitchedCode](https://github.com/GlitchedCode)
+
+- "Don't run Vesktop in Desktop Mode" only recognising KDE
+  ([#104](https://github.com/Necrosiak/Steamcord/issues/104), fixed in v1.46.0)
+
+### [@numeraltrace](https://github.com/numeraltrace)
+
+- Chat Mix muting the Steam interface sounds after sleep, confirmed fixed after
+  two days of use ([#106](https://github.com/Necrosiak/Steamcord/issues/106), fixed in v1.46.0)
+- The game volume swinging during calls and screen shares, with the follow-up
+  that pinned down the short spikes ([#107](https://github.com/Necrosiak/Steamcord/issues/107), v1.46.0 and v1.48.1)
+- Two security reviews of the local services, screen capture and updates
+  ([#108](https://github.com/Necrosiak/Steamcord/issues/108), [#114](https://github.com/Necrosiak/Steamcord/issues/114), v1.46.0 and v1.48.1)
+- Overlays not scaling on a 4K TV ([#110](https://github.com/Necrosiak/Steamcord/issues/110), fixed in v1.46.0), fullscreen
+  streams not using the whole screen ([#105](https://github.com/Necrosiak/Steamcord/issues/105), fixed in v1.46.0), and the
+  Quick Access Menu feedback ([#109](https://github.com/Necrosiak/Steamcord/issues/109))
+- The black bar under names on POV tiles, the POV button turning itself off, and
+  staying awake while sharing or watching ([#112](https://github.com/Necrosiak/Steamcord/issues/112), [#113](https://github.com/Necrosiak/Steamcord/issues/113),
+  [#115](https://github.com/Necrosiak/Steamcord/issues/115), v1.48.1)
+
+### [@smijaa](https://github.com/smijaa)
+
+- The game volume dropping sharply as soon as a stream started
+  ([#107](https://github.com/Necrosiak/Steamcord/issues/107), fixed in v1.46.0)

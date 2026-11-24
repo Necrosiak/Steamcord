@@ -135,6 +135,12 @@ Las peticiones de funciones y los «¡funciona!» en configuraciones inusuales v
 - [@jessebofill](https://github.com/jessebofill) — código de parcheo del menú de Steam
 - [Vesktop / Vencord](https://github.com/Vencord/Vesktop) — el cliente de Discord nativo que controla Steamcord
 - [@SilvertongueRED](https://github.com/SilvertongueRED) — el **port para Windows** del fork [Steamcord-for-Windows](https://github.com/SilvertongueRED/Steamcord-for-Windows) ([#85](https://github.com/Necrosiak/Steamcord/pull/85)), que mostró los puntos de integración del soporte para Windows (en la v1.43.0)
+- [@theupriser](https://github.com/theupriser) — **entrada en el menú principal de Steam** que abre la vista ampliada ([#80](https://github.com/Necrosiak/Steamcord/pull/80), desde v1.42.4)
+- [@mweitl](https://github.com/mweitl) — **estado de Discord para juegos de Battle.net en Proton**, con un parche listo ([#81](https://github.com/Necrosiak/Steamcord/issues/81), desde v1.42.4)
+- [@deathtenk](https://github.com/deathtenk) — **las notificaciones compartidas de Decky quedan intactas**, las de otros plugins vuelven a funcionar ([#78](https://github.com/Necrosiak/Steamcord/pull/78), desde v1.42.3)
+- [@bookcasey](https://github.com/bookcasey) — el **icono de colgar**: un teléfono en lugar de un enchufe, del [fork de Steamcord](https://github.com/bookcasey/Steamcord) (desde v1.38.0)
+- [@borborisovai](https://github.com/borborisovai) — **soporte de proxy para Discord**, del fork [Steamcord-proxysupport](https://github.com/borborisovai/Steamcord-proxysupport) (desde v1.45.0)
+- [@simonesessa](https://github.com/simonesessa) — **compartir pantalla con el botón propio de Vesktop** en modo Escritorio, con prueba de regresión ([#94](https://github.com/Necrosiak/Steamcord/pull/94), desde v1.45.0)
 
 ## Aviso sobre IA
 
