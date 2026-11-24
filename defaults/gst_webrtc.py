@@ -7,6 +7,7 @@ from aiohttp import web # type: ignore
 import logging
 import signal
 import os
+import hmac
 import time
 from logging import getLogger
 from gi import require_version # type: ignore
@@ -320,6 +321,11 @@ class WebRTCServer:
         run_coroutine_threadsafe(self.remote_ws.send_json(msg), self.loop)
 
     async def websocket_handler(self, request):
+        # Steamcord #114 : seul le client injecté par le plugin connaît la clé.
+        key = os.environ.get("STEAMCORD_WS_KEY", "")
+        if key and not hmac.compare_digest(str(request.query.get("k", "")), key):
+            log.warning("connexion refusée : clé locale absente ou fausse")
+            return web.Response(status=403)
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         self.remote_ws = ws

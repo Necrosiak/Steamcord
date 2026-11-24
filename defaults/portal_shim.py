@@ -161,6 +161,29 @@ def _runtime_dir():
     return os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 
 
+# Steamcord #114 : l'ancien contrôle acceptait toute ligne de commande
+# contenant « electron » ou « discord » (n'importe quelle appli Electron, un
+# script discord_bot.py…). On n'accepte plus que ce qui désigne NOTRE Vesktop :
+#  • le scope systemd de l'appli flatpak (le bus voit le xdg-dbus-proxy de
+#    l'instance, qui vit dans ce scope — mesuré 18/07 et 24/11) ;
+#  • l'unité systemd par laquelle le plugin lance Vesktop natif ;
+#  • à défaut, un exécutable nommé vesktop, du même utilisateur.
+_VESKTOP_CGROUPS = ("app-flatpak-dev.vencord.vesktop-", "steamcord-vesktop.service")
+
+
+def _is_our_vesktop(pid):
+    try:
+        if os.stat(f"/proc/{pid}").st_uid != os.getuid():
+            return False
+        cg = Path(f"/proc/{pid}/cgroup").read_text(errors="replace").lower()
+        if any(k in cg for k in _VESKTOP_CGROUPS):
+            return True
+        exe = os.path.basename(os.readlink(f"/proc/{pid}/exe")).lower()
+        return exe in ("vesktop", "vesktop.bin")
+    except Exception:
+        return False
+
+
 def _shim_pid_path():
     """Pidfile lu par gst_webrtc.py pour nous adresser SIGUSR1 (#38).
 
@@ -524,18 +547,11 @@ class PortalShim:
                 member="GetConnectionUnixProcessID",
                 signature="s", body=[sender]))
             pid = int(reply.body[0])
+            if _is_our_vesktop(pid):
+                return True
             cmd = (Path(f"/proc/{pid}/cmdline").read_bytes()
                    .replace(b"\0", b" ").decode(errors="replace").lower())
-            if any(k in cmd for k in ("vesktop", "vencord", "electron",
-                                      "discord")):
-                return True
-            # Flatpak : la connexion D-Bus vue par le bus est celle du
-            # xdg-dbus-proxy de l'instance (cmdline anonyme) — MAIS il vit dans
-            # le scope systemd de l'app (app-flatpak-dev.vencord.Vesktop-*.scope,
-            # vérifié en live 18/07 : le refus du proxy cassait le Go Live natif).
             cg = Path(f"/proc/{pid}/cgroup").read_text(errors="replace").lower()
-            if any(k in cg for k in ("vesktop", "vencord", "steamcord")):
-                return True
             log.warning(f"sender {sender} refusé (pid={pid}, "
                         f"cmdline={cmd[:120]!r}, cgroup={cg.strip()[-90:]!r})")
         except Exception as e:

@@ -3,7 +3,7 @@
 // expose le MediaStream reçu, indexé par userId, pour l'afficher dans son bloc.
 // Miroir du relais micro (qui va QAM→Vesktop) ; ici c'est Vesktop→QAM.
 import { call, addEventListener } from "@decky/api";
-import { armKeepAwake, releaseKeepAwake } from "./keepAwake";
+import { setKeepAwakeReason } from "./keepAwake";
 
 type Listener = () => void;
 export type TrackKind = "screen" | "camera" | "video";
@@ -26,7 +26,7 @@ const syncKeepAwake = () => {
   if (keepAwakeTimer) return;
   keepAwakeTimer = setTimeout(() => {
     keepAwakeTimer = null;
-    if (watching.size > 0) armKeepAwake(); else releaseKeepAwake();
+    setKeepAwakeReason("watch", watching.size > 0);
   }, 0);
 };
 

@@ -277,7 +277,9 @@ def _command(account, extra_flags=()):
         str(exe()),
         "--remote-debugging-address=127.0.0.1",
         f"--remote-debugging-port={CDP_PORT}",
-        "--remote-allow-origins=*",
+        # #114 : plus de --remote-allow-origins=*. Le plugin se connecte depuis
+        # Python (aiohttp, sans en-tête Origin), que Chromium accepte toujours ;
+        # une page web, elle, envoie son Origin et se voit désormais refusée.
         # Chromium's own profile, and with it the single-instance lock: without
         # it, a Vesktop the user already runs would swallow our launch.
         f"--user-data-dir={profile / 'chromium'}",

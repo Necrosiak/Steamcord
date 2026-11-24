@@ -774,7 +774,7 @@ function OverlayMenuContent() {
   const [voiceOn, setVoiceOn] = useState(false);
   const [povOn, setPovOn] = useState(false);
   const [voice, setVoice] = useState<any>({ pos: "bottom-left", opacity: 85, scale: 100 });
-  const [pov, setPov] = useState<any>({ layout: "right", opacity: 90, scale: 100, source: "auto" });
+  const [pov, setPov] = useState<any>({ layout: "right", opacity: 90, scale: 100, source: "auto", show_names: true });
   // Le POV a besoin d'un moteur web (décodage MediaSource) ; sur SteamOS le
   // helper se replie sur un rendu GTK/Cairo qui n'affiche que le vocal (#22).
   const [povSupported, setPovSupported] = useState(true);
@@ -922,6 +922,12 @@ function OverlayMenuContent() {
                 label={<>{t("overlay_scale")} {pov.scale}%</>}
                 value={pov.scale} min={60} max={400} step={10}
                 onChange={(v: number) => pushPov({ scale: v })}
+                bottomSeparator="none"
+              />
+              <ToggleFieldAny
+                label={t("overlay_pov_names")}
+                checked={pov.show_names !== false}
+                onChange={(v: boolean) => pushPov({ show_names: v })}
                 bottomSeparator="none"
               />
             </>

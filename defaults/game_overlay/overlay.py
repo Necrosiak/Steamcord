@@ -684,14 +684,19 @@ class RosterArea(Gtk.DrawingArea):
             cr.restore()
             username = next((u.get("username") for u in (self.voice.get("users") or [])
                              if str(u.get("id")) == uid), None)
-            if username:
+            # #112 : plus de bandeau noir sous le pseudo, il masquait le bas
+            # de l'image sur les petites tuiles. Une ombre suffit à le lire ;
+            # le pseudo peut aussi être masqué.
+            if username and st.get("show_names", True) is not False:
                 label = self._layout(cr, username, 11 * scale, tile_w - 16)
                 _, label_h = label.get_pixel_size()
-                cr.set_source_rgba(0, 0, 0, 0.7)
-                cr.rectangle(x, y + tile_h - label_h - 9, tile_w, label_h + 9)
-                cr.fill()
-                cr.set_source_rgba(1, 1, 1, 0.94)
-                cr.move_to(x + 7, y + tile_h - label_h - 5)
+                tx, ty = x + 7, y + tile_h - label_h - 5
+                cr.set_source_rgba(0, 0, 0, 0.85)
+                for dx, dy in ((1, 1), (-1, 1), (1, -1), (-1, -1), (0, 1.5)):
+                    cr.move_to(tx + dx, ty + dy)
+                    PangoCairo.show_layout(cr, label)
+                cr.set_source_rgba(1, 1, 1, 0.96)
+                cr.move_to(tx, ty)
                 PangoCairo.show_layout(cr, label)
         cr.pop_group_to_source()
         cr.paint_with_alpha(opacity)

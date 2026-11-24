@@ -832,7 +832,9 @@ async def launch():
         *cmd,
         "--remote-debugging-address=127.0.0.1",
         f"--remote-debugging-port={host.CDP_PORT}",
-        "--remote-allow-origins=*",
+        # #114 : plus de --remote-allow-origins=*. Le plugin se connecte depuis
+        # Python (aiohttp, sans en-tête Origin), que Chromium accepte toujours ;
+        # une page web, elle, envoie son Origin et se voit désormais refusée.
         # Issue #36 : la fenêtre Vesktop n'est JAMAIS affichée (--start-minimized,
         # tout l'UI visible est notre QAM). Garder les trois flags anti-throttling
         # d'origine forçait donc Chromium à peindre et composer un renderer que

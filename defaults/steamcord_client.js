@@ -1443,7 +1443,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 // Garde anti-double-client : si un WS est déjà ouvert/en cours, ne pas
                 // en créer un second (sinon chaque message backend est traité 2×).
                 if (window.STEAMCORD_WS && window.STEAMCORD_WS.readyState <= 1) return;
-                window.STEAMCORD_WS = new WebSocket('ws://127.0.0.1:65123/socket');
+                window.STEAMCORD_WS = new WebSocket('ws://127.0.0.1:65123/socket?k=' + encodeURIComponent(window.STEAMCORD_WS_KEY || ''));
                 window.STEAMCORD_WS.addEventListener("message", async function (e) {
                     const data = JSON.parse(e.data);
                     if (data.type.startsWith("$")) {

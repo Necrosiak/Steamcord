@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: write
+  # #114 : attestation de provenance du zip (Sigstore, sans clé à gérer).
+  id-token: write
+  attestations: write
 
 jobs:
   windows-host:
@@ -72,6 +75,8 @@ jobs:
           python3 -m unittest discover -s tests -p test_discord_runtime.py -v
           python3 -m unittest discover -s tests -p test_overlay_environment.py -v
           python3 -m unittest discover -s tests -p test_audio_overlay_regressions.py -v
+          python3 -m unittest discover -s tests -p test_local_security.py -v
+          python3 -m unittest discover -s tests -p test_updater_integrity.py -v
           node --test tests/test-video-overlay-regressions.cjs
           python3 -m unittest discover -s tests -p test_cloud_game.py -v
           python3 -m unittest discover -s tests -p test_support_diagnostics.py -v
@@ -111,6 +116,17 @@ jobs:
                   assert "Steamcord/" + name in archive.namelist(), name
           PYTHON
 
+      - name: Checksum and build provenance
+        run: |
+          cd out
+          sha256sum ${{ github.event.repository.name }}.zip > ${{ github.event.repository.name }}.zip.sha256
+          cat ${{ github.event.repository.name }}.zip.sha256
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/${{ github.event.repository.name }}.zip
+
       - name: Read release notes from changelog
         run: |
           python3 - <<'PYTHON'
@@ -131,6 +147,8 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: out/${{ github.event.repository.name }}.zip
+          files: |
+            out/${{ github.event.repository.name }}.zip
+            out/${{ github.event.repository.name }}.zip.sha256
           body_path: RELEASE-NOTES.md
           generate_release_notes: false

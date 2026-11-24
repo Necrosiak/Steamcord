@@ -21,6 +21,7 @@ import shutil
 import ssl
 import subprocess
 import tempfile
+import urllib.error
 import urllib.request
 import sys
 import zipfile
@@ -230,6 +231,62 @@ def _survey(root: Path, plugin_dir: Path):
     return hard, soft
 
 
+def _check_members(z: "zipfile.ZipFile") -> None:
+    """Refuse an archive with absolute paths, '..' or symbolic links (#114).
+
+    zipfile already neutralises the first two while extracting; refusing the
+    whole archive is clearer than installing a silently rewritten one."""
+    import stat
+    for info in z.infolist():
+        name = info.filename.replace("\\", "/")
+        parts = [p for p in name.split("/") if p]
+        if name.startswith("/") or ".." in parts or (parts and ":" in parts[0]):
+            raise ValueError(f"unsafe path in update archive: {info.filename!r}")
+        if stat.S_ISLNK(info.external_attr >> 16):
+            raise ValueError(f"symbolic link in update archive: {info.filename!r}")
+
+
+def _rollback(saved, created) -> None:
+    for keep, dst in reversed(saved):
+        try:
+            _replace_file(keep, dst)
+        except Exception as e:
+            logger.error(f"[updater] rollback could not restore {dst}: {e}")
+    for dst in created:
+        try:
+            dst.unlink()
+        except OSError:
+            pass
+    logger.warning(f"[updater] update rolled back ({len(saved)} restored, {len(created)} removed)")
+
+
+def _verify_checksum(url: str, zip_path: Path) -> None:
+    """Compare the archive with the `.sha256` published next to it (#114).
+
+    Releases from 1.48.1 on carry one; an older release without it is
+    installed as before. A checksum that exists but does not match stops the
+    update before anything is extracted."""
+    import hashlib
+    if "/releases/download/" not in url:
+        return
+    req = urllib.request.Request(url + ".sha256", headers={"User-Agent": _USER_AGENT})
+    try:
+        with _urlopen(req, timeout=15) as resp:
+            expected = resp.read(512).decode("ascii", "replace").split()[0].lower()
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            logger.info("[updater] no checksum published for this release")
+            return
+        raise
+    h = hashlib.sha256()
+    with open(zip_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    if h.hexdigest() != expected:
+        raise ValueError("downloaded update does not match its published checksum")
+    logger.info("[updater] checksum verified")
+
+
 def _apply_blocking(url: str) -> None:
     plugin_dir = Path(DECKY_PLUGIN_DIR)
     with tempfile.TemporaryDirectory() as tmp:
@@ -238,9 +295,11 @@ def _apply_blocking(url: str) -> None:
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         with _urlopen(req, timeout=120) as resp, open(zip_path, "wb") as f:
             shutil.copyfileobj(resp, f)
+        _verify_checksum(url, zip_path)
 
         extract_dir = tmp / "x"
         with zipfile.ZipFile(zip_path) as z:
+            _check_members(z)
             z.extractall(extract_dir)
 
         root = _content_root(extract_dir)
@@ -258,16 +317,32 @@ def _apply_blocking(url: str) -> None:
                         + ", ".join(sorted(str(x) for x in soft)))
 
         # Overlay-copy onto the plugin dir (don't wipe — keeps settings/runtime files).
+        # #114 : every file we replace is saved first; if any write fails, the
+        # ones already written are put back and the new ones removed, so the
+        # plugin is never left half old, half new.
         skip = set(soft)
-        for src in root.rglob("*"):
-            rel = src.relative_to(root)
-            dst = plugin_dir / rel
-            if src.is_dir():
-                if _writable_as_us(dst) or dst.exists():
-                    dst.mkdir(parents=True, exist_ok=True)
-            elif rel not in skip:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                _replace_file(src, dst)
+        backup_dir = tmp / "backup"
+        saved, created = [], []
+        try:
+            for src in root.rglob("*"):
+                rel = src.relative_to(root)
+                dst = plugin_dir / rel
+                if src.is_dir():
+                    if _writable_as_us(dst) or dst.exists():
+                        dst.mkdir(parents=True, exist_ok=True)
+                elif rel not in skip:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    if dst.exists():
+                        keep = backup_dir / rel
+                        keep.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(dst, keep)
+                        saved.append((keep, dst))
+                    else:
+                        created.append(dst)
+                    _replace_file(src, dst)
+        except Exception:
+            _rollback(saved, created)
+            raise
 
         # One recursive pass to heal any SELinux mislabeling left by a root-run
         # install (chown fixes ownership but never touches this MAC-layer label).

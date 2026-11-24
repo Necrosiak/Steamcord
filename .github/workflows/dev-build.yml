@@ -62,6 +62,8 @@ jobs:
           python3 -m unittest discover -s tests -p test_discord_runtime.py -v
           python3 -m unittest discover -s tests -p test_overlay_environment.py -v
           python3 -m unittest discover -s tests -p test_audio_overlay_regressions.py -v
+          python3 -m unittest discover -s tests -p test_local_security.py -v
+          python3 -m unittest discover -s tests -p test_updater_integrity.py -v
           node --test tests/test-video-overlay-regressions.cjs
           python3 -m unittest discover -s tests -p test_cloud_game.py -v
           python3 -m unittest discover -s tests -p test_support_diagnostics.py -v

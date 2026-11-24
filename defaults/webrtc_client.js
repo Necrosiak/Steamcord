@@ -70,7 +70,7 @@
 
         let settled = false;
         const peerConnection = new RTCPeerConnection(null);
-        const ws = new WebSocket("ws://127.0.0.1:65124/webrtc");
+        const ws = new WebSocket("ws://127.0.0.1:65124/webrtc?k=" + encodeURIComponent(window.STEAMCORD_WS_KEY || ""));
         window.STEAMCORD_PEER_CONNECTION = peerConnection;
         const inbound = new MediaStream();
 

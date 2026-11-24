@@ -53,7 +53,7 @@ import { QamUiRoot, useQamUi } from "./qamUi";
 import { BackNavRoot, useBackHandler } from "./backNav";
 import { startVideoVisibility, stopVideoVisibility } from "./videoVisibility";
 import { initVideoRelay } from "./videoRelay";
-import { initKeepAwake, releaseKeepAwake, setKeepAwakeEnabled } from "./keepAwake";
+import { initKeepAwake, releaseKeepAwake, setKeepAwakeEnabled, setKeepAwakeReason } from "./keepAwake";
 import { DiscordExpandedModal } from "./components/DiscordExpanded";
 import { ChatFullscreenModal } from "./components/ChatFullscreen";
 import { openIncomingCall } from "./components/IncomingCall";
@@ -2647,7 +2647,10 @@ export default definePlugin(() => {
   installClickHook();
 
   // Mode streamer : notre Go Live est une source de live (voir notify.ts).
-  const onStateForStreamer = (st: any) => setLiveSource("steamcord-golive", !!st?.me?.is_live);
+  const onStateForStreamer = (st: any) => {
+    setLiveSource("steamcord-golive", !!st?.me?.is_live);
+    setKeepAwakeReason("share", !!st?.me?.is_live);
+  };
   addEventListener("state", onStateForStreamer);
   call("get_state").then(onStateForStreamer).catch(() => {});
 

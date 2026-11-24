@@ -17,6 +17,18 @@ from subprocess import PIPE, DEVNULL
 import sys
 import time
 import os
+import secrets as _secrets
+import hmac as _hmac
+
+# #114 : clé tirée à chaque démarrage du backend. Seul le client injecté dans
+# Discord la connaît : une page web ouverte dans un navigateur de la même
+# machine ne peut plus se brancher sur nos WebSockets locaux (contrôle de
+# Discord sur 65123, capture d'écran sur 65124).
+LOCAL_KEY = _secrets.token_urlsafe(24)
+
+
+def local_key_ok(request):
+    return _hmac.compare_digest(str(request.query.get("k", "")), LOCAL_KEY)
 
 from decky import logger, DECKY_PLUGIN_DIR, emit  # type: ignore
 from logging import INFO
@@ -197,7 +209,8 @@ async def _initialize_discord():
         webrtc_js = open(_wjs, "r", encoding="utf-8").read()
     except Exception:
         webrtc_js = ""
-    host_js = f'window.STEAMCORD_HOST = "{host.NAME}";\n'
+    host_js = (f'window.STEAMCORD_HOST = "{host.NAME}";\n'
+               f'window.STEAMCORD_WS_KEY = "{LOCAL_KEY}";\n')
     tab = await vesktop.get_discord_tab(host_js + webrtc_js + "\n" + client_js)
 
     Plugin.discord_tab = tab
@@ -876,6 +889,7 @@ class Plugin:
             "GST_VAAPI_ALL_DRIVERS": "1",
             "LIBVA_DRIVER_NAME": "radeonsi",
             "GST_PLUGIN_PATH": gst_plugins_dir + os.pathsep + os.environ.get("GST_PLUGIN_PATH", ""),
+            "STEAMCORD_WS_KEY": LOCAL_KEY,
         }
         # Réutilisé par le feeder webcam virtuelle (gst_camera.py).
         cls._gst_env = gst_env
@@ -1023,6 +1037,7 @@ class Plugin:
         if not host.WINDOWS:
             create_task(cls._audio_keepalive())
             create_task(cls._audio_routing_watcher())
+            create_task(cls._chat_mix_event_watcher())
             create_task(cls._screen_diag())
             create_task(cls._ga_boot_cleanup())
             # Lecteur clavier/souris du raccourci vocal — no-op tant qu'aucun binding
@@ -1334,8 +1349,14 @@ class Plugin:
 
     @classmethod
     async def _websocket_handler(cls, request):
+        if not local_key_ok(request):
+            logger.warning("[ws] connexion refusée : clé locale absente ou fausse")
+            from aiohttp.web import Response as _Resp
+            return _Resp(status=403)
         logger.info("Received websocket connection!")
-        ws = WebSocketResponse(max_msg_size=0)
+        # #114 : plus de taille illimitée. 64 Mio couvrent largement les plus
+        # gros messages du client (captures et fragments vidéo en base64).
+        ws = WebSocketResponse(max_msg_size=64 * 1024 * 1024)
         await ws.prepare(request)
         # Re-pousser le Rich Presence (issue #11) au client fraîchement (re)connecté
         # — petit délai le temps que son écouteur de messages et les stores Flux
@@ -1919,7 +1940,7 @@ class Plugin:
         try:
             for stop in (cls.stop_game_audio, cls.stop_voice_overlay, cls.stop_pov_overlay):
                 try:
-                    await wait_for(stop(remember=False) if stop == cls.stop_voice_overlay else stop(), 5)
+                    await wait_for(stop(remember=False) if stop in (cls.stop_voice_overlay, cls.stop_pov_overlay) else stop(), 5)
                 except Exception:
                     logger.warning("[runtime] media cleanup failed; stopping Discord anyway")
             import vesktop
@@ -3706,11 +3727,59 @@ class Plugin:
                 elif cls._golive_bridge_mods:
                     await cls._golive_route_game(True)
                 # Nouveau flux (jeu lancé, appel rejoint) : il arrive à 100 %.
-                if cls._chat_mix != 50 or cls._mix_touched or cls._load_mix_apps():
+                if cls._chat_mix_wanted():
                     await cls._apply_chat_mix()
             except Exception:
                 pass
             await sleep(4)
+
+    @classmethod
+    def _chat_mix_wanted(cls):
+        return cls._chat_mix != 50 or bool(cls._mix_touched) or bool(cls._load_mix_apps())
+
+    @classmethod
+    async def _chat_mix_event_watcher(cls):
+        """Applique Chat Mix dès qu'un flux apparaît (#107).
+
+        Le sondage de _audio_routing_watcher passe toutes les 4 s : un nouveau
+        flux du jeu (son, réouverture de la sortie) jouait jusque-là à 100 %
+        avant d'être baissé, d'où un pic de volume bref. `pactl subscribe`
+        signale le flux à sa création ; on ne réagit qu'aux créations, pas aux
+        changements, que nos propres réglages de volume déclenchent."""
+        from asyncio import create_subprocess_exec, wait_for, TimeoutError as _TO
+        from asyncio.subprocess import PIPE as _PIPE
+        import vesktop
+        while True:
+            if not cls._chat_mix_wanted():
+                await sleep(4)
+                continue
+            proc = None
+            try:
+                proc = await create_subprocess_exec(
+                    "pactl", "subscribe", stdout=_PIPE, stderr=DEVNULL,
+                    env=dict(vesktop._user_env(), LC_ALL="C", LANG="C"))
+                while cls._chat_mix_wanted():
+                    try:
+                        line = await wait_for(proc.stdout.readline(), timeout=5)
+                    except _TO:
+                        continue
+                    if not line:
+                        break
+                    if b"'new' on sink-input" in line:
+                        await cls._apply_chat_mix()
+            except Exception as e:
+                logger.warning(f"[chatmix] écoute PipeWire: {e!r}")
+            finally:
+                if proc and proc.returncode is None:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        await proc.wait()
+                    except Exception:
+                        pass
+            await sleep(2)
 
     # ── Équilibre Jeu ↔ Discord (ce que l'on entend) ─────────────────────────
     # Suggestion Reddit (r/steammachine, 29/09) : le curseur « chat / jeu » de la
@@ -6065,6 +6134,7 @@ class Plugin:
     _overlay_settings = None
     _overlay_caps_cache = None
     _voice_restore_channel = None
+    _pov_restore_channel = None
     _voice_ov_on = False
     _pov_ov_on = False
     _pov_users = set()          # users actuellement relayés (client MediaRecorder)
@@ -6134,8 +6204,9 @@ class Plugin:
         vc_channel = (state.get("vc") or {}).get("channel_id")
         if not vc_channel:
             cls._voice_restore_channel = None
+            cls._pov_restore_channel = None
             if cls._voice_ov_on or cls._pov_ov_on:
-                await cls.stop_pov_overlay()
+                await cls.stop_pov_overlay(remember=False)
                 await cls.stop_voice_overlay(remember=False)
             return
         if (not cls._voice_ov_on
@@ -6143,6 +6214,13 @@ class Plugin:
                 and cls._voice_restore_channel != vc_channel):
             cls._voice_restore_channel = vc_channel
             await cls.start_voice_overlay()
+        # #113 : le bouton POV reste activé d'un appel à l'autre et après un
+        # redémarrage, comme l'overlay vocal.
+        if (not cls._pov_ov_on
+                and cls._load_overlay_settings().get("pov", {}).get("enabled", False)
+                and cls._pov_restore_channel != vc_channel):
+            cls._pov_restore_channel = vc_channel
+            await cls.start_pov_overlay()
         if cls._overlay_running():
             cls._write_overlay_state(state)
             if cls._pov_ov_on:
@@ -6167,8 +6245,10 @@ class Plugin:
         cls._overlay_settings["voice"] = {
             "pos": "bottom-left", "opacity": 85, "scale": 100, "enabled": False,
             **(voice if isinstance(voice, dict) else {})}
-        cls._overlay_settings.setdefault(
-            "pov", {"layout": "right", "opacity": 90, "scale": 100})
+        pov = cls._overlay_settings.get("pov")
+        cls._overlay_settings["pov"] = {
+            "layout": "right", "opacity": 90, "scale": 100, "show_names": True,
+            **(pov if isinstance(pov, dict) else {})}
         return cls._overlay_settings
 
     @classmethod
@@ -6365,6 +6445,8 @@ class Plugin:
             logger.info("[overlay] POV refused: backend %s has no video decoder"
                         % caps.get("backend"))
             return {"ok": False, "reason": "pov_unsupported"}
+        cls._load_overlay_settings().setdefault("pov", {})["enabled"] = True
+        cls._save_overlay_settings()
         cls._pov_ov_on = True
         ok = await cls._ensure_overlay_window()
         if not ok:
@@ -6381,7 +6463,10 @@ class Plugin:
 
     @classmethod
     @linux_only({"ok": True})
-    async def stop_pov_overlay(cls):
+    async def stop_pov_overlay(cls, remember=True):
+        if remember:
+            cls._load_overlay_settings().setdefault("pov", {})["enabled"] = False
+            cls._save_overlay_settings()
         cls._pov_ov_on = False
         for uid in list(cls._pov_users):
             try:
@@ -6406,7 +6491,7 @@ class Plugin:
         cur["pov"] = {**cur.get("pov", {}), **(settings or {})}
         cls._save_overlay_settings()
         if cls._pov_ov_on and previous_source != cur["pov"].get("source", "auto"):
-            await cls.stop_pov_overlay()
+            await cls.stop_pov_overlay(remember=False)
             return {**await cls.start_pov_overlay(), "settings": cur["pov"]}
         if cls._overlay_running():
             cls._write_overlay_state()
@@ -6506,7 +6591,9 @@ class Plugin:
         À la connexion, on envoie d'abord l'init caché de chaque user actif
         pour que les fragments média qui suivent soient décodables."""
         from asyncio import Queue
-        ws = WebSocketResponse(max_msg_size=0)
+        # #114 : plus de taille illimitée. 64 Mio couvrent largement les plus
+        # gros messages du client (captures et fragments vidéo en base64).
+        ws = WebSocketResponse(max_msg_size=64 * 1024 * 1024)
         await ws.prepare(request)
         q = Queue()
         for uid in list(cls._pov_users):

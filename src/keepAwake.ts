@@ -22,9 +22,14 @@ type Held = Entry & { prev: number };
 // Champs du message de réglages client. AC et batterie sont deux délais
 // distincts : on tient les deux, la source d'alimentation peut changer
 // pendant qu'on regarde.
+// #115 : la mise en veille automatique aussi (délais « suspend », numéros de
+// champ relevés dans le client Steam le 24/11), sinon la console s'endort en
+// plein visionnage ou en plein partage.
 const FIELDS: Entry[] = [
   { name: "system_idle_screensaver_ac_sec", field: 24009 },
   { name: "system_idle_screensaver_battery_sec", field: 24008 },
+  { name: "system_idle_suspend_ac_sec", field: 24004 },
+  { name: "system_idle_suspend_battery_sec", field: 24003 },
 ];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -112,12 +117,23 @@ async function doRelease() {
 }
 
 export const armKeepAwake = () => queue(doArm);
-export const releaseKeepAwake = () => queue(doRelease);
+export const releaseKeepAwake = () => { reasons.clear(); return queue(doRelease); };
+
+// Raisons de rester éveillé : regarder un stream (« watch ») et partager le
+// sien (« share », #115). On tient tant qu'il en reste une.
+const reasons = new Set<string>();
+export function setKeepAwakeReason(reason: string, on: boolean) {
+  if (on) reasons.add(reason); else reasons.delete(reason);
+  return reasons.size ? queue(doArm) : queue(doRelease);
+}
 
 export function setKeepAwakeEnabled(on: boolean) {
   enabled = !!on;
   call("set_keepawake_enabled", enabled).catch(() => {});
-  if (!enabled) releaseKeepAwake();
+  // Les raisons sont conservées : réactiver reprend tout de suite si l'on
+  // regarde ou partage encore.
+  if (!enabled) queue(doRelease);
+  else if (reasons.size) queue(doArm);
 }
 
 // Au chargement du plugin : lire la préférence, et réparer un délai laissé à 0
