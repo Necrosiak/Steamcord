@@ -116,7 +116,7 @@ export function FullscreenVideoModal({ track, label, userId, closeModal }:
       onCancelActionDescription={t("video_exit_fullscreen")}
       bAllowFullSize
     >
-      <VideoVisibility users={userId ? [userId] : []} />
+      <VideoVisibility inFront users={userId ? [userId] : []} />
       <div style={{ background: "#000", ...VIDEO_FULL_BLEED }}>
         <div ref={videoFullscreenMarkerRef} style={{ display: "none" }} />
         <div style={{
@@ -735,7 +735,7 @@ function UserRow({ user, isSelf }: { user: any; isSelf?: boolean }) {
                      onClick={() => (watching ? stopVideo(user.id) : watchVideo(user.id))}>
             {watching ? t("video_stop") : <>{user?.is_live ? <IcMonitor /> : <IcCameraVideo />} {t("video_watch")}</>}
           </InlineBtn>
-          {watching && <VideoVisibility users={[user.id]} />}
+          {watching && <VideoVisibility inFront users={[user.id]} />}
           {watching && remoteVideo && (
             <MultiVideoTiles
               userId={user.id}
@@ -1019,6 +1019,7 @@ export function VoiceChatMembers() {
   const anyVideo = state.vc.users.some((u: any) => u.id !== meId && (u.is_live || u.is_video));
   return (
     <>
+      <VideoVisibility inFront users={[]} />
       <OverlayMenu />
       {anyVideo && (
         <div style={{ padding: "0 4px 6px", boxSizing: "border-box", width: "100%" }}>

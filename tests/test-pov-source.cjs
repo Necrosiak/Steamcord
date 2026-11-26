@@ -18,10 +18,13 @@ function fixture() {
     start(){this.state='recording';}
     stop(){this.state='inactive';this.onstop?.();}
   }
-  vm.runInNewContext(text.slice(start,end), {window, console:{log(){},error(){}},
-    Vencord:{Webpack:{findStore:name=>name==='SelectedChannelStore'?{getVoiceChannelId:()=> 'c'}:
+  const Vencord={Webpack:{findStore:name=>name==='SelectedChannelStore'?{getVoiceChannelId:()=> 'c'}:
       name==='UserStore'?{getCurrentUser:()=>({id:'me'})}:{getViewerIds:()=>[]},
-      findByCode:code=>code.includes('STREAM_WATCH')?()=>watched.push('watch'):()=>{}}},
+      findByCode:code=>code.includes('STREAM_WATCH')?()=>watched.push('watch'):()=>{}}};
+  window.Vencord=Vencord;
+  vm.runInNewContext(text.slice(text.indexOf("// BEGIN DISCORD COMPATIBILITY REGISTRY"),text.indexOf("// END DISCORD COMPATIBILITY REGISTRY")),{window});
+  vm.runInNewContext(text.slice(start,end), {window, console:{log(){},error(){}},
+    Vencord,
     MediaRecorder:Recorder, MediaStream:class {constructor(tracks){this.tracks=tracks;}},
     btoa:s=>Buffer.from(s,'binary').toString('base64'), setTimeout(){}, clearTimeout(){}});
   return {window,recorded,watched,tracks,recorders,sent};

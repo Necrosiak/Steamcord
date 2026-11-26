@@ -22,8 +22,8 @@ export const FULL_BLEED = {
 // La vidéo occupe le viewport entier ; le titre se superpose à l'image.
 // Le ratio reste intact (bandes noires si la source n'a pas le ratio écran).
 export const VIDEO_FULL_BLEED = {
-  width: "100vw", height: "100vh", marginLeft: "calc((100% - 100vw) / 2)",
-  boxSizing: "border-box" as const, position: "relative" as const,
+  width: "100vw", height: "100vh", margin: 0, top: 0, left: 0,
+  boxSizing: "border-box" as const, position: "fixed" as const, zIndex: 2147483647,
 };
 
 // Efface le chrome du dialog Steam autour d'un contenu full-bleed (panneau
@@ -153,9 +153,19 @@ export const videoFullscreenMarkerRef = (el: HTMLDivElement | null) => {
     // styles empruntés sont rendus à la fermeture par releaseClosed().
     let p = el.parentElement?.parentElement;
     for (let i = 0; p && i < 12; i++, p = p.parentElement) {
-      if (p.classList.contains("ModalOverlayContent")) break;
+      // A transformed dialog is a containing block even for position:fixed.
+      // Remove those constraints up to Steam's modal boundary, restoring every
+      // borrowed style on close. Do not reparent React/focus-navigation nodes.
       for (const [key, value] of [["max-width", "none"], ["max-height", "none"],
-        ["padding", "0"], ["overflow", "visible"]]) setOwned(p, el, key, value);
+        ["padding", "0"], ["overflow", "visible"], ["transform", "none"],
+        ["perspective", "none"], ["filter", "none"], ["contain", "none"]]) setOwned(p, el, key, value);
+      if (p.classList.contains("ModalOverlayContent")) {
+        setOwned(p, el, "z-index", "2147483647");
+        const layer = p.parentElement;
+        if (layer && layer !== el.ownerDocument.body && layer !== el.ownerDocument.documentElement)
+          setOwned(layer, el, "z-index", "2147483647");
+        break;
+      }
     }
   }, ms));
 };

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 // Visibility belongs to the document rendering the video, not the hidden plugin
 // window. The QAM and expanded/fullscreen views contribute independent leases.
 const surfaces = new Map<object, string[]>();
+const foreground = new Set<object>();
 let timer: ReturnType<typeof setInterval> | undefined;
 let pending: ReturnType<typeof setTimeout> | undefined;
 let enabled = false;
@@ -12,9 +13,13 @@ let serial: Promise<unknown> = Promise.resolve();
 function publish() {
   const users = [...new Set([...surfaces.values()].flat())].sort();
   const active = enabled;
+  const videoInFront = foreground.size > 0;
   // Serialize publications: a delayed older request must not reopen a stream
   // after the last visible surface has closed.
-  serial = serial.catch(() => {}).then(() => call("set_video_visibility", users, active)).catch(() => {});
+  serial = serial.catch(() => {}).then(async () => {
+    await call("set_video_foreground", videoInFront).catch(() => {});
+    await call("set_video_visibility", users, active);
+  }).catch(() => {});
 }
 function schedule() {
   if (pending !== undefined) clearTimeout(pending);
@@ -42,9 +47,9 @@ export function stopVideoVisibility() {
   if (timer !== undefined) clearInterval(timer);
   if (pending !== undefined) clearTimeout(pending);
   timer = undefined; pending = undefined;
-  surfaces.clear(); publish();
+  surfaces.clear(); foreground.clear(); publish();
 }
-export function VideoVisibility({ users }: { users: string[] }) {
+export function VideoVisibility({ users, inFront = false }: { users: string[]; inFront?: boolean }) {
   const marker = useRef<HTMLSpanElement>(null);
   const signature = [...new Set(users)].sort().join(",");
   useEffect(() => {
@@ -53,11 +58,12 @@ export function VideoVisibility({ users }: { users: string[] }) {
     const update = () => {
       if (!document.hidden) surfaces.set(token, signature ? signature.split(",") : []);
       else surfaces.delete(token);
+      if (!document.hidden && inFront) foreground.add(token); else foreground.delete(token);
       schedule();
     };
     document.addEventListener("visibilitychange", update);
     update();
-    return () => { document.removeEventListener("visibilitychange", update); surfaces.delete(token); schedule(); };
-  }, [signature]);
+    return () => { document.removeEventListener("visibilitychange", update); surfaces.delete(token); foreground.delete(token); schedule(); };
+  }, [signature, inFront]);
   return <span ref={marker} style={{ display: "none" }} />;
 }

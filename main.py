@@ -773,9 +773,10 @@ class Plugin:
     cors = aiohttp_cors.setup(
         server,
         defaults={
-            "*": aiohttp_cors.ResourceOptions(
-                expose_headers="*", allow_headers="*", allow_credentials=True
-            )
+            origin: aiohttp_cors.ResourceOptions(
+                expose_headers=("Content-Type", "Content-Length", "Content-Range"),
+                allow_headers=("Range",), allow_methods=("GET",), allow_credentials=False
+            ) for origin in ("https://discord.com", "https://canary.discord.com", "https://ptb.discord.com")
         },
     )
     evt_handler = EventHandler()
@@ -1000,8 +1001,9 @@ class Plugin:
             ]
         )
         cls.evt_handler.on_pov_chunk = cls._on_pov_chunk
-        for r in list(cls.server.router.routes())[:-1]:
-            cls.cors.add(r)
+        for r in list(cls.server.router.routes()):
+            if r.resource.canonical == "/clip":
+                cls.cors.add(r)
 
         cls.runner = AppRunner(cls.server, access_log=None)
         await cls.runner.setup()
@@ -1285,6 +1287,8 @@ class Plugin:
 
     @classmethod
     async def _openkb(cls, request):
+        if not local_key_ok(request):
+            return Response(status=403, text="forbidden")
         await cls.shared_js_tab.ensure_open()
         await setOSK(cls.shared_js_tab, True)
         logger.info("Setting discord visibility to true")
@@ -1311,6 +1315,8 @@ class Plugin:
 
     @classmethod
     async def _voice_render(cls, request):
+        if not local_key_ok(request):
+            return Response(status=403, text="forbidden")
         # Chromium freezes WebRTC in the occluded (hidden) BrowserView, so the voice
         # connection stalls forever at DTLS_CONNECTING. Rendering the view (even 1×1)
         # un-backgrounds the renderer so the handshake completes. The JS calls this
@@ -1320,29 +1326,21 @@ class Plugin:
                 logger.warning("voice_render: SharedJSContext toujours absent "
                                "après 10s — BrowserView non dé-occultée")
                 return Response(text="OK")
-            await cls.shared_js_tab.ensure_open()
-            await cls.shared_js_tab.evaluate("""
-                try {
-                    window.DISCORD_TAB.m_browserView.SetBounds(0, 0, 1, 1);
-                    window.DISCORD_TAB.m_browserView.SetVisible(true);
-                } catch (e) {}
-            """)
+            from tab_utils.steam_view import set_voice_view
+            cls._steam_view_supported = await set_voice_view(cls.shared_js_tab, True)
         except Exception as e:
             logger.warning(f"voice_render failed: {e}")
         return Response(text="OK")
 
     @classmethod
     async def _voice_hide(cls, request):
+        if not local_key_ok(request):
+            return Response(status=403, text="forbidden")
         try:
             if cls.shared_js_tab is None:
                 return Response(text="OK")
-            await cls.shared_js_tab.ensure_open()
-            await cls.shared_js_tab.evaluate("""
-                try {
-                    window.DISCORD_TAB.m_browserView.SetVisible(false);
-                    window.DISCORD_TAB.m_browserView.SetBounds(0, 0, window.DISCORD_TAB.WIDTH, window.DISCORD_TAB.HEIGHT);
-                } catch (e) {}
-            """)
+            from tab_utils.steam_view import set_voice_view
+            cls._steam_view_supported = await set_voice_view(cls.shared_js_tab, False)
         except Exception as e:
             logger.warning(f"voice_hide failed: {e}")
         return Response(text="OK")
@@ -2376,18 +2374,18 @@ class Plugin:
     PW_WEDGE_ALERT_AFTER = 3
     _pw_wedge_misses = 0
 
+    _clip_tokens = {}
     _clip_index = {}
     # Copies mp4 temporaires, effacées au déchargement du plugin.
     _clip_tmp = set()
 
     @classmethod
     async def list_videos(cls):
-        from hashlib import sha1
         out = []
         cls._clip_index = {}
         # Clips Steam d'abord : c'est ce que les gens viennent d'enregistrer.
         for d, appid, size, mtime in _steam_clips():
-            tok = sha1(d.encode("utf-8", "replace")).hexdigest()[:16]
+            tok = cls._clip_tokens.setdefault(d, _secrets.token_urlsafe(24))
             cls._clip_index[tok] = d
             out.append({"token": tok, "name": os.path.basename(d), "size": size,
                         "mtime": int(mtime), "kind": "steam", "appid": appid,
@@ -2398,7 +2396,7 @@ class Plugin:
                         # sera assemblé puis compressé, pas refusé.
                         "will_convert": True})
         for full, name, size, mtime in _list_videos():
-            tok = sha1(full.encode("utf-8", "replace")).hexdigest()[:16]
+            tok = cls._clip_tokens.setdefault(full, _secrets.token_urlsafe(24))
             cls._clip_index[tok] = full
             out.append({"token": tok, "name": name, "size": size,
                         "mtime": int(mtime), "kind": "file", "appid": "",
@@ -2459,7 +2457,9 @@ class Plugin:
 
     @classmethod
     async def _serve_clip(cls, request):
-        from aiohttp.web import FileResponse, Response
+        if not local_key_ok(request):
+            return Response(status=403, text="forbidden")
+        from aiohttp.web import FileResponse
         tok = request.query.get("t", "")
         path = cls._clip_index.get(tok)
         if not path or not os.path.isfile(path):
@@ -2518,7 +2518,7 @@ class Plugin:
         send_name = _send_filename(entry, send_path)
         await cls.evt_handler.send_client(
             {"type": "$clip", "channel_id": channel_id,
-             "url": f"http://127.0.0.1:65123/clip?t={token}",
+             "url": f"http://127.0.0.1:65123/clip?t={token}&k={LOCAL_KEY}",
              "filename": send_name})
         return True
 
@@ -3113,7 +3113,8 @@ class Plugin:
     async def get_video_diagnostics(cls):
         report = await cls.evt_handler.api._store_access_request("$get_video_diagnostics")
         data = cls._diagnostic_system()
-        data.update(video=report, session=(await cls.get_share_env()).get("env"))
+        integrations = await cls.evt_handler.api._store_access_request("$get_integration_diagnostics")
+        data.update(video=report, integrations=integrations, steam_view=getattr(cls, "_steam_view_supported", None), session=(await cls.get_share_env()).get("env"))
         logger.info("[video-diagnostic] %s", dumps(data))
         return data
 
@@ -3744,8 +3745,9 @@ class Plugin:
         Le sondage de _audio_routing_watcher passe toutes les 4 s : un nouveau
         flux du jeu (son, réouverture de la sortie) jouait jusque-là à 100 %
         avant d'être baissé, d'où un pic de volume bref. `pactl subscribe`
-        signale le flux à sa création ; on ne réagit qu'aux créations, pas aux
-        changements, que nos propres réglages de volume déclenchent."""
+        signale les créations et changements. Un flux déjà présent peut changer
+        de volume ou de sortie sans être recréé. Nos propres changements sont
+        sans effet supplémentaire : _apply_chat_mix ne réécrit pas sa cible."""
         from asyncio import create_subprocess_exec, wait_for, TimeoutError as _TO
         from asyncio.subprocess import PIPE as _PIPE
         import vesktop
@@ -3765,7 +3767,7 @@ class Plugin:
                         continue
                     if not line:
                         break
-                    if b"'new' on sink-input" in line:
+                    if b" on sink-input #" in line and (b"'new'" in line or b"'change'" in line):
                         await cls._apply_chat_mix()
             except Exception as e:
                 logger.warning(f"[chatmix] écoute PipeWire: {e!r}")
@@ -6096,6 +6098,30 @@ class Plugin:
 
     # ── Relais vidéo inverse (voir le Go Live/cam des autres dans le QAM) ──
     @classmethod
+    async def set_video_foreground(cls, visible):
+        """Temporarily hide the external POV while a call/video surface is visible.
+
+        This changes presentation only: saved preferences and capture keep running.
+        A renewable lease restores the overlay if the frontend disappears.
+        """
+        import asyncio
+        if not isinstance(visible, bool) or host.WINDOWS:
+            return False
+        handle = getattr(cls, "_video_foreground_timer", None)
+        if handle:
+            handle.cancel()
+        cls._video_foreground = visible
+        cls._video_foreground_timer = None
+        if visible:
+            def expire():
+                cls._video_foreground = False
+                cls._video_foreground_timer = None
+                cls._write_overlay_state()
+            cls._video_foreground_timer = asyncio.get_running_loop().call_later(35, expire)
+        cls._write_overlay_state()
+        return True
+
+    @classmethod
     async def set_video_visibility(cls, user_ids, enabled):
         if not isinstance(user_ids, list) or not isinstance(enabled, bool):
             return False
@@ -6143,7 +6169,7 @@ class Plugin:
     _pov_media_seen = set()      # diagnostic one-shot, jamais de user ID dans les logs
 
     POV_MAX = 4
-    POV_FEED_URL = "ws://127.0.0.1:65123/pov_feed"
+    POV_FEED_URL = f"ws://127.0.0.1:65123/pov_feed?k={LOCAL_KEY}"
 
     @classmethod
     def _overlay_dir(cls):
@@ -6320,14 +6346,19 @@ class Plugin:
                 "voice": {"enabled": cls._voice_ov_on, "settings": s.get("voice"), "users": users,
                           "events": cls._ov_track_members(users, vc.get("channel_id")),
                           "event_ms": cls.OV_EVENT_MS},
-                "pov": {"enabled": cls._pov_ov_on, "settings": s.get("pov"), "feed": cls.POV_FEED_URL},
+                "pov": {"enabled": cls._pov_ov_on and not getattr(cls, "_video_foreground", False), "settings": s.get("pov"), "feed": cls.POV_FEED_URL},
             }
             d = cls._overlay_dir()
             os.makedirs(d, exist_ok=True)
-            tmp = os.path.join(d, ".voice_state.tmp")
-            with open(tmp, "w", encoding="utf-8") as f:
-                _json.dump(payload, f)
-            os.replace(tmp, os.path.join(d, "voice_state.json"))
+            # The feed URL carries the session key: never leave it world-readable.
+            fd, tmp = tempfile.mkstemp(prefix=".voice_state-", dir=d)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    _json.dump(payload, f)
+                os.replace(tmp, os.path.join(d, "voice_state.json"))
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
         except Exception as e:
             logger.debug(f"[overlay] write state failed: {e!r}")
 
@@ -6587,6 +6618,8 @@ class Plugin:
 
     @classmethod
     async def _pov_feed(cls, request):
+        if not local_key_ok(request):
+            return Response(status=403, text="forbidden")
         """WS binaire consommé par la fenêtre overlay (MSE ou GStreamer).
         À la connexion, on envoie d'abord l'init caché de chaque user actif
         pour que les fragments média qui suivent soient décodables."""
@@ -6641,6 +6674,11 @@ class Plugin:
         #   se libère, et on rend la main immédiatement.
         from time import monotonic as _mono
         _t0 = _mono()
+        foreground_timer = getattr(cls, "_video_foreground_timer", None)
+        if foreground_timer:
+            foreground_timer.cancel()
+        cls._video_foreground_timer = None
+        cls._video_foreground = False
 
         # ⚠️ Budget TOTAL : le loader SIGKILL à 5 s. Des garde-fous mis bout à
         # bout (1+1+1+2+2+2) le dépassaient — mesuré : toujours 5,1 s. D'où des

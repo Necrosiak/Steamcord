@@ -1,3 +1,44 @@
+// BEGIN DISCORD COMPATIBILITY REGISTRY
+window.__scCreateCompat = function(getWebpack, getActionFinder) {
+    let lastWebpack;
+    const cache = new Map();
+    const stores = ["ApplicationStreamingStore", "CallStore", "ChannelStore", "GuildChannelStore", "GuildStore", "MediaEngineStore", "MultiAccountStore", "NotificationSettingsStore", "PresenceStore", "RTCConnectionStore", "ReadStateStore", "RelationshipStore", "SelectedChannelStore", "SortedGuildStore", "UserStore", "VoiceStateStore"];
+    const props = [["WebAudioSound"], ["logout", "loginToken"], ["setAutomaticGainControl"], ["setEchoCancellation"], ["setInputDevice"], ["setNoiseCancellation"], ["setVideoDevice"], ["setVideoEnabled"], ["toggleLocalMute"]];
+    const actions = {
+        account_switch: s => s.includes("Switching account to"),
+        account_remove: s => s.includes("MULTI_ACCOUNT_REMOVE_ACCOUNT") && s.length < 400,
+        account_add: s => s.includes("isMultiAccount:!0") && s.includes("LOGIN_RESET") && s.includes("onBackPressed"),
+    };
+    function resolve(kind, args) {
+        const wp = getWebpack();
+        if (!wp) return null;
+        if (wp !== lastWebpack) { cache.clear(); lastWebpack = wp; }
+        const key = kind + ":" + JSON.stringify(args);
+        if (cache.has(key)) return cache.get(key);
+        try {
+            const value = kind === "store" ? wp.findStore?.(...args) : wp.findByProps?.(...args);
+            if (value) cache.set(key, value);
+            return value || null;
+        } catch (_) { return null; }
+    }
+    const api = {
+        store: name => resolve("store", [name]),
+        props: (...names) => resolve("props", names),
+        action: name => {
+            try { return actions[name] ? getActionFinder()?.(actions[name]) || null : null; }
+            catch (_) { return null; }
+        },
+        diagnostics: () => ({
+            stores: Object.fromEntries(stores.map(name => [name, !!api.store(name)])),
+            props: Object.fromEntries(props.map(names => [names.join(","), !!api.props(...names)])),
+            actions: Object.fromEntries(Object.keys(actions).map(name => [name, !!api.action(name)])),
+        }),
+    };
+    return api;
+};
+window.__scCompat = window.__scCreateCompat(() => window.Vencord?.Webpack, () => window.__scMultiFn);
+// END DISCORD COMPATIBILITY REGISTRY
+
 // Detect host: Vesktop (native Electron Discord — mic works) vs Steam's hidden CEF
 // BrowserView (mic broken). In Vesktop we must NOT hijack getUserMedia / visibility,
 // or we'd break the native mic. The CEF-only workarounds are guarded by !IS_VESKTOP.
@@ -591,7 +632,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         // Même lookup que le chemin d'activation (findByProps). Ne PAS
                         // utiliser findByCode("setVideoEnabled") : ça peut renvoyer un
                         // hook React → appelé hors render = "Minified React error #321".
-                        const va = WP.findByProps?.("setVideoEnabled");
+                        const va = window.__scCompat.props("setVideoEnabled");
                         if (va?.setVideoEnabled) { va.setVideoEnabled(false); log("caméra coupée"); }
                         else log("setVideoEnabled introuvable (off)");
                     } catch (e) { log("off err " + e); }
@@ -626,7 +667,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 // loggait « OK » alors que la caméra ne s'activait jamais (test
                 // 02/07 : setVideoEnabled(true) OK mais is_video jamais true).
                 try {
-                    const va = WP.findByProps?.("setVideoDevice");
+                    const va = window.__scCompat.props("setVideoDevice");
                     if (va?.setVideoDevice) {
                         log("module setVideoDevice: " + Object.keys(va).slice(0, 12).join(","));
                         await Promise.resolve(va.setVideoDevice(cam.deviceId));
@@ -635,10 +676,10 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 } catch (e) { log("setVideoDevice REJETÉ " + e); }
                 // 3) Activer la caméra dans le salon vocal courant.
                 try {
-                    const selCh = WP.findStore?.("SelectedChannelStore");
+                    const selCh = window.__scCompat.store("SelectedChannelStore");
                     const vcId = selCh?.getVoiceChannelId?.();
                     if (!vcId) { log("pas dans un vocal — la cam s'activera au prochain appel"); }
-                    const va = WP.findByProps?.("setVideoEnabled");
+                    const va = window.__scCompat.props("setVideoEnabled");
                     if (va?.setVideoEnabled) {
                         log("module setVideoEnabled: " + Object.keys(va).slice(0, 12).join(","));
                         await Promise.resolve(va.setVideoEnabled(true));
@@ -656,11 +697,11 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 // (isSelfVideoEnabled n'a jamais existé → undefined).
                 const verdict = (label) => {
                     try {
-                        const meId = WP.findStore?.("UserStore")?.getCurrentUser?.()?.id;
-                        const vc2 = WP.findStore?.("SelectedChannelStore")?.getVoiceChannelId?.();
-                        const states = WP.findStore?.("VoiceStateStore")?.getVoiceStatesForChannel?.(vc2) || {};
+                        const meId = window.__scCompat.store("UserStore")?.getCurrentUser?.()?.id;
+                        const vc2 = window.__scCompat.store("SelectedChannelStore")?.getVoiceChannelId?.();
+                        const states = window.__scCompat.store("VoiceStateStore")?.getVoiceStatesForChannel?.(vc2) || {};
                         const st = meId ? states[meId] : null;
-                        const MES = WP.findStore?.("MediaEngineStore");
+                        const MES = window.__scCompat.store("MediaEngineStore");
                         const engOn = MES?.isVideoEnabled?.();
                         const on = st ? !!st.selfVideo : null;
                         log(label + " selfVideo(gateway)=" + on + " video(engine)=" + engOn
@@ -671,7 +712,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 setTimeout(() => {
                     if (verdict("VERDICT@2.5s:") === true) return;
                     try {
-                        const va2 = WP.findByProps?.("setVideoEnabled");
+                        const va2 = window.__scCompat.props("setVideoEnabled");
                         if (va2?.setVideoEnabled) {
                             log("secours: re-setVideoEnabled(true)");
                             Promise.resolve(va2.setVideoEnabled(true)).catch((e) => log("secours setVideoEnabled REJETÉ " + e));
@@ -729,10 +770,10 @@ window.Vencord.Plugins.plugins.Steamcord = {
             stop: (uid, suspend) => window.STEAMCORD_stopVideoRelay(uid, suspend),
             subscriptions: () => {
                 const WP = Vencord.Webpack;
-                const channel = WP.findStore("SelectedChannelStore")?.getVoiceChannelId?.();
+                const channel = window.__scCompat.store("SelectedChannelStore")?.getVoiceChannelId?.();
                 if (!channel || !window.__sc_streamsForChannel) return [];
-                const me = WP.findStore("UserStore")?.getCurrentUser?.()?.id;
-                const streams = WP.findStore("ApplicationStreamingStore");
+                const me = window.__scCompat.store("UserStore")?.getCurrentUser?.()?.id;
+                const streams = window.__scCompat.store("ApplicationStreamingStore");
                 return window.__sc_streamsForChannel(channel).map(({ key, s }) => ({
                     key, userId: s.ownerId || s.userId,
                     viewing: (s.ownerId || s.userId) !== me && (streams?.getViewerIds?.(key) || []).includes(me),
@@ -764,7 +805,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
             const out = [];
             const seen = new Set();
             let eng = null;
-            try { eng = Vencord.Webpack.findStore("MediaEngineStore").getMediaEngine(); } catch (e) { return out; }
+            try { eng = window.__scCompat.store("MediaEngineStore").getMediaEngine(); } catch (e) { return out; }
             if (!eng || !eng.connections) return out;
             // `c.pc` sur le build actuel, mais les noms sont minifiés et changent d'une
             // version de Discord à l'autre → on reconnaît l'objet à son interface.
@@ -811,7 +852,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
         window.__sc_heldSinks = window.__sc_heldSinks || {}; // userId -> Set(streamId)
         window.__sc_cameraStreamId = (userId) => {
             try {
-                const rc = Vencord.Webpack.findStore("RTCConnectionStore").getRTCConnection?.();
+                const rc = window.__scCompat.store("RTCConnectionStore").getRTCConnection?.();
                 return rc?._localMediaSinkWantsManager?.streamIds?.[userId] ?? null;
             } catch (e) { return null; }
         };
@@ -821,7 +862,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
             const sid = window.__sc_cameraStreamId(userId);
             if (sid != null) want.add(sid);
             let eng = null;
-            try { eng = Vencord.Webpack.findStore("MediaEngineStore").getMediaEngine(); } catch (e) { return; }
+            try { eng = window.__scCompat.store("MediaEngineStore").getMediaEngine(); } catch (e) { return; }
             if (!eng || !eng.connections) return;
             for (const c of [...eng.connections]) {
                 if (typeof c.setHasActiveVideoOutputSink !== "function") continue;
@@ -838,7 +879,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
             delete window.__sc_heldSinks[userId];
             if (!held || !held.size) return;
             try {
-                const eng = Vencord.Webpack.findStore("MediaEngineStore").getMediaEngine();
+                const eng = window.__scCompat.store("MediaEngineStore").getMediaEngine();
                 for (const c of [...(eng && eng.connections || [])]) {
                     if (typeof c.setHasActiveVideoOutputSink !== "function") continue;
                     for (const s of held) { try { c.setHasActiveVideoOutputSink(s, false, "steamcord"); } catch (e) {} }
@@ -847,7 +888,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
         };
 
         window.__sc_streamsForChannel = (chId) => {
-            const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
+            const ASS = window.__scCompat.store("ApplicationStreamingStore");
             if (!ASS || !chId) return [];
             const keyOf = (s) => {
                 const owner = s.ownerId || s.userId;
@@ -885,8 +926,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
             // Le stream reconstruit porte le strict nécessaire pour la clé, le
             // badge et STREAM_WATCH ({ownerId, channelId, guildId}).
             try {
-                const VSS = Vencord.Webpack.findStore("VoiceStateStore");
-                const guildId = Vencord.Webpack.findStore("ChannelStore")?.getChannel?.(chId)?.guild_id || null;
+                const VSS = window.__scCompat.store("VoiceStateStore");
+                const guildId = window.__scCompat.store("ChannelStore")?.getChannel?.(chId)?.guild_id || null;
                 const states = VSS?.getVoiceStatesForChannel?.(chId) || {};
                 for (const uid in states) {
                     if (!states[uid] || !states[uid].selfStream) continue;
@@ -961,8 +1002,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
             const current = () => window.STEAMCORD_VIDEO_EPOCH[userId] === epoch;
             try {
                 const WP = Vencord.Webpack;
-                const ASS = WP.findStore("ApplicationStreamingStore");
-                const SCS = WP.findStore("SelectedChannelStore");
+                const ASS = window.__scCompat.store("ApplicationStreamingStore");
+                const SCS = window.__scCompat.store("SelectedChannelStore");
                 const chId = SCS.getVoiceChannelId();
 
                 // Deux cas : (a) GO LIVE = un stream actif (ApplicationStreamingStore)
@@ -976,7 +1017,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     streamKey = entry.key;
                     // Regarder le stream (s'abonner) — SEULEMENT si pas déjà viewer, car
                     // re-dispatcher STREAM_WATCH re-render le tile et tue la piste captée.
-                    const myId = WP.findStore("UserStore").getCurrentUser()?.id;
+                    const myId = window.__scCompat.store("UserStore").getCurrentUser()?.id;
                     const alreadyViewing = (ASS.getViewerIds?.(streamKey) || []).includes(myId);
                     if (!alreadyViewing) {
                         const watch = WP.findByCode('"STREAM_WATCH",streamKey');
@@ -1032,7 +1073,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 const expected = new Set();
                 if (s) expected.add("screen");
                 try {
-                    const vs = Object.values(WP.findStore("VoiceStateStore").getVoiceStatesForChannel(chId) || {});
+                    const vs = Object.values(window.__scCompat.store("VoiceStateStore").getVoiceStatesForChannel(chId) || {});
                     if (vs.some(v => v.userId === userId && v.selfVideo)) expected.add("camera");
                 } catch (e) { /* store indispo → on prend ce qui vient */ }
                 // Tenir le sink AVANT d'attendre les pistes : une caméra déjà
@@ -1182,12 +1223,12 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 // écran arrive — même démarche que le relais WebRTC du QAM.
                 try {
                     const WP = Vencord.Webpack;
-                    const chId = WP.findStore("SelectedChannelStore").getVoiceChannelId();
+                    const chId = window.__scCompat.store("SelectedChannelStore").getVoiceChannelId();
                     const e2 = window.__sc_streamsForChannel(chId).find(x => (x.s.ownerId || x.s.userId) === userId);
                     if (e2 && source !== "camera") {
                         entry.streamKey = e2.key;
-                        const myId = WP.findStore("UserStore").getCurrentUser()?.id;
-                        const ASS = WP.findStore("ApplicationStreamingStore");
+                        const myId = window.__scCompat.store("UserStore").getCurrentUser()?.id;
+                        const ASS = window.__scCompat.store("ApplicationStreamingStore");
                         if (!(ASS.getViewerIds?.(e2.key) || []).includes(myId)) {
                             const watch = WP.findByCode('"STREAM_WATCH",streamKey');
                             if (watch) watch(e2.s);
@@ -1330,7 +1371,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 try {
                     const t = e.target;
                     if (t && t.closest && t.closest("[role=\"textbox\"]"))
-                        fetch("http://127.0.0.1:65123/openkb", { mode: "no-cors" });
+                        fetch("http://127.0.0.1:65123/openkb?k=" + encodeURIComponent(window.STEAMCORD_WS_KEY || ""), { mode: "no-cors" });
                 } catch (err) { }
             }, true);
         }
@@ -1454,7 +1495,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                             // (type 4), gardé à part : Discord les affiche l'un sous l'autre.
                             const scPresenceOf = (id) => {
                                 try {
-                                    const PS = Vencord.Webpack.findStore("PresenceStore");
+                                    const PS = window.__scCompat.store("PresenceStore");
                                     const acts = PS?.getActivities?.(id) || [];
                                     const main = acts.find(a => a && a.type !== 4);
                                     const custom = acts.find(a => a && a.type === 4);
@@ -1529,7 +1570,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 case "$get_active_stream": {
                                     let st = null;
                                     try {
-                                        st = Vencord.Webpack.findStore("ApplicationStreamingStore")
+                                        st = window.__scCompat.store("ApplicationStreamingStore")
                                                 ?.getCurrentUserActiveStream?.() || null;
                                     } catch (_) { st = null; }
                                     result = { active: !!st, state: st?.state ?? null };
@@ -1589,31 +1630,31 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // montage ils retombaient à 100 % à chaque réouverture alors
                                     // que le moteur gardait p. ex. 150 % (issue #5). Amplitude
                                     // moteur → perceptuel (voir $set_user_volume).
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     const a = MES?.getLocalVolume ? MES.getLocalVolume(data.id, data.context || "default") : 100;
                                     result = a === 0 ? 0 : (a < 100 ? Math.pow(a / 100, 1 / 2.8) : (20 * Math.log10(a / 100) / 6 + 1)) * 100;
                                     break;
                                 }
                                 case "$get_local_mute": {
                                     // Mute LOCAL (côté client seulement : on ne les entend plus, eux ne le savent pas).
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     result = !!(MES && MES.isLocalMute && MES.isLocalMute(data.id));
                                     break;
                                 }
                                 case "$toggle_local_mute": {
-                                    const mod = Vencord.Webpack.findByProps("toggleLocalMute");
+                                    const mod = window.__scCompat.props("toggleLocalMute");
                                     if (mod && mod.toggleLocalMute) mod.toggleLocalMute(data.id);
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     result = !!(MES && MES.isLocalMute && MES.isLocalMute(data.id)); // nouvel état
                                     break;
                                 }
                                 case "$set_local_mute": {
                                     // SET idempotent (≠ toggle aveugle) : on ne bascule que si l'état
                                     // courant diffère du voulu → un double-clic gamescope ne re-flip plus.
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     const cur = !!(MES && MES.isLocalMute && MES.isLocalMute(data.id));
                                     if (cur !== !!data.muted) {
-                                        const mod = Vencord.Webpack.findByProps("toggleLocalMute");
+                                        const mod = window.__scCompat.props("toggleLocalMute");
                                         if (mod && mod.toggleLocalMute) mod.toggleLocalMute(data.id);
                                     }
                                     result = !!(MES && MES.isLocalMute && MES.isLocalMute(data.id));
@@ -1638,7 +1679,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         const protoStatus = store?.getCurrentValue?.()?.status?.status?.value;
                                         if (protoStatus) { result = { status: protoStatus }; break; }
                                         const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
-                                        const PS = Vencord.Webpack.findStore("PresenceStore");
+                                        const PS = window.__scCompat.store("PresenceStore");
                                         result = { status: PS?.getStatus?.(me.id) || "online" };
                                     } catch (e) { result = { status: "online" }; }
                                     break;
@@ -1651,7 +1692,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const scdiag = (m) => {
                                         try { window.STEAMCORD_WS.send(JSON.stringify({ type: "$diag", m: "[golive] " + m })); } catch (_) {}
                                     };
-                                    const selChStore = Vencord.Webpack.findStore("SelectedChannelStore");
+                                    const selChStore = window.__scCompat.store("SelectedChannelStore");
                                     const golive_channel_id = selChStore?.getVoiceChannelId?.();
                                     if (!golive_channel_id) {
                                         console.warn("[Steamcord] Go Live: pas dans un salon vocal");
@@ -1683,7 +1724,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             } else {
                                                 window.STEAMCORD_GOLIVE_ACTIVE = false;
                                             }
-                                            const ASS = WP.findStore("ApplicationStreamingStore");
+                                            const ASS = window.__scCompat.store("ApplicationStreamingStore");
                                             const s = ASS?.getCurrentUserActiveStream?.();
                                             const stopFn = WP.findByCode('"STREAM_STOP"');
                                             if (s && stopFn) {
@@ -1738,7 +1779,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                 console.log("[Steamcord] Go Live: acquisition déjà en cours, ignoré");
                                                 return;
                                             }
-                                            const eng = WP.findStore("MediaEngineStore")?.getMediaEngine?.();
+                                            const eng = window.__scCompat.store("MediaEngineStore")?.getMediaEngine?.();
                                             if (eng?.getDesktopSource) {
                                                 window.STEAMCORD_GOLIVE_PENDING = true;
                                                 window.STEAMCORD_GOLIVE_STOP_REQUESTED = false;
@@ -1772,7 +1813,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                     // (la capture directe du mode jeu n'en crée pas, cf.
                                                     // webrtc_client.js). Les fermer depuis le portail n'est
                                                     // pas une option : Vesktop ne s'y attend pas.
-                                                    const ASS2 = WP.findStore("ApplicationStreamingStore");
+                                                    const ASS2 = window.__scCompat.store("ApplicationStreamingStore");
                                                     const t0 = Date.now();
                                                     // Windows has no PipeWire portal consumers to drain.
                                                     const TRANSIENT_MS = window.STEAMCORD_HOST === "windows" ? 3500 : 32000;
@@ -1840,7 +1881,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                                         // preuve qu'un stream EXISTE est le store, 2 s plus tard.
                                                         setTimeout(() => {
                                                             try {
-                                                                const st = WP.findStore("ApplicationStreamingStore")?.getCurrentUserActiveStream?.();
+                                                                const st = window.__scCompat.store("ApplicationStreamingStore")?.getCurrentUserActiveStream?.();
                                                                 scdiag(st ? ("stream publié : channel=" + st.channelId + " state=" + st.state)
                                                                           : "AUCUN stream dans le store 2 s après STREAM_START — Discord ne l'a pas créé");
                                                             } catch (e) { scdiag("relecture du store impossible: " + e); }
@@ -2085,7 +2126,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 case "$get_dm_channels": {
                                     const CS = Vencord.Webpack.Common.ChannelStore;
                                     const US = Vencord.Webpack.Common.UserStore;
-                                    const VSS = Vencord.Webpack.findStore?.("VoiceStateStore");
+                                    const VSS = window.__scCompat.store("VoiceStateStore");
                                     const sorted = CS?.getSortedPrivateChannels?.() ?? [];
                                     result = sorted.map(ch => {
                                         // "Active" only if someone is actually connected to the call.
@@ -2097,7 +2138,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             : [];
                                         const recipients = recipientIds.map(id => {
                                             const u = US?.getUser?.(id);
-                                            return { id: String(id), username: u?.username ?? String(id), global_name: u?.globalName ?? null, avatar: u?.avatar ?? null, relationship: Vencord.Webpack.findStore("RelationshipStore")?.getRelationshipType?.(id) ?? 0, ...scPresenceOf(id) };
+                                            return { id: String(id), username: u?.username ?? String(id), global_name: u?.globalName ?? null, avatar: u?.avatar ?? null, relationship: window.__scCompat.store("RelationshipStore")?.getRelationshipType?.(id) ?? 0, ...scPresenceOf(id) };
                                         });
                                         const name = ch.name || (recipients.length === 1 ? recipients[0].username : `Group (${recipients.length + 1})`);
                                         return {
@@ -2108,7 +2149,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                             recipients,
                                             active_call: activeCall,
                                             last_message_id: [window.__sc_dm_activity?.[ch.id],
-                                                Vencord.Webpack.findStore?.("ReadStateStore")?.getLastMessageId?.(ch.id),
+                                                window.__scCompat.store("ReadStateStore")?.getLastMessageId?.(ch.id),
                                                 ch.lastMessageId, ch.last_message_id, ch.id]
                                                 .map(value => String(value || "0")).filter(value => /^\d+$/.test(value))
                                                 .reduce((latest, value) => BigInt(value) > BigInt(latest) ? value : latest, "0"),
@@ -2137,7 +2178,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         mutual_guilds: (b.mutual_guilds || []).map(g => ({ id: String(g.id), name: GS?.getGuild?.(g.id)?.name || "", nick: g.nick || null })).filter(g => g.name),
                                         mutual_friends: (b.mutual_friends || []).slice(0, 12).map(f => ({ id: String(f.id), username: f.username, global_name: f.global_name || null, avatar: f.avatar || null })),
                                         mutual_friends_count: b.mutual_friends_count ?? (b.mutual_friends || []).length,
-                                        relationship: Vencord.Webpack.findStore("RelationshipStore")?.getRelationshipType?.(uid) ?? 0,
+                                        relationship: window.__scCompat.store("RelationshipStore")?.getRelationshipType?.(uid) ?? 0,
                                         ...scPresenceOf(uid),
                                     };
                                     break;
@@ -2211,7 +2252,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     break;
                                 }
                                 case "$get_friends": {
-                                    const RS = Vencord.Webpack.findStore("RelationshipStore");
+                                    const RS = window.__scCompat.store("RelationshipStore");
                                     const US = Vencord.Webpack.Common.UserStore;
                                     const rels = RS?.getMutableRelationships?.() || new Map();
                                     const entries = rels instanceof Map ? [...rels.entries()] : Object.entries(rels);
@@ -2286,7 +2327,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 case "$call_ringing": {
                                     // La page « appel entrant » s'ouvre au clic, parfois bien
                                     // après la sonnerie : elle demande si l'appel sonne encore.
-                                    const call = Vencord.Webpack.findStore("CallStore")?.getCall?.(data.id);
+                                    const call = window.__scCompat.store("CallStore")?.getCall?.(data.id);
                                     const me = Vencord.Webpack.Common.UserStore.getCurrentUser();
                                     result = !!(call && me && Array.isArray(call.ringing) && call.ringing.includes(me.id));
                                     break;
@@ -2303,9 +2344,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 }
                                 case "$get_guilds_vc": {
                                     const GS = Vencord.Webpack.Common?.GuildStore;
-                                    const GCS = Vencord.Webpack.findStore("GuildChannelStore");
-                                    const SGS = Vencord.Webpack.findStore("SortedGuildStore");
-                                    const VSS = Vencord.Webpack.findStore("VoiceStateStore");
+                                    const GCS = window.__scCompat.store("GuildChannelStore");
+                                    const SGS = window.__scCompat.store("SortedGuildStore");
+                                    const VSS = window.__scCompat.store("VoiceStateStore");
                                     const US = Vencord.Webpack.Common?.UserStore;
                                     // #28 « Servers not loading, error python exception ». Vencord
                                     // résout ces stores PARESSEUSEMENT : dans les premières secondes
@@ -2351,7 +2392,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     result = true;
                                     break;
                                 case "$get_voice_states": {
-                                    const vsStore = Vencord.Webpack.findStore("VoiceStateStore");
+                                    const vsStore = window.__scCompat.store("VoiceStateStore");
                                     const states = vsStore?.getVoiceStatesForChannel?.(data.id) || {};
                                     result = Object.values(states).map(vs => ({
                                         userId: vs.userId,
@@ -2366,8 +2407,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // (si Nitro) sons de tous les autres serveurs rejoints — même perk que
                                     // le client officiel ("soundboard everywhere"), détecté ici via
                                     // premiumType plutôt qu'en rejouant leur logique interne de feature-flag.
-                                    const SCS = Vencord.Webpack.findStore("SelectedChannelStore");
-                                    const CS = Vencord.Webpack.Common.ChannelStore || Vencord.Webpack.findStore("ChannelStore");
+                                    const SCS = window.__scCompat.store("SelectedChannelStore");
+                                    const CS = Vencord.Webpack.Common.ChannelStore || window.__scCompat.store("ChannelStore");
                                     const GS = Vencord.Webpack.Common.GuildStore;
                                     const US = Vencord.Webpack.Common.UserStore;
                                     const vcId = SCS?.getVoiceChannelId?.();
@@ -2412,7 +2453,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // Le son ne joue que dans le salon vocal où l'on est effectivement
                                     // connecté (comme le vrai client) ; source_guild_id seulement pour un
                                     // son venant d'un AUTRE serveur que celui du salon courant.
-                                    const SCS2 = Vencord.Webpack.findStore("SelectedChannelStore");
+                                    const SCS2 = window.__scCompat.store("SelectedChannelStore");
                                     const channelId = SCS2?.getVoiceChannelId?.();
                                     if (!channelId) { result = { ok: false, error: "not_in_voice" }; break; }
                                     const body = { sound_id: data.soundId };
@@ -2452,7 +2493,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // EST déjà le bon fichier pour tout le monde sauf pack thématique actif
                                     // (rare) → dégrade proprement sur le son classique plutôt que planter.
                                     try {
-                                        const Snd = Vencord.Webpack.findByProps("WebAudioSound")?.WebAudioSound;
+                                        const Snd = window.__scCompat.props("WebAudioSound")?.WebAudioSound;
                                         if (Snd && data.name) new Snd(data.name, data.name, 1, "default").play();
                                     } catch (_) { }
                                     result = true;
@@ -2474,7 +2515,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // WebAudioSound directement et ne passent PAS par ce test :
                                     // mute/deafen/join/leave continuent de jouer.
                                     try {
-                                        const store = Vencord.Webpack.findStore("NotificationSettingsStore");
+                                        const store = window.__scCompat.store("NotificationSettingsStore");
                                         if (!store) { result = { ok: false, error: "store introuvable" }; break; }
                                         if (!store.__steamcordOrigIsSoundDisabled)
                                             store.__steamcordOrigIsSoundDisabled = store.isSoundDisabled.bind(store);
@@ -2492,8 +2533,8 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 case "$get_text_channels": {
                                     // Serveurs → salons texte (type 0) + annonces (type 5) accessibles.
                                     const GS = Vencord.Webpack.Common.GuildStore;
-                                    const GCS = Vencord.Webpack.findStore("GuildChannelStore");
-                                    const SGS = Vencord.Webpack.findStore("SortedGuildStore");
+                                    const GCS = window.__scCompat.store("GuildChannelStore");
+                                    const SGS = window.__scCompat.store("SortedGuildStore");
                                     const sortedIds = SGS?.getFlattenedGuildIds?.() ?? Object.keys(GS.getGuilds());
                                     const allGuilds = GS.getGuilds();
                                     result = [];
@@ -2698,7 +2739,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 // interface Discord bien plus complète.
                                 case "$events": {
                                     const WP = Vencord.Webpack;
-                                    const guilds = WP.findStore?.("GuildStore")?.getGuilds?.() || {};
+                                    const guilds = window.__scCompat.store("GuildStore")?.getGuilds?.() || {};
                                     const ids = Object.keys(guilds).slice(0, 40);  // borne : 1 requête par serveur
                                     const out = [];
                                     for (const gid of ids) {
@@ -2820,7 +2861,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 // stable), pas par leurs noms minifiés qui changent à
                                 // chaque build de Discord.
                                 case "$accounts_list": {
-                                    const MAS = Vencord.Webpack.findStore("MultiAccountStore");
+                                    const MAS = window.__scCompat.store("MultiAccountStore");
                                     const me = Vencord.Webpack.Common.UserStore?.getCurrentUser?.();
                                     const valid = new Set((MAS?.getValidUsers?.() || []).map(u => String(u.id)));
                                     const accounts = (MAS?.getUsers?.() || []).map(u => ({
@@ -2837,7 +2878,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     const id = String(data.user_id || "");
                                     if (!id) throw new Error("account_unknown");
                                     if (me && String(me.id) === id) { result = { ok: true }; break; }
-                                    const fn = window.__scMultiFn(s => s.includes("Switching account to"));
+                                    const fn = window.__scCompat.action("account_switch");
                                     if (!fn) throw new Error("accounts_unavailable");
                                     await fn(id);
                                     result = { ok: true };
@@ -2849,7 +2890,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // Retirer le compte EN COURS = se déconnecter : c'est le
                                     // bouton de déconnexion, avec sa confirmation, pas celui-ci.
                                     if (!id || (me && String(me.id) === id)) throw new Error("account_is_current");
-                                    const fn = window.__scMultiFn(s => s.includes("MULTI_ACCOUNT_REMOVE_ACCOUNT") && s.length < 400);
+                                    const fn = window.__scCompat.action("account_remove");
                                     if (!fn) throw new Error("accounts_unavailable");
                                     fn(id);
                                     result = { ok: true };
@@ -2859,7 +2900,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // Fenêtre native « Ajouter un compte » (QR inclus). Mesuré le
                                     // 23/11 : elle s'ouvre dans la page, son QR est le même SVG
                                     // ~160 px que la page de login, Échap la referme.
-                                    const fn = window.__scMultiFn(s => s.includes("isMultiAccount:!0") && s.includes("LOGIN_RESET") && s.includes("onBackPressed"));
+                                    const fn = window.__scCompat.action("account_add");
                                     if (!fn) throw new Error("accounts_unavailable");
                                     const me = Vencord.Webpack.Common.UserStore?.getCurrentUser?.();
                                     window.__scAccAdd = { from: me ? String(me.id) : null };
@@ -2907,13 +2948,17 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // purge la session locale → retour page login (QR). Fallback :
                                     // purge localStorage + reload si l'action n'est pas trouvée.
                                     try {
-                                        const auth = Vencord.Webpack.findByProps("logout", "loginToken");
+                                        const auth = window.__scCompat.props("logout", "loginToken");
                                         if (auth && typeof auth.logout === "function") auth.logout();
                                         else { localStorage.removeItem("token"); location.reload(); }
                                     } catch (e) {
                                         try { localStorage.removeItem("token"); location.reload(); } catch (_) {}
                                     }
                                     return;
+                                }
+                                case "$get_integration_diagnostics": {
+                                    result = window.__scCompat.diagnostics();
+                                    break;
                                 }
                                 case "$get_video_diagnostics": {
                                     result = await window.__sc_videoDiagnostics();
@@ -2923,7 +2968,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // Réglages micro Discord (Voix & Vidéo). La réduction de bruit
                                     // est un tri-état : Krisp (noiseCancellation) > Standard
                                     // (noiseSuppression) > Aucune. + écho + gain auto.
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     const nc = !!MES.getNoiseCancellation();
                                     const ns = !!MES.getNoiseSuppression();
                                     result = {
@@ -2943,7 +2988,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // une entrée choisie ailleurs et absente ici, lui
                                     // laisse une capture morte. handleDeviceChange est
                                     // son propre gestionnaire (sondé au CDP le 13/09).
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     const eng = MES.getMediaEngine();
                                     await eng.handleDeviceChange();
                                     await new Promise((r) => setTimeout(r, 300));
@@ -2953,7 +2998,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     if (!devices[id]) {
                                         // L'entrée mémorisée n'existe pas sur cette
                                         // machine : repli sur le périphérique par défaut.
-                                        Vencord.Webpack.findByProps("setInputDevice")?.setInputDevice?.("default");
+                                        window.__scCompat.props("setInputDevice")?.setInputDevice?.("default");
                                         id = "default";
                                         fellBack = true;
                                     } else {
@@ -3003,7 +3048,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                     // Le module d'actions peut manquer selon le bundle (issue #14 :
                                     // no-op silencieux = réglage « qui ne prend pas ») → fallback
                                     // FluxDispatcher, et une ERREUR remonte si rien n'a pris.
-                                    const SET = Vencord.Webpack.findByProps("setNoiseCancellation");
+                                    const SET = window.__scCompat.props("setNoiseCancellation");
                                     if (SET) {
                                         if (data.mode === "krisp") { SET.setNoiseSuppression(false); SET.setNoiseCancellation(true); }
                                         else if (data.mode === "standard") { SET.setNoiseCancellation(false); SET.setNoiseSuppression(true); }
@@ -3014,29 +3059,29 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                         FD.dispatch({ type: "AUDIO_SET_NOISE_SUPPRESSION", enabled: data.mode === "standard" });
                                     }
                                     await new Promise(r => setTimeout(r, 150));
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     const applied = MES.getNoiseCancellation() ? "krisp" : (MES.getNoiseSuppression() ? "standard" : "none");
                                     result = applied === data.mode ? { noise: applied }
                                         : { noise: applied, error: "noise setting did not apply (module not found?)" };
                                     break;
                                 }
                                 case "$set_echo_cancellation": {
-                                    const SET = Vencord.Webpack.findByProps("setEchoCancellation");
+                                    const SET = window.__scCompat.props("setEchoCancellation");
                                     if (SET) SET.setEchoCancellation(!!data.enabled);
                                     else Vencord.Webpack.Common.FluxDispatcher.dispatch({ type: "AUDIO_SET_ECHO_CANCELLATION", enabled: !!data.enabled });
                                     await new Promise(r => setTimeout(r, 150));
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     const ec = !!MES.getEchoCancellation();
                                     result = ec === !!data.enabled ? { echoCancellation: ec }
                                         : { echoCancellation: ec, error: "echo setting did not apply (module not found?)" };
                                     break;
                                 }
                                 case "$set_automatic_gain_control": {
-                                    const SET = Vencord.Webpack.findByProps("setAutomaticGainControl");
+                                    const SET = window.__scCompat.props("setAutomaticGainControl");
                                     if (SET) SET.setAutomaticGainControl(!!data.enabled);
                                     else Vencord.Webpack.Common.FluxDispatcher.dispatch({ type: "AUDIO_SET_AUTOMATIC_GAIN_CONTROL", enabled: !!data.enabled });
                                     await new Promise(r => setTimeout(r, 150));
-                                    const MES = Vencord.Webpack.findStore("MediaEngineStore");
+                                    const MES = window.__scCompat.store("MediaEngineStore");
                                     const agc = !!MES.getAutomaticGainControl();
                                     result = agc === !!data.enabled ? { automaticGainControl: agc }
                                         : { automaticGainControl: agc, error: "AGC setting did not apply (module not found?)" };
@@ -3152,9 +3197,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 ringStopped(e.channelId); // ring stopped / answered
                             } else {
                                 const ch = Vencord.Webpack.Common.ChannelStore.getChannel(e.channelId);
-                                console.log("[Steamcord] incoming ring for me, ch.type=" + ch?.type + " status=" + Vencord.Webpack.findStore("PresenceStore")?.getStatus?.(me.id));
+                                console.log("[Steamcord] incoming ring for me, ch.type=" + ch?.type + " status=" + window.__scCompat.store("PresenceStore")?.getStatus?.(me.id));
                                 const isDM = ch && (ch.type === 1 || ch.type === 3);
-                                const PresenceStore = Vencord.Webpack.findStore("PresenceStore");
+                                const PresenceStore = window.__scCompat.store("PresenceStore");
                                 const status = PresenceStore?.getStatus?.(me.id);
                                 const muted = status === "invisible" || status === "dnd";
                                 if (isDM && !muted && !window.__sc_ringing[e.channelId]) {
@@ -3275,7 +3320,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 setInterval(() => {
                     try {
                         if (!window.STEAMCORD_WS || window.STEAMCORD_WS.readyState !== 1) return;
-                        const selStore = Vencord.Webpack.findStore("SelectedChannelStore");
+                        const selStore = window.__scCompat.store("SelectedChannelStore");
                         const vcid = selStore?.getVoiceChannelId?.() ?? null;
                         if (vcid !== steamcordLastVCId) {
                             steamcordLastVCId = vcid;
@@ -3297,7 +3342,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         // affiche) et on ne ré-émet QUE si le signal mute/deaf a changé →
                         // auto-guérison sous 2 s, zéro spam / re-render inutile.
                         if (vcid) {
-                            const VSS = Vencord.Webpack.findStore("VoiceStateStore");
+                            const VSS = window.__scCompat.store("VoiceStateStore");
                             const states = VSS?.getVoiceStatesForChannel?.(vcid) || {};
                             const vsArr = [];
                             for (const uid in states) {
@@ -3330,7 +3375,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 setInterval(() => {
                     try {
                         if (!window.STEAMCORD_WS || window.STEAMCORD_WS.readyState !== 1) return;
-                        const SCS = Vencord.Webpack.findStore("SelectedChannelStore");
+                        const SCS = window.__scCompat.store("SelectedChannelStore");
                         const vcid = SCS?.getVoiceChannelId?.() ?? null;
                         const now = new Set();
                         if (vcid) {
@@ -3370,7 +3415,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                         steamcordStreamKeys = now;
                         // #92 : qui regarde MON Go Live (pour l'overlay vocal).
                         const myId = Vencord.Webpack.Common.UserStore.getCurrentUser()?.id;
-                        const ASS = Vencord.Webpack.findStore("ApplicationStreamingStore");
+                        const ASS = window.__scCompat.store("ApplicationStreamingStore");
                         const viewers = new Set();
                         if (vcid && myId) {
                             for (const { key, s } of window.__sc_streamsForChannel(vcid)) {
@@ -3394,13 +3439,13 @@ window.Vencord.Plugins.plugins.Steamcord = {
                 let steamcordVoiceShown = false;
                 setInterval(() => {
                     try {
-                        const inVoice = !!Vencord.Webpack.findStore("SelectedChannelStore").getVoiceChannelId();
+                        const inVoice = !!window.__scCompat.store("SelectedChannelStore").getVoiceChannelId();
                         if (inVoice && !steamcordVoiceShown) {
                             steamcordVoiceShown = true;
-                            fetch("http://127.0.0.1:65123/voice_render", { mode: "no-cors" }).catch(() => {});
+                            fetch("http://127.0.0.1:65123/voice_render?k=" + encodeURIComponent(window.STEAMCORD_WS_KEY || ""), { mode: "no-cors" }).catch(() => {});
                         } else if (!inVoice && steamcordVoiceShown) {
                             steamcordVoiceShown = false;
-                            fetch("http://127.0.0.1:65123/voice_hide", { mode: "no-cors" }).catch(() => {});
+                            fetch("http://127.0.0.1:65123/voice_hide?k=" + encodeURIComponent(window.STEAMCORD_WS_KEY || ""), { mode: "no-cors" }).catch(() => {});
                         }
                     } catch (_) {}
                 }, 1000);
@@ -3417,7 +3462,7 @@ window.Vencord.Plugins.plugins.Steamcord = {
                     if (window.location.pathname !== "/login") return;
                     const t = e.target;
                     if (t && t.tagName === "INPUT")
-                        fetch("http://127.0.0.1:65123/openkb", { mode: "no-cors" });
+                        fetch("http://127.0.0.1:65123/openkb?k=" + encodeURIComponent(window.STEAMCORD_WS_KEY || ""), { mode: "no-cors" });
                 } catch (err) { }
             }, true);
         })();
@@ -3478,9 +3523,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
             let cleanupAt = 0;
             setInterval(() => {
                 try {
-                    const me = Vencord.Webpack.findStore?.("MediaEngineStore")?.getMediaEngine?.();
+                    const me = window.__scCompat.store("MediaEngineStore")?.getMediaEngine?.();
                     const engineCtx = me?.audioContext;
-                    const inCall = !!Vencord.Webpack.findStore?.("SelectedChannelStore")?.getVoiceChannelId?.();
+                    const inCall = !!window.__scCompat.store("SelectedChannelStore")?.getVoiceChannelId?.();
                     if (inCall) {
                         wasInCall = true;
                         cleanupAt = 0;
@@ -3540,6 +3585,9 @@ window.Vencord.Plugins.plugins.Steamcord = {
             }
             return null;
         };
+
+        // One startup self-test; reports capabilities only, never account data.
+        console.info("[Steamcord] integration self-test", window.__scCompat.diagnostics());
 
         window.steamcordLoginWithToken = function(token) {
             const loginMod = Vencord.Webpack.find(m => m && typeof m.loginToken === "function");

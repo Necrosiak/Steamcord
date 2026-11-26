@@ -8,10 +8,11 @@ function fixture(env='gamescope') {
   setTimeout:fn=>{timeouts.set(++tick,fn);return tick;},clearTimeout:id=>timeouts.delete(id),
   setInterval:fn=>{intervals.set(++tick,fn);return tick;},clearInterval:id=>intervals.delete(id)};
  vm.createContext(context);vm.runInContext(code,context);
- const flush=async()=>{for(const fn of timeouts.values())fn();timeouts.clear();for(let i=0;i<8;i++)await Promise.resolve();};
- function mount(users){const handlers=new Set();doc={hidden:false,addEventListener:(_,fn)=>handlers.add(fn),removeEventListener:(_,fn)=>handlers.delete(fn)};const owned=doc;context.exports.VideoVisibility({users});const dispose=cleanups.pop();return {hide(){owned.hidden=true;handlers.forEach(fn=>fn());},show(){owned.hidden=false;handlers.forEach(fn=>fn());},dispose};}
+ const flush=async()=>{for(const fn of timeouts.values())fn();timeouts.clear();await new Promise(resolve=>setImmediate(resolve));};
+ function mount(users,inFront=false){const handlers=new Set();doc={hidden:false,addEventListener:(_,fn)=>handlers.add(fn),removeEventListener:(_,fn)=>handlers.delete(fn)};const owned=doc;context.exports.VideoVisibility({users,inFront});const dispose=cleanups.pop();return {hide(){owned.hidden=true;handlers.forEach(fn=>fn());},show(){owned.hidden=false;handlers.forEach(fn=>fn());},dispose};}
  const messages=()=>calls.filter(c=>c[0]==='set_video_visibility').map(c=>JSON.parse(JSON.stringify(c.slice(1))));
- return {api:context.exports,mount,flush,messages,intervals};
+ const foreground=()=>calls.filter(c=>c[0]==='set_video_foreground').map(c=>c[1]);
+ return {api:context.exports,mount,flush,messages,foreground,intervals};
 }
 test('QAM hide does not mute a separate fullscreen surface',async()=>{
  const f=fixture();f.api.startVideoVisibility();await f.flush();
@@ -23,4 +24,14 @@ test('QAM hide does not mute a separate fullscreen surface',async()=>{
 });
 test('desktop leaves native Discord audio outside UI policy',async()=>{
  const f=fixture('desktop');f.api.startVideoVisibility();f.mount(['123']);await f.flush();assert.deepEqual(f.messages().at(-1),[['123'],false]);f.api.stopVideoVisibility();
+});
+
+test('foreground lease lasts until the final visible video view closes',async()=>{
+ const f=fixture();f.api.startVideoVisibility();await f.flush();
+ const q=f.mount(['123'],true),full=f.mount(['456'],true);await f.flush();
+ assert.equal(f.foreground().at(-1),true);
+ q.hide();await f.flush();assert.equal(f.foreground().at(-1),true);
+ full.dispose();await f.flush();assert.equal(f.foreground().at(-1),false);
+ q.show();await f.flush();assert.equal(f.foreground().at(-1),true);
+ f.api.stopVideoVisibility();await f.flush();assert.equal(f.foreground().at(-1),false);
 });

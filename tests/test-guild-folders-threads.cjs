@@ -26,6 +26,8 @@ async function exec(name, nextCase, opts) {
   const body = slice(`case "${name}":`, `case "${nextCase}":`);
   const window = {};
   const Vencord = { Webpack: { Common: { ...(opts.common || {}), RestAPI: { ...((opts.common || {}).RestAPI || {}), get: opts.rest || (async () => { throw Error('no'); }) } }, findStore: (n) => (opts.stores || {})[n] } };
+  window.Vencord=Vencord;
+  vm.runInNewContext(client.slice(client.indexOf('// BEGIN DISCORD COMPATIBILITY REGISTRY'),client.indexOf('// END DISCORD COMPATIBILITY REGISTRY')),{window});
   const ctx = { window, Vencord, data: opts.data || {}, console };
   const code = helpers + `\nvar result;\n(async () => { switch (${JSON.stringify(name)}) { ${body} } return result; })()`;
   // Objets du contexte vm → objets de ce realm, pour deepStrictEqual.

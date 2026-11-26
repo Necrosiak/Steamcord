@@ -40,6 +40,8 @@ async function main() {
   const channels=Array.from({length:40},(_,i)=>({id:String(i+1),type:1,recipients:[],lastMessageId:'9007199254740993'}));
   const window={__sc_dm_activity:{'1':'9007199254740992'}};
   const Vencord={Webpack:{Common:{ChannelStore:{getSortedPrivateChannels:()=>channels},UserStore:{}},findStore:name=>name==='ReadStateStore'?{getLastMessageId:()=> '9007199254740994'}:{}}};
+  window.Vencord=Vencord;
+  vm.runInNewContext(source.slice(source.indexOf('// BEGIN DISCORD COMPATIBILITY REGISTRY'),source.indexOf('// END DISCORD COMPATIBILITY REGISTRY')),{window});
   const result=new Function('window','Vencord','scPresenceOf',`let result;switch('$get_dm_channels'){${body}}return result;`)(window,Vencord,()=>({}));
   assert.equal(result.length,40,'no arbitrary 30-DM cutoff');
   assert.equal(result[0].last_message_id,'9007199254740994','most recent store/dispatch activity wins without float rounding');

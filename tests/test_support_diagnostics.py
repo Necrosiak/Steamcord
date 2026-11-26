@@ -105,10 +105,12 @@ class SupportDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     async def test_video_report_retains_capture_data_and_adds_windows_build(self):
         self.host.WINDOWS, self.host.NAME = True, 'windows'
         video = {'backend': 'windows-native', 'capture': [{'width': 1920}], 'relays': []}
-        request = AsyncMock(return_value=video)
+        request = AsyncMock(side_effect=[video, {'stores': {'UserStore': True}}])
         self.p.evt_handler = types.SimpleNamespace(api=types.SimpleNamespace(_store_access_request=request))
         with patch('platform.win32_ver', return_value=('11', '10.0.26300', '', '')):
             report = await self.p.get_video_diagnostics()
         self.assertEqual(report['video'], video)
         self.assertEqual(report['windows']['version'], '10.0.26300')
-        request.assert_awaited_once_with('$get_video_diagnostics')
+        self.assertEqual(request.await_args_list[0].args, ('$get_video_diagnostics',))
+        self.assertEqual(request.await_args_list[1].args, ('$get_integration_diagnostics',))
+        self.assertEqual(report['integrations'], {'stores': {'UserStore': True}})

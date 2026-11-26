@@ -188,7 +188,7 @@ export function VideoGridModal({ closeModal }: { closeModal?: () => void }) {
       onCancelActionDescription={t("video_exit_fullscreen")}
       bAllowFullSize
     >
-      <VideoVisibility users={liveUsers.map(u => u.id)} />
+      <VideoVisibility inFront users={liveUsers.map(u => u.id)} />
       {/* FULL_BLEED : déborde du cadre ~573px du dialog (cf. Styled.tsx). Les
           ancêtres overflow:hidden font toute la fenêtre, rien n'est clippé
           (vérifié en live au CDP). */}

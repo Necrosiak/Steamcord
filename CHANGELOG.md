@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.48.2 — 2026-11-26
+
+### Fixes
+
+- Adding a Discord account waits for the new account to finish logging in instead of accepting the previous session (#111).
+- Fullscreen video fills the viewport and temporarily hides external POV tiles while a foreground video view is open (#105). QAM and expanded views share the same visibility state.
+- Chat Mix also reacts when an existing game audio stream changes, reducing the delay before its volume is restored to the selected mix (#107).
+- Steam menu integration uses tracked Decky patches, removes duplicate entries and reports unavailable menu integration in settings. Notification hooks and pending callbacks are cleaned up when Steamcord unloads (#119).
+- Steam and Discord compatibility probes are centralized for menu, notification and video-view integration, with additional support diagnostics (#119).
+
+### Security
+
+- Local POV, keyboard, video-view and clip routes require the session key. Clip identifiers are random, clip CORS is restricted to Discord origins without credentials, and overlay state containing the key is written with private permissions (#114).
+- The updater requires the official built release archive and a valid SHA-256 checksum. Missing or malformed checksums no longer allow installation (#114).
+- Build workflows pin action revisions and verify the downloaded Decky CLI checksum (#114).
+
+### Documentation
+
+- Steam Machine is listed alongside Steam Deck in the documentation and plugin metadata (#118).
+
+### Validation and remaining limits
+
+- Local build passed; 98 JavaScript tests passed; 197 Python tests passed and 2 were skipped.
+- Fullscreen layout and Chat Mix were checked in isolated Linux tests. A real Discord-call test and validation of this lot on a Windows machine remain pending. These changes need user testing on both platforms.
+- The broader maintainability work in #119 remains open.
+
 ## 1.48.1 — 2026-11-24
 
 ### New

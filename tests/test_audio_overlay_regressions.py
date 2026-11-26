@@ -17,7 +17,7 @@ def methods(names, source='main.py', klass='Plugin', **namespace):
     cls = next(x for x in tree.body if isinstance(x, ast.ClassDef) and x.name == klass)
     body = [x for x in cls.body if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)) and x.name in names]
     assert len(body) == len(names), names - {x.name for x in body}
-    namespace.update(os=os, time=types.SimpleNamespace(time=lambda: 0), logger=Mock(),
+    namespace.update(os=os, tempfile=tempfile, time=types.SimpleNamespace(time=lambda: 0), logger=Mock(),
                      host=types.SimpleNamespace(WINDOWS=False), linux_only=lambda _: lambda fn: fn)
     exec(compile(ast.fix_missing_locations(ast.Module(body=[ast.ClassDef(
         name=klass, bases=[], keywords=[], body=body, decorator_list=[])], type_ignores=[])), '<backend>', 'exec'), namespace)

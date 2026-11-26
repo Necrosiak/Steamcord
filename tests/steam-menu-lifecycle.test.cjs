@@ -4,14 +4,17 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const source = fs.readFileSync(process.argv[2] || require('node:path').join(__dirname, '../src/steamMenu.tsx'), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }}).outputText;
-function setup(ready = true, gamepadFocus = false) {
+const patcherCtx={exports:{},console:{debug(){}}};
+const patcherSource=fs.readFileSync(require.resolve('@decky/ui').replace(/index\.js$/, 'utils/patcher.js'),'utf8');
+vm.runInNewContext(ts.transpileModule(patcherSource,{compilerOptions:{allowJs:true,module:ts.ModuleKind.CommonJS}}).outputText,patcherCtx);
+function setup(ready = true, gamepadFocus = false, layout = "legacy") {
   const intervals = new Map(); let seq = 0;
   const item = () => null;
   const items = ['Home', 'Library', 'Store', 'Settings'].map(label => ({type:item, key:label, props:{label, route:'/'+label, onFocus(){}, icon:'old'}}));
   if (gamepadFocus) for (const item of items) { item.props.onGamepadFocus = item.props.onFocus; delete item.props.onFocus; }
   const inner = () => items;
-  const element = {type:inner};
-  const original = () => ({props:{children:{props:{children:[element]}}}});
+  let element = {type:inner};
+  const original = () => { if(layout === "fresh") element={type:inner}; return layout === "nested" ? ({props:{children:[null,{props:{children:element}}]}}) : ({props:{children:{props:{children:[element]}}}}); };
   const parent = {type:original, alternate:{type:original}};
   const node = {memoizedProps:{navID:'MainNavMenuContainer'},return:parent};
   let available = ready;
@@ -22,7 +25,7 @@ function setup(ready = true, gamepadFocus = false) {
   };
   const context = {window:{}, document:{getElementById:()=>available?{}:null},localStorage:{getItem:()=>null}, console,
     setInterval:fn=>{intervals.set(++seq,fn);return seq},clearInterval:id=>intervals.delete(id),
-    require:name=>name==='react'?{createElement:(type,p)=>({type, key:p.key,props:p})}:{findInReactTree:find,getReactRoot:()=>node}};
+    require:name=>name==='react'?{createElement:(type,p)=>({type, key:p.key,props:p})}:{afterPatch:patcherCtx.exports.afterPatch,findInReactTree:find,getReactRoot:()=>node}};
   vm.createContext(context);
   function load(code = compiled) {context.exports={};vm.runInContext("(function(){"+code+"})()",context);return context.exports.registerSteamMenu;}
   const render = () => { parent.type(); return element.type(); };
@@ -76,5 +79,23 @@ check('legacy Steamcord entries are removed without touching unrelated menu item
  assert.equal(s.labels().filter(x=>x==='steamcord').length,1);
  assert.equal(s.labels().filter(x=>x==='Other Discord plugin').length,1);
  off();
+});
+check('a changed menu wrapper shape still finds the component',()=>{
+ const s=setup(true,false,'nested');const off=s.load()(entry('steamcord',10));
+ assert.equal(s.labels().filter(x=>x==='steamcord').length,1);off();assert.equal(s.parent.type,s.original);
+});
+check('more than 64 fresh render elements do not exhaust the integration',()=>{
+ const s=setup(true,false,'fresh');const off=s.load()(entry('steamcord',10));
+ for(let i=0;i<200;i++)assert.equal(s.labels().filter(x=>x==='steamcord').length,1);
+ off();assert.equal(s.parent.type,s.original);assert.equal(s.labels().includes('steamcord'),false);
+});
+check('old sibling bundles keep the new owner instead of reinstalling old patches',()=>{
+ const legacySource=fs.readFileSync(require('node:path').join(__dirname,'fixtures/steam-menu-v3.tsx'),'utf8');
+ const legacy=ts.transpileModule(legacySource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const s=setup();const old=s.load(legacy);const oldOff=old(entry('skullkey',20));
+ const current=s.load();const off=current(entry('steamcord',10));const owner=s.parent.type;
+ const boneOff=old(entry('bonecast',30));assert.equal(s.parent.type,owner);
+ assert.deepEqual(s.labels(),['Home','Library','steamcord','skullkey','bonecast','Store','Settings']);
+ oldOff();off();boneOff();assert.equal(s.parent.type,s.original);
 });
 console.log(checks+' menu lifecycle checks passed');

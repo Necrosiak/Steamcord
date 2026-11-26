@@ -1,3 +1,4 @@
+import { notificationStore, setSyntheticPersona, guardNotificationSound, disposeNotificationSoundGuard } from "./steamCompat";
 // Steamcord notifications only. Native mode uses Decky's public toaster API;
 // chat-style mode retains Steamcord's persona, click, sound and streamer behavior.
 // Never replace the shared Decky toaster or remove other plugins' notifications.
@@ -46,16 +47,19 @@ export function streamerActive(): boolean {
 const HELD_REPLAY_MAX = 3;
 const held: Array<() => void> = [];
 let streamerListening = false;
+let streamerListener: (() => void) | null = null;
+let notificationsDisposed = false;
 function holdForStream(show: () => void) {
   held.push(show);
   if (streamerListening) return;
   streamerListening = true;
-  window.addEventListener("necro-streamer-change", () => {
+  streamerListener = () => {
     if (streamerActive() || held.length === 0) return;
     const pending = held.splice(0);
     if (pending.length <= HELD_REPLAY_MAX) pending.forEach((fn) => { try { fn(); } catch {} });
     else chatStyleNotification({ title: "Steamcord", body: t("streamer_summary", { n: pending.length }), sender: "Steamcord", dm: true });
-  });
+  };
+  window.addEventListener("necro-streamer-change", streamerListener);
 }
 
 // ── Son des notifications de message (retour user 20/09) ───────────────────
@@ -83,38 +87,18 @@ const steamToastMuted = () => notifSound === "discord" || notifSound === "none";
 // sur coup doivent taire DEUX sons.
 const SILENT_TOAST_WINDOW_MS = 8000;
 const silentToasts = new Map<string, { n: number; exp: number }>();
-let patchedToastSound: ((n: any) => void) | null = null;
-
 function patchToastSound() {
-  try {
-    const ns = (window as any).NotificationStore;
-    // SteamUI peut recréer le store ou rétablir sa méthode après notre init.
-    // Le marqueur booléen restait alors vrai et le son de chat revenait.
-    if (ns?.PlayNotificationSound === patchedToastSound) return;
-    const orig = ns && Object.getPrototypeOf(ns)?.PlayNotificationSound;
-    if (typeof orig !== "function") return;
-    const patched = function (this: any, n: any) {
-      try {
-        const d = n?.data;
-        const raw = d ? (typeof d.steamid_sender === "function" ? d.steamid_sender()
-          : d.steamid_sender ?? (typeof d.steamid === "function" ? d.steamid() : d.steamid)) : null;
-        const sid = raw == null ? "" : String(raw);
-        const e = sid ? silentToasts.get(sid) : undefined;
-        if (e) {
-          if (e.exp > Date.now()) {
-            if (--e.n <= 0) silentToasts.delete(sid);
-            return; // la nôtre : c'est Discord qui sonne
-          }
-          silentToasts.delete(sid); // périmée : le son revient
-        }
-      } catch {}
-      return orig.call(this, n);
-    };
-    ns.PlayNotificationSound = patched;
-    patchedToastSound = patched;
-  } catch (e) {
-    console.error("[Steamcord] patch du son des toasts échoué", e);
-  }
+  guardNotificationSound((n: any) => {
+    const data = n?.data;
+    const raw = data ? (typeof data.steamid_sender === "function" ? data.steamid_sender()
+      : data.steamid_sender ?? (typeof data.steamid === "function" ? data.steamid() : data.steamid)) : null;
+    const sid = raw == null ? "" : String(raw);
+    const entry = sid ? silentToasts.get(sid) : undefined;
+    if (!entry) return false;
+    if (entry.exp <= Date.now()) { silentToasts.delete(sid); return false; }
+    if (--entry.n <= 0) silentToasts.delete(sid);
+    return true;
+  });
 }
 
 function markToastSilent(sid: string) {
@@ -243,22 +227,10 @@ export function uninstallClickHook() {
 // (getters de prototype → defineProperty OK, vérifié en live).
 const fakePersonaNames = new Map<number, { sid64: string; name: string }>();
 let personaGuard: ReturnType<typeof setInterval> | null = null;
-
-function getFakePersona(sid64: string, accountid: number) {
-  const fs = (window as any).friendStore;
-  if (!fs?.GetFriendState) return null;
-  return fs.GetFriendState({
-    GetAccountID: () => accountid,
-    ConvertTo64BitString: () => sid64,
-    BIsValid: () => true,
-  })?.m_persona ?? null;
-}
+const personaTimers = new Set<ReturnType<typeof setTimeout>>();
 
 function assertPersonaName(sid64: string, accountid: number, name: string) {
-  try {
-    const p = getFakePersona(sid64, accountid);
-    if (p && p.m_strPlayerName !== name) p.m_strPlayerName = name;
-  } catch {}
+  if (!notificationsDisposed) setSyntheticPersona(sid64, accountid, name);
 }
 
 function ensurePersonaGuard() {
@@ -270,19 +242,15 @@ function ensurePersonaGuard() {
 
 function primeSenderPersona(sid64: string, accountid: number, name: string, avatar: string) {
   try {
-    const p = getFakePersona(sid64, accountid);
-    if (!p) return; // pas de store → avatar/pseudo par défaut, la notif part quand même
-    try { p.m_strPlayerName = name; } catch {}
-    for (const k of ["avatar_url_small", "avatar_url_medium", "avatar_url_full"]) {
-      try {
-        Object.defineProperty(p, k, { get: () => avatar, configurable: true });
-      } catch {}
-    }
+    if (!setSyntheticPersona(sid64, accountid, name, avatar)) return;
     fakePersonaNames.set(accountid, { sid64, name });
     ensurePersonaGuard();
     // Le refresh Steam qui efface le nom arrive typiquement <1 s après la
     // création du persona → ré-affirmations rapprochées pendant le toast.
-    for (const ms of [300, 800, 1500]) setTimeout(() => assertPersonaName(sid64, accountid, name), ms);
+    for (const ms of [300, 800, 1500]) {
+      const timer = setTimeout(() => { personaTimers.delete(timer); assertPersonaName(sid64, accountid, name); }, ms);
+      personaTimers.add(timer);
+    }
   } catch {}
 }
 
@@ -306,14 +274,16 @@ function primeSenderPersona(sid64: string, accountid: number, name: string, avat
 // par démarrage. Perdre une notif est pire qu'en voir une en double.
 const TOAST_RENDER_SIGNAL_MS = 900;
 let firstToastVerified = false;
+let toastRenderTimer: ReturnType<typeof setInterval> | null = null;
 
 function verifyFirstToastRendered(resend: () => void) {
   if (firstToastVerified) return;
   firstToastVerified = true;
-  const ns = (window as any).NotificationStore;
+  const ns = notificationStore();
   if (typeof ns?.BAnyContextRenderingToasts !== "function") return;
   const t0 = Date.now();
   const iv = setInterval(() => {
+    if (notificationsDisposed) { clearInterval(iv); toastRenderTimer = null; return; }
     let rendered = false;
     try { rendered = !!ns.BAnyContextRenderingToasts(); } catch {}
     if (rendered) { clearInterval(iv); return; }
@@ -323,6 +293,7 @@ function verifyFirstToastRendered(resend: () => void) {
       try { resend(); } catch (e) { console.error("[Steamcord] re-emission toast failed", e); }
     }
   }, 60);
+  toastRenderTimer = iv;
 }
 
 type ChatNotif = {
@@ -380,6 +351,7 @@ function chatStyleNotification(n: ChatNotif) {
 // Notification Steamcord : chat-style persona en mode sûr, toast Decky natif si
 // le user a activé le mode natif.
 export function notify(payload: ChatNotif) {
+  if (notificationsDisposed) return;
   if (streamerActive()) { holdForStream(() => notify(payload)); return; }
   try {
     // ⚠️ Mode « notifications natives » (opt-in) : le toast part par le toaster
@@ -391,4 +363,20 @@ export function notify(payload: ChatNotif) {
     }
   } catch {}
   chatStyleNotification(payload);
+}
+
+export function disposeNotifications() {
+  notificationsDisposed = true;
+  held.length = 0;
+  if (streamerListener) window.removeEventListener?.("necro-streamer-change", streamerListener);
+  streamerListener = null; streamerListening = false;
+  for (const timer of personaTimers) clearTimeout(timer);
+  personaTimers.clear();
+  if (toastRenderTimer) clearInterval(toastRenderTimer);
+  toastRenderTimer = null;
+  disposeNotificationSoundGuard();
+  silentToasts.clear();
+  fakePersonaNames.clear();
+  if (personaGuard) clearInterval(personaGuard);
+  personaGuard = null;
 }

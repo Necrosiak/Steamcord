@@ -14,6 +14,7 @@ import { Focusable, ModalRoot, showModal } from "@decky/ui";
 import { call } from "@decky/api";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
+import { loginCompleted, LoginContext } from "../loginCompletion";
 import { ACCENT, FULL_BLEED, chromeHideMarkerRef } from "./Styled";
 
 declare const SteamClient: any;
@@ -37,7 +38,7 @@ const ACCEL_TICKS = 10;
 const FRAME_MS = 900;        // cadence normale du miroir
 const FRAME_MS_BURST = 350;  // juste après un clic : le défi bouge
 
-function CaptchaSolverModal({ closeModal }: { closeModal?: () => void }) {
+function CaptchaSolverModal({ closeModal, context }: { closeModal?: () => void; context?: LoginContext }) {
   const [frame, setFrame] = useState<Frame | null>(null);
   const [error, setError] = useState(false);
   const [clicking, setClicking] = useState(false);
@@ -77,7 +78,7 @@ function CaptchaSolverModal({ closeModal }: { closeModal?: () => void }) {
         }
         // Connecté = CAPTCHA franchi : on referme tout seul.
         const st: any = await call("get_state");
-        if (alive && st?.logged_in) closeModal?.();
+        if (alive && loginCompleted(st, context)) closeModal?.();
       } catch {
         if (alive) setError(true);
       }
@@ -260,6 +261,6 @@ function CaptchaSolverModal({ closeModal }: { closeModal?: () => void }) {
   );
 }
 
-export function openCaptchaSolver() {
-  showModal(<CaptchaSolverModal />);
+export function openCaptchaSolver(context?: LoginContext) {
+  showModal(<CaptchaSolverModal context={context} />);
 }

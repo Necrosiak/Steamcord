@@ -120,16 +120,16 @@ def _fetch_latest_blocking() -> dict:
         rel = json.loads(resp.read().decode("utf-8"))
 
     tag = rel.get("tag_name") or rel.get("name") or ""
-    # Prefer a .zip asset (the one produced by `decky plugin build`); fall back
-    # to the source zipball if no built asset is attached.
+    # Only install the built archive; a source zipball has neither the built
+    # frontend nor the release checksum contract.
     download_url = ""
     for asset in rel.get("assets", []):
         name = (asset.get("name") or "").lower()
-        if name.endswith(".zip"):
+        if name == "steamcord.zip":
             download_url = asset.get("browser_download_url", "")
             break
     if not download_url:
-        download_url = rel.get("zipball_url", "")
+        raise ValueError("release has no built Steamcord.zip asset")
     return {"tag": tag, "url": download_url, "notes": rel.get("body", "") or ""}
 
 
@@ -260,24 +260,32 @@ def _rollback(saved, created) -> None:
     logger.warning(f"[updater] update rolled back ({len(saved)} restored, {len(created)} removed)")
 
 
+def _require_release_asset(url: str) -> None:
+    from urllib.parse import urlsplit
+    parsed = urlsplit(url)
+    if (parsed.scheme != "https" or parsed.netloc != "github.com"
+            or not parsed.path.startswith("/Necrosiak/Steamcord/releases/download/")
+            or not parsed.path.endswith("/Steamcord.zip") or parsed.query or parsed.fragment):
+        raise ValueError("update must be an official Steamcord release asset")
+
+
 def _verify_checksum(url: str, zip_path: Path) -> None:
     """Compare the archive with the `.sha256` published next to it (#114).
 
-    Releases from 1.48.1 on carry one; an older release without it is
-    installed as before. A checksum that exists but does not match stops the
-    update before anything is extracted."""
+    Refuse source archives, missing/malformed checksums and mismatches before
+    any installed file is replaced."""
     import hashlib
-    if "/releases/download/" not in url:
-        return
+    _require_release_asset(url)
     req = urllib.request.Request(url + ".sha256", headers={"User-Agent": _USER_AGENT})
     try:
         with _urlopen(req, timeout=15) as resp:
             expected = resp.read(512).decode("ascii", "replace").split()[0].lower()
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            logger.info("[updater] no checksum published for this release")
-            return
+            raise ValueError("release checksum is missing; update refused") from e
         raise
+    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+        raise ValueError("release checksum is malformed")
     h = hashlib.sha256()
     with open(zip_path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -288,6 +296,7 @@ def _verify_checksum(url: str, zip_path: Path) -> None:
 
 
 def _apply_blocking(url: str) -> None:
+    _require_release_asset(url)
     plugin_dir = Path(DECKY_PLUGIN_DIR)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)

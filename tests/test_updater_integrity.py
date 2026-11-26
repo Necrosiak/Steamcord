@@ -64,14 +64,38 @@ class UpdaterIntegrityTests(unittest.TestCase):
              mock.patch.object(updater, "_restorecon_best_effort", lambda p: None):
             updater._apply_blocking(URL)
 
+    def test_release_without_built_asset_does_not_fall_back_to_source(self):
+        import json
+        metadata = {"tag_name": "v9.9.9", "assets": [],
+                    "zipball_url": "https://api.github.com/repos/Necrosiak/Steamcord/zipball/v9.9.9"}
+        with mock.patch.object(updater, "_urlopen", return_value=FakeResp(json.dumps(metadata).encode())):
+            with self.assertRaisesRegex(ValueError, "no built Steamcord.zip"):
+                updater._fetch_latest_blocking()
+
+    def test_invalid_asset_is_refused_before_any_download(self):
+        with mock.patch.object(updater, "_urlopen") as fetch:
+            with self.assertRaises(ValueError):
+                updater._apply_blocking("https://example.invalid/Steamcord.zip")
+            fetch.assert_not_called()
+
     def test_matching_checksum_installs(self):
         z = make_zip({"main.py": "new main", "a.py": "new a"})
         self.apply(z, hashlib.sha256(z).hexdigest())
         self.assertEqual((self.plugin / "main.py").read_text(), "new main")
 
-    def test_missing_checksum_still_installs(self):
-        self.apply(make_zip({"main.py": "new main"}), None)
-        self.assertEqual((self.plugin / "main.py").read_text(), "new main")
+    def test_missing_checksum_refuses_without_changing_files(self):
+        with self.assertRaisesRegex(ValueError, "checksum is missing"):
+            self.apply(make_zip({"main.py": "new main"}), None)
+        self.assertEqual((self.plugin / "main.py").read_text(), "old main")
+
+    def test_source_archive_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "official Steamcord release"):
+            updater._verify_checksum("https://api.github.com/repos/Necrosiak/Steamcord/zipball/v9.9.9", Path("not-read"))
+
+    def test_malformed_checksum_changes_nothing(self):
+        with self.assertRaises(ValueError):
+            self.apply(make_zip({"main.py": "new main"}), "bad-checksum")
+        self.assertEqual((self.plugin / "main.py").read_text(), "old main")
 
     def test_wrong_checksum_changes_nothing(self):
         with self.assertRaises(ValueError):

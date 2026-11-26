@@ -22,6 +22,7 @@ const context = {
   require(name) {
     if (name === '@decky/api') return { toaster };
     if (name === '@decky/ui') return { findModuleExport() {}, Navigation: {} };
+    if (name === './steamCompat') return require('./helpers/steam-compat.cjs')(context.window);
     if (name === './i18n') return { t: (key) => key };
     throw new Error(`Unexpected import: ${name}`);
   },
@@ -83,3 +84,14 @@ const entry = fs.readFileSync('src/index.tsx', 'utf8');
 assert.doesNotMatch(entry, /delete\s+\w+\.prototype\.(?:render|isReactComponent|updater)/);
 assert.doesNotMatch(entry, /Object\.defineProperty\([^;]*(?:createElement|['"]jsx['"]|['"]jsxs['"])/);
 console.log("Steamcord leaves Decky's React renderer instrumentation intact");
+
+// An old module must not replay its held notifications after unloading.
+api.setStreamerMode('always');
+api.notify({title:'held before unload',body:'private'});
+const beforeDispose=chat.length+calls.length;
+api.disposeNotifications();
+api.setStreamerMode('off');
+api.notify({title:'late callback',body:'ignored'});
+assert.equal(chat.length+calls.length,beforeDispose);
+checkIsolation();
+console.log('Unloaded notification module does not replay held or late callbacks');

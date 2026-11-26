@@ -14,6 +14,7 @@ class NotificationStore {
 }
 const notificationStore = new NotificationStore();
 const silentContext = { window: { NotificationStore: notificationStore }, console };
+Object.assign(silentContext,require('./helpers/steam-compat.cjs')(silentContext.window));
 const silentJs = ts.transpileModule(source.slice(silentStart, silentEnd) + "\nthis.mark = markToastSilent;", {
   compilerOptions: { target: ts.ScriptTarget.ES2020 },
 }).outputText;

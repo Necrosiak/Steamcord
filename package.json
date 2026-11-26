@@ -1,8 +1,8 @@
 {
   "name": "steamcord",
-  "version": "1.48.1",
+  "version": "1.48.2",
   "type": "module",
-  "description": "Discord in Steam Gaming Mode — voice chat, DMs, QR login",
+  "description": "Discord in Steam Gaming Mode \u2014 voice chat, DMs, QR login",
   "scripts": {
     "build": "shx rm -rf dist && rollup -c",
     "build_norm": "rollup -c",
@@ -18,7 +18,8 @@
     "plugin",
     "plugin-template",
     "steam-deck",
-    "deck"
+    "deck",
+    "steam-machine"
   ],
   "author": "Necrosiak",
   "license": "BSD-3-Clause",

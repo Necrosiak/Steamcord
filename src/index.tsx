@@ -1,3 +1,5 @@
+import { readSteamPersona, getMainMenuWindow, resizeDiscordView, steamIntegrationStatus } from "./steamCompat";
+import { steamMenuStatus } from "./steamMenu";
 import { HostFeature, initHost, useHost, supports } from "./host";
 import {
   definePlugin,
@@ -42,8 +44,8 @@ class ContentErrorBoundary extends Component<{ children: any }, { hasError: bool
 }
 
 import { menuEntryEnabled, patchMenu, setMenuEntryEnabled } from "./patches/menuPatch";
-import { notify, installClickHook, uninstallClickHook, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
-import { ACCENT, DANGER, ONLINE, focusHalo, setVeilAlpha } from "./components/Styled";
+import { notify, disposeNotifications, installClickHook, uninstallClickHook, getNativeToasts, setNativeToasts, getStreamerMode, setStreamerMode, setLiveSource, StreamerMode, NotifSound, getNotifSound, setNotifSoundCache } from "./notify";
+import { ACCENT, DANGER, ONLINE, Notice, focusHalo, setVeilAlpha } from "./components/Styled";
 
 // Même contournement que dans VoiceChatViews : les types publiés par @decky/ui
 // pour SliderField ne décrivent pas `bottomSeparator`.
@@ -461,13 +463,7 @@ const setAutoSync = (v: boolean) => {
 
 // Lit le persona Steam local effectif (EPersonaState). Voir readSteam d'origine :
 // le vrai store est m_FriendsUIFriendStore (les anciens chemins renvoyaient undefined).
-const readSteamPersona = (): number | null => {
-  try {
-    const uifs: any = (window as any).friendStore?.m_FriendsUIFriendStore;
-    const st = uifs?.m_eUserPersonaState ?? uifs?.GetPersonaStatePreference?.();
-    return typeof st === "number" ? st : null;
-  } catch { return null; }
-};
+
 
 let currentDiscordStatus = "online";
 const statusListeners = new Set<(s: string) => void>();
@@ -1026,7 +1022,10 @@ const DiagnosticsSetting = ({ action, label, description }: { action: string; la
   return <>
     <SR><DialogButton disabled={busy} onClick={async () => {
       setBusy(true);
-      try { setReport(JSON.stringify(await call(action), null, 2)); }
+      try {
+        const backend: any = await call(action);
+        setReport(JSON.stringify({ ...backend, steam_integrations: steamIntegrationStatus(), steam_menu: steamMenuStatus() }, null, 2));
+      }
       catch (e) { setReport(errText(e)); }
       finally { setBusy(false); }
     }}>{label}</DialogButton></SR>
@@ -1374,12 +1373,7 @@ const ExpandedCallSlot = () => {
 
 // Window of Steam's main menu (Steam button / Alt+Tab), found through its
 // gamepad navigation tree: same technique as useQuickAccessVisible for the QAM.
-const getMainMenuWindow = (): Window | null => {
-  const nav: any = (window as any).FocusNavController;
-  const ctx = nav?.m_ActiveContext || nav?.m_LastActiveContext;
-  const tree = ctx?.m_rgGamepadNavigationTrees?.find((t: any) => (t.m_ID || t.id) === "MainNavMenuContainer");
-  return (tree?.Root?.Element || tree?.m_Root?.m_element)?.ownerDocument?.defaultView ?? null;
-};
+
 
 // Opens the expanded view from anywhere (QAM panel, Steam main menu).
 // Not exported: the rollup entry (exports: "default") only allows the default export.
@@ -2322,7 +2316,12 @@ const SETTINGS_GAPS = `.sc-settings > *${CTL} + *${CTL},
 // le panneau d'accès rapide reste disponible quand elle est retirée.
 const MenuEntryToggle = () => {
   const [on, setOn] = useState(menuEntryEnabled);
-  return (
+  const [integration, setIntegration] = useState(steamMenuStatus);
+  useEffect(() => {
+    const timer = setInterval(() => setIntegration(steamMenuStatus()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <>
     <SR>
       <ToggleField
         label={t("menu_entry")}
@@ -2332,7 +2331,8 @@ const MenuEntryToggle = () => {
         bottomSeparator="none"
       />
     </SR>
-  );
+    {on && integration === "unavailable" && <SR><Notice tone="warn">{t("menu_unavailable")}</Notice></SR>}
+  </>;
 };
 
 // Réglages rangés par catégorie (demande utilisateur du 22/11 : une seule
@@ -2707,14 +2707,7 @@ export default definePlugin(() => {
           lastDisplayIsExternal = settings.bDisplayIsExternal;
           try {
             const bounds: any = await call("get_screen_bounds");
-            window.DISCORD_TAB.HEIGHT = bounds.height;
-            window.DISCORD_TAB.WIDTH = bounds.width;
-            window.DISCORD_TAB.m_browserView.SetBounds(
-              0,
-              0,
-              bounds.width,
-              bounds.height
-            );
+            resizeDiscordView(bounds.width, bounds.height);
           } catch {}
         }
       }
@@ -2731,6 +2724,7 @@ export default definePlugin(() => {
     content: <Suspense fallback={<div style={{ padding: 8 }}>{t("loading")}</div>}><ContentErrorBoundary><Content /></ContentErrorBoundary></Suspense>,
     icon: <FaDiscord />,
     onDismount() {
+      disposeNotifications();
       hostActive = false;
       stopVideoVisibility();
       unpatchMenu();

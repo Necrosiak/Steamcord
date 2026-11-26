@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import { Notice, RowBtn, DANGER } from "./Styled";
 import { openCaptchaSolver } from "./CaptchaSolver";
+import { useSteamcordState } from "../hooks/useSteamcordState";
 
 const SR = PanelSectionRow || ((p: any) => <div>{p.children}</div>);
 const ModalRootAny = ModalRoot as any;
@@ -21,6 +22,8 @@ const avatarOf = (a: Account) =>
   a.avatar ? `https://cdn.discordapp.com/avatars/${a.id}/${a.avatar}.webp?size=64` : "https://cdn.discordapp.com/embed/avatars/0.png";
 
 const AddAccountModal = ({ closeModal, onDone }: { closeModal?: () => void; onDone: () => void }) => {
+  const state = useSteamcordState();
+  const fromUserId = useRef(String(state?.me?.id || ""));
   const [qr, setQr] = useState<string | null>(null);
   const [captcha, setCaptcha] = useState(false);
   const [error, setError] = useState(false);
@@ -73,7 +76,7 @@ const AddAccountModal = ({ closeModal, onDone }: { closeModal?: () => void; onDo
         {captcha && (
           <div style={{ marginTop: 10 }}>
             <Notice tone="warn">{t("captcha_needed")}</Notice>
-            <RowBtn onClick={() => openCaptchaSolver()}>{t("captcha_open")}</RowBtn>
+            <RowBtn onClick={() => openCaptchaSolver({ kind: "account-add", fromUserId: fromUserId.current })}>{t("captcha_open")}</RowBtn>
           </div>
         )}
       </div>

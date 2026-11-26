@@ -14,14 +14,19 @@ permissions:
 
 jobs:
   windows-host:
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.14'
       - name: Test Windows runtime boundaries
         run: python -m unittest discover -s tests -p "test_windows*.py" -v
+      - name: Test local endpoint authentication and update integrity
+        run: |
+          python -m unittest discover -s tests -p test_local_routes_auth.py -v
+          python -m unittest discover -s tests -p test_steam_view.py -v
+          python -m unittest discover -s tests -p test_updater_integrity.py -v
       - name: Test cloud game detection boundaries
         run: python -m unittest discover -s tests -p test_cloud_game.py -v
       - name: Test support diagnostics and overlay boundaries
@@ -34,24 +39,24 @@ jobs:
 
   release-plugin:
     needs: windows-host
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Setup latest Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.js 22.21.1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: latest
+          node-version: '22.21.1'
 
       - name: Setup PNPM@9
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: "9.4.0"
 
       - name: Build frontend from source
         run: |
-          pnpm i
+          pnpm i --frozen-lockfile
           pnpm run build
 
       - name: Test menu and expanded view lifecycle
@@ -62,6 +67,7 @@ jobs:
           node --test tests/test-err-code.cjs
           node --test tests/test-host-capabilities.cjs tests/test-desktop-capture.cjs
           node --test tests/test-stream-visibility.cjs tests/test-video-visibility-leases.cjs
+          node --test tests/test-discord-compat.cjs tests/test-steam-compat.cjs tests/test-steam-view.cjs tests/test-login-completion.cjs tests/test-video-fullscreen-layout.cjs
           python3 -m unittest discover -s tests -p test_video_visibility.py -v
 
       - name: Test private conversation ordering and navigation regressions
@@ -76,6 +82,10 @@ jobs:
           python3 -m unittest discover -s tests -p test_overlay_environment.py -v
           python3 -m unittest discover -s tests -p test_audio_overlay_regressions.py -v
           python3 -m unittest discover -s tests -p test_local_security.py -v
+          python3 -m unittest discover -s tests -p test_local_routes_auth.py -v
+          python3 -m unittest discover -s tests -p test_steam_view.py -v
+          python3 -m unittest discover -s tests -p test_chatmix_events.py -v
+          python3 -m unittest discover -s tests -p test_video_foreground.py -v
           python3 -m unittest discover -s tests -p test_updater_integrity.py -v
           node --test tests/test-video-overlay-regressions.cjs
           python3 -m unittest discover -s tests -p test_cloud_game.py -v
@@ -100,7 +110,8 @@ jobs:
       - name: Download Decky Plugin CLI
         run: |
           mkdir $(pwd)/cli
-          curl -L -o $(pwd)/cli/decky "https://github.com/SteamDeckHomebrew/cli/releases/latest/download/decky-linux-x86_64"
+          curl --fail --location --proto '=https' --proto-redir '=https' -o "$(pwd)/cli/decky" "https://github.com/SteamDeckHomebrew/cli/releases/download/0.0.8/decky-linux-x86_64"
+          echo "6777e356508c1ce887f8e61b0fa4954bb48b32e6d97341eef68ea4e0d6ead9a0  cli/decky" | sha256sum --check
           chmod +x $(pwd)/cli/decky
 
       - name: Build plugin ZIP
@@ -123,7 +134,7 @@ jobs:
           cat ${{ github.event.repository.name }}.zip.sha256
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: out/${{ github.event.repository.name }}.zip
 
@@ -145,7 +156,7 @@ jobs:
           PYTHON
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             out/${{ github.event.repository.name }}.zip

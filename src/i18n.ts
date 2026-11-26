@@ -34,6 +34,7 @@ let _locale: Locale | null = null;
 
 const T: Record<Locale, Dict> = {
   en: {
+    menu_unavailable: "The Steam menu integration is unavailable on this Steam build. Open Steamcord from Decky in the Quick Access Menu.",
     overlay_pov_source: "Overlay video source",
     overlay_pov_auto: "Screen first, otherwise camera",
     overlay_pov_camera: "Camera",
@@ -407,6 +408,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is installed. Close and reopen the Quick Access menu to load it.",
   },
   fr: {
+    menu_unavailable: "L’intégration au menu Steam est indisponible sur cette version de Steam. Ouvre Steamcord depuis Decky dans le menu d’accès rapide.",
     overlay_pov_source: "Source vidéo de l’overlay",
     overlay_pov_auto: "Partage en priorité, sinon caméra",
     overlay_pov_camera: "Caméra",
@@ -780,6 +782,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} est installé. Ferme puis rouvre le menu d'accès rapide pour le charger.",
   },
   de: {
+    menu_unavailable: "Die Steam-Menüintegration ist in dieser Steam-Version nicht verfügbar. Öffne Steamcord über Decky im Schnellzugriffsmenü.",
     overlay_pov_source: "Videoquelle des Overlays",
     overlay_pov_auto: "Bildschirm bevorzugen, sonst Kamera",
     overlay_pov_camera: "Kamera",
@@ -1147,6 +1150,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} ist installiert. Schließe das Schnellzugriffsmenü und öffne es erneut, um es zu laden.",
   },
   es: {
+    menu_unavailable: "La integración con el menú de Steam no está disponible en esta versión. Abre Steamcord desde Decky en el menú de acceso rápido.",
     overlay_pov_source: "Fuente de vídeo de la superposición",
     overlay_pov_auto: "Primero pantalla, si no cámara",
     overlay_pov_camera: "Cámara",
@@ -1514,6 +1518,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} está instalado. Cierra y vuelve a abrir el menú de acceso rápido para cargarlo.",
   },
   it: {
+    menu_unavailable: "L’integrazione nel menu Steam non è disponibile in questa versione. Apri Steamcord da Decky nel menu di accesso rapido.",
     overlay_pov_source: "Sorgente video della sovrimpressione",
     overlay_pov_auto: "Prima schermo, altrimenti fotocamera",
     overlay_pov_camera: "Fotocamera",
@@ -1881,6 +1886,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} è installato. Chiudi e riapri il menu di accesso rapido per caricarlo.",
   },
   pt: {
+    menu_unavailable: "A integração no menu Steam não está disponível nesta versão. Abre o Steamcord pelo Decky no menu de acesso rápido.",
     overlay_pov_source: "Fonte de vídeo da sobreposição",
     overlay_pov_auto: "Primeiro ecrã, senão câmara",
     overlay_pov_camera: "Câmara",
@@ -2248,6 +2254,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "O Steamcord {v} está instalado. Fecha e volta a abrir o menu de acesso rápido para o carregar.",
   },
   nl: {
+    menu_unavailable: "De Steam-menu-integratie is niet beschikbaar in deze Steam-versie. Open Steamcord via Decky in het snelmenu.",
     overlay_pov_source: "Videobron van de overlay",
     overlay_pov_auto: "Eerst scherm, anders camera",
     overlay_pov_camera: "Camera",
@@ -2615,6 +2622,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} is geïnstalleerd. Sluit het snelmenu en open het opnieuw om het te laden.",
   },
   pl: {
+    menu_unavailable: "Integracja z menu Steam jest niedostępna w tej wersji Steam. Otwórz Steamcord przez Decky w menu szybkiego dostępu.",
     overlay_pov_source: "Źródło wideo nakładki",
     overlay_pov_auto: "Najpierw ekran, w przeciwnym razie kamera",
     overlay_pov_camera: "Kamera",
@@ -2982,6 +2990,7 @@ const T: Record<Locale, Dict> = {
     update_done_note: "Steamcord {v} jest zainstalowany. Zamknij i otwórz ponownie menu szybkiego dostępu, aby go wczytać.",
   },
   ru: {
+    menu_unavailable: "Интеграция с меню Steam недоступна в этой версии Steam. Откройте Steamcord через Decky в меню быстрого доступа.",
     overlay_pov_source: "Источник видео оверлея",
     overlay_pov_auto: "Сначала экран, иначе камера",
     overlay_pov_camera: "Камера",
