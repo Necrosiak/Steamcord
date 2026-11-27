@@ -9,6 +9,29 @@ window.__scCreateCompat = function(getWebpack, getActionFinder) {
         account_remove: s => s.includes("MULTI_ACCOUNT_REMOVE_ACCOUNT") && s.length < 400,
         account_add: s => s.includes("isMultiAccount:!0") && s.includes("LOGIN_RESET") && s.includes("onBackPressed"),
     };
+    function findStore(wp, name) {
+        try { const found = wp.findStore?.(name); if (found) return found; } catch (_) {}
+        // Vencord's Flux lazy proxy can fail while Common stores already work.
+        // Keep recovery private: never seed or replace its shared fluxStores Map.
+        try { const found = wp.Common?.[name]; if (found) return found; } catch (_) {}
+        for (const seedName of ["UserStore", "ChannelStore", "GuildStore"]) {
+            try {
+                const seed = wp.Common?.[seedName];
+                let ctor = seed?.constructor;
+                const seen = new Set();
+                for (let i = 0; ctor && i < 12 && !seen.has(ctor); i++) {
+                    seen.add(ctor);
+                    if (typeof ctor.getAll === "function") {
+                        for (const store of ctor.getAll() || []) {
+                            try { if (store?.getName?.() === name) return store; } catch (_) {}
+                        }
+                    }
+                    ctor = Object.getPrototypeOf(ctor);
+                }
+            } catch (_) {}
+        }
+        return null;
+    }
     function resolve(kind, args) {
         const wp = getWebpack();
         if (!wp) return null;
@@ -16,7 +39,7 @@ window.__scCreateCompat = function(getWebpack, getActionFinder) {
         const key = kind + ":" + JSON.stringify(args);
         if (cache.has(key)) return cache.get(key);
         try {
-            const value = kind === "store" ? wp.findStore?.(...args) : wp.findByProps?.(...args);
+            const value = kind === "store" ? findStore(wp, args[0]) : wp.findByProps?.(...args);
             if (value) cache.set(key, value);
             return value || null;
         } catch (_) { return null; }

@@ -6,7 +6,7 @@ import { afterPatch, findInReactTree, getReactRoot } from "@decky/ui";
 type Entry = { id: string; label: string; route: string; icon: any; order: number; onSecondary?: () => void };
 type State = { entries: Map<string, Entry>; dispose?: () => void; timer?: any; revision?: number; implementation?: string; status?: string };
 const REVISION = 3;
-const IMPLEMENTATION = "decky-patch-v1";
+const IMPLEMENTATION = "stable-types-v2";
 const KEY = "__necroSteamMenuV1";
 const state = (): State => ((window as any)[KEY] ||= { entries: new Map() });
 
@@ -21,10 +21,31 @@ function install(s: State): boolean {
     (n: any) => n?.memoizedProps?.navID === "MainNavMenuContainer");
   if (!node?.return?.type || typeof node.return.type !== "function") return false;
   const parent = node.return;
-  const patches: { object?: object; unpatch: () => void; hasUnpatched?: boolean }[] = [];
-  const rootCount = parent.alternate && typeof parent.alternate.type === "function" ? 2 : 1;
-  const patched = new WeakSet<object>();
+  let active = true;
+  const types = new WeakMap<Function, Function>();
+  const wrapped = new WeakSet<Function>();
+  const roots = [parent, parent.alternate].filter(Boolean);
+  const marker = Symbol.for("necroSteamMenu.wrapper.v2");
+  // React copies type into alternate fibers. Remove our wrappers from both
+  // live chains, including copies that Decky's patch.object no longer owns.
+  // Leave foreign wrappers in place and only edit their original link.
+  const strip = (fiber: any, legacy = false) => {
+    let object = fiber, key = "type";
+    const seen = new Set<Function>();
+    while (typeof object?.[key] === "function" && !seen.has(object[key])) {
+      const fn = object[key]; seen.add(fn);
+      const patch = fn.__deckyPatch;
+      const ours = Object.prototype.hasOwnProperty.call(fn, marker);
+      const old = legacy && patch && roots.includes(patch.object) && patch.property === "type"
+        && /^\(_args,\s*ret\)\s*=>\s*inspect\(ret\)$/.test(Function.prototype.toString.call(patch.handler).trim());
+      if ((ours || old) && patch) { object[key] = patch.original; continue; }
+      if (!patch) break;
+      object = patch; key = "original";
+    }
+  };
+  for (const fiber of roots) strip(fiber, true);
   const arrays = new Set<any[]>();
+  const elements = new Set<any>();
   const isItem = (e: any) => e?.props?.label && (e.props.onFocus || e.props.onGamepadFocus) && e.props.route;
   const renderItems = (output: any): boolean => {
     const items: any = findInReactTree(output, (n: any) => Array.isArray(n) && n.some(isItem));
@@ -50,44 +71,41 @@ function install(s: State): boolean {
     return true;
   };
   const inspect = (output: any) => {
-    if (renderItems(output)) return output;
+    if (!active || renderItems(output)) return output;
     // Steam has changed this wrapper shape before. Search the rendered tree,
     // not a fixed children[0] path. Never execute a React component ourselves.
     const element: any = findInReactTree(output, (n: any) =>
-      n && typeof n.type === "function" && !patched.has(n));
+      n && typeof n.type === "function" && !wrapped.has(n.type));
     if (element) {
-      // Bound retained render elements without giving up after many redraws.
-      if (patches.length >= 64) {
-        const retired = patches.splice(rootCount, 1)[0];
-        if (retired) {
-          if (!retired.hasUnpatched) retired.unpatch();
-          if (retired.object) patched.delete(retired.object);
-        }
-      }
-      patched.add(element);
-      patches.push(afterPatch(element, "type", (_args, ret) => inspect(ret)));
+      element.type = wrap(element.type);
+      elements.add(element);
+      if (elements.size > 64) elements.delete(elements.values().next().value);
     }
-    if (!element && !findInReactTree(output, (n: any) => n && typeof n === "object" && patched.has(n)) && s.status !== "unavailable") {
+    if (!element && !findInReactTree(output, (n: any) => n && wrapped.has(n.type)) && s.status !== "unavailable") {
       s.status = "unavailable";
       console.warn("[Steam menu] rendered menu shape unavailable; Decky QAM remains available");
     }
     return output;
   };
-  try {
-    patches.push(afterPatch(parent, "type", (_args, ret) => inspect(ret)));
-    if (parent.alternate && typeof parent.alternate.type === "function")
-      patches.push(afterPatch(parent.alternate, "type", (_args, ret) => inspect(ret)));
-  } catch (error) {
-    for (const patch of patches.reverse()) if (!patch.hasUnpatched) patch.unpatch();
-    throw error;
-  }
+  const wrap = (original: any): any => {
+    if (wrapped.has(original)) return original;
+    const cached = types.get(original);
+    if (cached) return cached;
+    // Patch a private holder once per component type, never each render's
+    // fresh React element. Stable type identity preserves focus and state.
+    const holder = { type: original };
+    afterPatch(holder, "type", (_args, ret) => inspect(ret));
+    Object.defineProperty(holder.type, marker, { value: true });
+    types.set(original, holder.type); wrapped.add(holder.type);
+    return holder.type;
+  };
+  for (const fiber of roots) fiber.type = wrap(fiber.type);
   s.status = "waiting-render";
   s.dispose = () => {
-    for (const patch of patches.reverse()) {
-      try { if (!patch.hasUnpatched) patch.unpatch(); }
-      catch (error) { console.warn("[Steam menu] patch cleanup failed", error); }
-    }
-    patches.length = 0;
+    active = false;
+    for (const fiber of roots) strip(fiber);
+    for (const element of elements) strip(element);
+    elements.clear();
     for (const items of arrays) for (let i = items.length - 1; i >= 0; i--)
       if (ownedItem(items[i])) items.splice(i, 1);
     arrays.clear();

@@ -24,3 +24,20 @@ test('minified account function predicates are isolated behind named actions',()
  const c=factory()(()=>null,()=>predicate=>predicate('isMultiAccount:!0 LOGIN_RESET onBackPressed')?function add(){}:null);
  assert.equal(typeof c.action('account_add'),'function');assert.equal(c.action('unknown'),null);
 });
+
+test('broken Vencord Flux finder recovers stores without modifying shared Webpack state',()=>{
+ const user={getName:()=> 'UserStore'}, guild={getName:()=> 'GuildStore',getGuilds:()=>({})};
+ class Base { static getAll(){return [user,guild];} }
+ class User extends Base {}
+ Object.setPrototypeOf(user,User.prototype);
+ const map=new Map();const wp={Common:{UserStore:user},fluxStores:map,findStore:()=>{throw TypeError('Reflect.get called on non-object');}};
+ const c=factory()(()=>wp,()=>null);
+ assert.equal(c.store('GuildStore'),guild);assert.equal(c.store('UserStore'),user);assert.equal(map.size,0);
+ assert.equal(c.store('VoiceStateStore'),null);
+ const voice={getName:()=> 'VoiceStateStore'};Base.getAll=()=>[user,guild,voice];
+ assert.equal(c.store('VoiceStateStore'),voice);
+});
+test('Common store fallback works even if prototype registry is unavailable',()=>{
+ const media={};const wp={Common:{MediaEngineStore:media},findStore:()=>{throw Error('Flux unavailable');}};
+ const c=factory()(()=>wp,()=>null);assert.equal(c.store('MediaEngineStore'),media);
+});

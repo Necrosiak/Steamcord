@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.48.3 — 2026-11-27
+
+### Fixes
+
+- Recover Discord stores when Vencord's Flux finder throws even though Discord has finished loading. This addresses the server-list failure and unavailable voice-state data reported after 1.48.2 (#121, #123). Audio keepalive uses the same fallback.
+- Keep Steam menu component types stable between renders, avoiding the repeated remounts that reset focus to the running game (#122).
+- Remove menu wrappers copied into React's alternate fiber during reload, including recognized wrappers left by 1.48.2. Preserve other plugins' tracked wrappers and make stale Steamcord callbacks inactive.
+
+### Validation
+
+- Build passed; 100 JavaScript tests, 14 menu lifecycle checks and 197 Python tests passed (2 Python tests skipped).
+- On a BC250, the resolver recovered six real Discord stores with the Vencord lookup deliberately forced to fail. An isolated test in the actual Steam/Decky runtime reproduced unstable component identities and leftover alternate-fiber wrappers before the fix, and verified both corrections afterward.
+- A real voice-call/microphone test and in-game controller navigation remain to be confirmed. Windows runtime validation is covered by CI, with live Windows testing still pending.
+
+### Thanks
+
+Thanks to [@JerrickLewis7190](https://github.com/JerrickLewis7190) for the detailed diagnoses and workaround reports in #122 and #123, and everyone who reported #121.
+
 ## 1.48.2 — 2026-11-26
 
 ### Fixes

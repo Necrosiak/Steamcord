@@ -30,7 +30,7 @@ function setup(ready = true, gamepadFocus = false, layout = "legacy") {
   function load(code = compiled) {context.exports={};vm.runInContext("(function(){"+code+"})()",context);return context.exports.registerSteamMenu;}
   const render = () => { parent.type(); return element.type(); };
   const labels = () => Array.from(render(), x=>x.props.label);
-  return {load,labels,render,items,parent,original,element,inner,intervals,ready:()=>{available=true;for(const tick of intervals.values())tick()}};
+  return {load,labels,render,items,parent,original,element,inner,intervals,getElement:()=>element,ready:()=>{available=true;for(const tick of intervals.values())tick()}};
 }
 function entry(id,order){return {id,label:id,route:'/'+id,icon:id,order}}
 let checks=0;
@@ -97,5 +97,34 @@ check('old sibling bundles keep the new owner instead of reinstalling old patche
  const boneOff=old(entry('bonecast',30));assert.equal(s.parent.type,owner);
  assert.deepEqual(s.labels(),['Home','Library','steamcord','skullkey','bonecast','Store','Settings']);
  oldOff();off();boneOff();assert.equal(s.parent.type,s.original);
+});
+
+
+check('fresh React elements retain stable component identity across redraws',()=>{
+ const s=setup(true,false,'fresh');const off=s.load()(entry('steamcord',10));s.render();const first=s.getElement().type;
+ for(let i=0;i<20;i++){s.render();assert.equal(s.getElement().type,first);}
+ off();
+});
+check('fiber alternate copied by React does not retain or stack menu patches',()=>{
+ const s=setup();let off=s.load()(entry('steamcord',10));const wrapped=s.parent.type;
+ s.parent.alternate.type=wrapped;off();assert.equal(s.parent.alternate.type,s.original);
+ for(let i=0;i<5;i++){off=s.load()(entry('steamcord',10));s.parent.alternate.type=s.parent.type;s.labels();off();assert.equal(s.parent.alternate.type,s.original);}
+});
+
+check('stale 1.48.2 wrappers copied into alternate fibers are removed on upgrade',()=>{
+ const code=ts.transpileModule(fs.readFileSync(require('node:path').join(__dirname,'fixtures/steam-menu-1.48.2.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const s=setup();const oldOff=s.load(code)(entry('skullkey',20));
+ // Simulate a React commit copying the live type over the alternate's patch.
+ s.parent.alternate.type=s.parent.type;
+ const off=s.load()(entry('steamcord',10));
+ assert.equal(s.labels().filter(x=>x==='steamcord').length,1);
+ oldOff();off();assert.equal(s.parent.type,s.original);assert.equal(s.parent.alternate.type,s.original);
+});
+check('foreign fiber wrappers survive menu disposal and stale render copies are inert',()=>{
+ const s=setup(true,false,'fresh');const off=s.load()(entry('steamcord',10));s.render();const stale=s.getElement().type;
+ let calls=0;const foreign=patcherCtx.exports.afterPatch(s.parent,'type',(_a,ret)=>{calls++;return ret;});const fn=s.parent.type;
+ off();assert.equal(s.parent.type,fn);s.parent.type();assert.equal(calls,1);
+ assert.equal(stale().some(x=>x.key==='necro-menu:steamcord'),false);
+ foreign.unpatch();assert.equal(s.parent.type,s.original);
 });
 console.log(checks+' menu lifecycle checks passed');

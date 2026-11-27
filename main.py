@@ -1111,7 +1111,7 @@ class Plugin:
         js = """(() => {
           try {
             let resumed = 0, states = [];
-            const me = Vencord.Webpack.findStore('MediaEngineStore')?.getMediaEngine?.();
+            const me = window.__scCompat?.store('MediaEngineStore')?.getMediaEngine?.();
             const ctxs = [];
             if (me?.audioContext) ctxs.push(me.audioContext);
             if (window.__sc_extra_ctx) ctxs.push(window.__sc_extra_ctx);
