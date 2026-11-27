@@ -18,6 +18,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_windows*.py" -v
       - name: Test local endpoint authentication and update integrity
         run: |
+          python -m unittest discover -s tests -p test_external_links.py -v
           python -m unittest discover -s tests -p test_local_routes_auth.py -v
           python -m unittest discover -s tests -p test_steam_view.py -v
           python -m unittest discover -s tests -p test_updater_integrity.py -v
@@ -60,6 +61,8 @@ jobs:
           node --test tests/test-err-code.cjs
           node --test tests/test-host-capabilities.cjs tests/test-desktop-capture.cjs
           node --test tests/test-stream-visibility.cjs tests/test-video-visibility-leases.cjs
+          python3 -m unittest discover -s tests -p test_external_links.py -v
+          node --test tests/test-link-preferences.cjs
           node --test tests/test-discord-compat.cjs tests/test-steam-compat.cjs tests/test-steam-view.cjs tests/test-login-completion.cjs tests/test-video-fullscreen-layout.cjs
           python3 -m unittest discover -s tests -p test_video_visibility.py -v
 
@@ -111,7 +114,7 @@ jobs:
           python3 - <<'PYTHON'
           import zipfile
           with zipfile.ZipFile("out/Steamcord.zip") as archive:
-              for name in ("host.py", "vesktop_win.py"):
+              for name in ("host.py", "vesktop_win.py", "external_links.py"):
                   assert "Steamcord/" + name in archive.namelist(), name
           PYTHON
 

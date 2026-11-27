@@ -1907,6 +1907,16 @@ class Plugin:
         await cls.shared_js_tab.evaluate(f"window.STEAMCORD.connectWs()")
 
     @classmethod
+    async def open_external_link(cls, url):
+        import asyncio
+        import external_links
+        env = None
+        if not host.WINDOWS:
+            import vesktop
+            env = vesktop._user_env()
+        return await asyncio.to_thread(external_links.open_link, url, env)
+
+    @classmethod
     async def get_state(cls):
         return cls.evt_handler.build_state_dict()
 
@@ -3885,6 +3895,15 @@ class Plugin:
                 real = await cls._real_output_sink()
                 sinks = loads(await cls._pactl("list", "sinks", want_json=True) or "[]")
                 real_idx = next((str(x.get("index")) for x in sinks if x.get("name") == real), None)
+                # A failed/partial device snapshot is not an instruction to
+                # disable Chat Mix. Restoring every owned stream here briefly
+                # raised game volume until the next successful reconciliation.
+                if real_idx is None:
+                    if not getattr(cls, "_chat_mix_output_missing", False):
+                        logger.warning("[chatmix] output unavailable; preserving current stream volumes")
+                    cls._chat_mix_output_missing = True
+                    return
+                cls._chat_mix_output_missing = False
                 for line in (await cls._pactl("list", "short", "modules")).splitlines():
                     parts = line.split("\t")
                     if len(parts) >= 3:

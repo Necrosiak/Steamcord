@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.48.4 — 2026-11-27
+
+### Fixes
+
+- Fullscreen video and the video grid no longer inherit the offset of Steam's modal animation. Fullscreen temporarily removes the animation and ancestor containing-block constraints, then restores the borrowed styles when it closes (#105).
+- Chat Mix preserves the current mixed volume if a temporary device snapshot cannot resolve the playback output, instead of briefly restoring the original game volume. Explicitly disabling Chat Mix still restores the original level (#107).
+
+### Options
+
+- General settings: **Open links in the external browser** opens HTTP(S) message links in your system's default browser. It is off by default, shared by the QAM and expanded view, and uses the Linux desktop-session environment or the Windows default URL handler. Select Firefox as your OS default if that is where you want links to open. This does not add a Roblox-specific launcher (#116).
+- General settings: **Swap DMs and Servers** reverses their current order in both views. It is off by default, preserving each view's existing order and opening-page preference (#120).
+
+### Maintenance and diagnostics
+
+- Modal layout compatibility and style restoration now live in a dedicated module, with shared exports for existing components (#119).
+- Overlay logs record actual window/monitor geometry after size changes, helping investigate the remaining centered-overlay report (#92). This diagnostic addition does not claim to fix that report.
+
+### Validation
+
+- Local build passed; 105 JavaScript tests, 14 menu lifecycle checks and 204 Python tests passed (2 Python tests skipped).
+- A real Steam modal on the BC250 was checked at the viewport origin, covering all four corners, with borrowed styles restored after closure. An isolated PipeWire test confirmed that a mixed stream remains at 50% during a simulated missing-output snapshot and recovers without a volume-event loop.
+- Linux and Windows link-launch boundaries are tested without launching a browser. Live Windows/browser testing and confirmation that all intermittent long-call spikes are resolved remain pending. The broader audit in #119 stays open.
+
+### Thanks
+
+Thanks to [@numeraltrace](https://github.com/numeraltrace) for the fullscreen, audio and navigation follow-ups, and [@EasyAs123ABC](https://github.com/EasyAs123ABC) for clarifying the external-browser use case.
+
 ## 1.48.3 — 2026-11-27
 
 ### Fixes

@@ -83,6 +83,21 @@ class ChatMixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([[v['value'] for v in x['volume'].values()] for x in self.inputs], originals)
         self.assertFalse(self.p._mix_touched)
 
+    async def test_transient_missing_output_does_not_restore_loud_game_volume(self):
+        await self.p._apply_chat_mix()
+        reduced = [v['value'] for v in self.inputs[0]['volume'].values()]
+        self.writes.clear()
+        self.p._real_output_sink.return_value = None
+        await self.p._apply_chat_mix()
+        self.assertEqual(self.writes, [])
+        self.assertEqual([v['value'] for v in self.inputs[0]['volume'].values()], reduced)
+        self.assertIn('1', self.p._mix_touched)
+        self.p._real_output_sink.return_value = 'speakers'
+        await self.p._apply_chat_mix()
+        self.assertEqual(self.writes, [])
+        await self.p.set_chat_mix_enabled(False)
+        self.assertTrue(self.writes)  # Explicit disable still restores the baseline.
+
     async def test_manual_mixer_change_is_not_overwritten_when_leaving_game_mode(self):
         await self.p._apply_chat_mix()
         self.inputs[0]['volume'] = self.stream(1, 'game', [65, 65])['volume']

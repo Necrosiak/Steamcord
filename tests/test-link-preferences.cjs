@@ -1,0 +1,14 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),path=require('node:path');
+function load(file,context){context.exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,context);return context.exports;}
+function setup(){const values=new Map(),calls=[],toasts=[];const storage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v)};
+ const prefs=load('uiPreferences.ts',{localStorage:storage,require:()=>({})});
+ const window={SteamClient:{URL:{ExecuteSteamURL:u=>calls.push(['steam',u])}},open:u=>calls.push(['window',u])};
+ let success=true;const api={call:async(...args)=>{calls.push(['backend',...args]);return success},toaster:{toast:x=>toasts.push(x)}};
+ const open=load('openLink.ts',{URL,window,require:n=>n==='@decky/api'?api:n==='./uiPreferences'?prefs:{t:k=>k}});
+ return {prefs,open,window,calls,toasts,setSuccess:v=>success=v};}
+test('external browser is opt-in and web links retain Steam default',async()=>{const s=setup();assert.equal(s.prefs.readUiPreference('external_links'),false);assert.equal(await s.open.openUrl('https://example.org'),true);assert.deepEqual(s.calls,[['steam','steam://openurl/https://example.org/']]);});
+test('both views use the saved external-browser choice and report failure without Steam fallback',async()=>{const s=setup();s.prefs.setUiPreference('external_links',true);assert.equal(await s.open.openUrl('https://example.org'),true);assert.deepEqual(s.calls,[['backend','open_external_link','https://example.org/']]);s.setSuccess(false);assert.equal(await s.open.openUrl('https://example.org'),false);assert.equal(s.toasts.length,1);assert.equal(s.calls.some(c=>c[0]==='steam'),false);});
+test('unsafe link schemes and credential-bearing URLs never reach any opener',async()=>{const s=setup();for(const u of ['file:///tmp/x','javascript:alert(1)','https://user:secret@example.org'])assert.equal(await s.open.openUrl(u),false);assert.equal(s.calls.length,0);});
+test('source inversion preserves each existing default and reverses DOM navigation order only on opt-in',()=>{const {prefs}=setup();assert.equal(prefs.readUiPreference('swap_sources'),false);assert.deepEqual(Array.from(prefs.sourceOrder(false,false)),['servers','dms']);assert.deepEqual(Array.from(prefs.sourceOrder(true,false)),['dms','servers']);assert.deepEqual(Array.from(prefs.sourceOrder(false,true)),['dms','servers']);assert.deepEqual(Array.from(prefs.sourceOrder(true,true)),['servers','dms']);});
+
+test('default mode retains window fallback when Steam URL API throws',async()=>{const s=setup();s.window.SteamClient.URL.ExecuteSteamURL=()=>{throw Error('changed API')};assert.equal(await s.open.openUrl('https://example.org'),true);assert.deepEqual(s.calls,[['window','https://example.org/']]);});

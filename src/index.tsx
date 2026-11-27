@@ -1,3 +1,4 @@
+import { sourceOrder, useUiPreference } from "./uiPreferences";
 import { readSteamPersona, getMainMenuWindow, resizeDiscordView, steamIntegrationStatus } from "./steamCompat";
 import { steamMenuStatus } from "./steamMenu";
 import { HostFeature, initHost, useHost, supports } from "./host";
@@ -1460,6 +1461,7 @@ const ContentBody = () => {
   const state = useSteamcordState();
   // Vue d'ouverture : réglable, « Vocal » + « Serveurs » par défaut (#43).
   const [topTab, setTopTab] = useState<"voice" | "text" | "config">(getOpenTop);
+  const [swapSources] = useUiPreference("swap_sources");
   const [srcTab, setSrcTab] = useState<"servers" | "dms">(getOpenSrc);
   // Copie backend : n'écrase la vue que si l'utilisateur n'a pas déjà changé
   // d'onglet entre le montage et la réponse.
@@ -1677,22 +1679,12 @@ const ContentBody = () => {
                 <EventsPanel />
                 {/* 2. Menu source (partagé) : Serveurs / MP */}
                 <TabRow>
-                  <TabBtn
-                    active={srcTab === "servers"} focused={tabFocus === "servers"}
-                    onClick={() => setSrcTab("servers")}
-                    onFocus={() => setTabFocus("servers")}
-                    onBlur={() => setTabFocus((f) => (f === "servers" ? null : f))}
-                  >
-                    <IcHome /> {t("tab_servers")}
-                  </TabBtn>
-                  <TabBtn
-                    active={srcTab === "dms"} focused={tabFocus === "dms"}
-                    onClick={() => setSrcTab("dms")}
-                    onFocus={() => setTabFocus("dms")}
-                    onBlur={() => setTabFocus((f) => (f === "dms" ? null : f))}
-                  >
-                    <IcUser /> {t("tab_dms")}
-                  </TabBtn>
+                  {sourceOrder(false, swapSources).map(source => <TabBtn key={source}
+                    active={srcTab === source} focused={tabFocus === source}
+                    onClick={() => setSrcTab(source)} onFocus={() => setTabFocus(source)}
+                    onBlur={() => setTabFocus(f => f === source ? null : f)}>
+                    {source === "servers" ? <IcHome /> : <IcUser />} {t("tab_" + source)}
+                  </TabBtn>)}
                 </TabRow>
                 {/* Contenu = mode × source. La clé force un remontage propre au
                     changement de source (réinitialise la conversation ouverte).
@@ -2314,6 +2306,17 @@ const SETTINGS_GAPS = `.sc-settings > *${CTL} + *${CTL},
 
 // #86 : l'entrée « Steamcord » du menu principal Steam est facultative ;
 // le panneau d'accès rapide reste disponible quand elle est retirée.
+const LinkAndTabSettings = () => {
+  const [external, setExternal] = useUiPreference("external_links");
+  const [swap, setSwap] = useUiPreference("swap_sources");
+  return <>
+    <SR><ToggleField label={t("external_links")} description={t("external_links_desc")}
+      checked={external} onChange={setExternal} bottomSeparator="none" /></SR>
+    <SR><ToggleField label={t("swap_sources")} description={t("swap_sources_desc")}
+      checked={swap} onChange={setSwap} bottomSeparator="none" /></SR>
+  </>;
+};
+
 const MenuEntryToggle = () => {
   const [on, setOn] = useState(menuEntryEnabled);
   const [integration, setIntegration] = useState(steamMenuStatus);
@@ -2403,6 +2406,7 @@ const CfgCatContent = ({ cat }: { cat: CfgCat }) => {
       <CfgHead icon={<IcChat />}>{t("config_open_on")}</CfgHead>
       <OpenViewConfig />
       <MenuEntryToggle />
+      <LinkAndTabSettings />
       <hr />
       <CfgHead icon={<IcGear />}>{t("proxy_section")}</CfgHead>
       <ProxySection />

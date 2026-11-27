@@ -106,6 +106,8 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
 
 ### [@EasyAs123ABC](https://github.com/EasyAs123ABC)
 
+- The opt-in external-browser use case for message links ([#116](https://github.com/Necrosiak/Steamcord/issues/116), v1.48.4)
+
 - The screenshot that exposed the portal shim refusing every interface it does not implement, to every application in the session — the error named Steamcord outright, and he was right to suspect it was not Sober's fault ([#39](https://github.com/Necrosiak/Steamcord/issues/39), fixed in v1.24.0)
 
 ### [@immortalt](https://github.com/immortalt)
@@ -334,6 +336,8 @@ say so on an [issue](https://github.com/Necrosiak/Steamcord/issues).
   ([#104](https://github.com/Necrosiak/Steamcord/issues/104), fixed in v1.46.0)
 
 ### [@numeraltrace](https://github.com/numeraltrace)
+
+- Follow-up reports on fullscreen offsets, transient Chat Mix volume changes, and optional DMs/Servers ordering ([#105](https://github.com/Necrosiak/Steamcord/issues/105), [#107](https://github.com/Necrosiak/Steamcord/issues/107), [#120](https://github.com/Necrosiak/Steamcord/issues/120), v1.48.4)
 
 - Chat Mix muting the Steam interface sounds after sleep, confirmed fixed after
   two days of use ([#106](https://github.com/Necrosiak/Steamcord/issues/106), fixed in v1.46.0)

@@ -1,3 +1,4 @@
+import { sourceOrder, useUiPreference } from "../uiPreferences";
 // Vue Discord étendue native Steam : aucune BrowserView CEF pré-Vesktop.
 import { Focusable, ModalRoot, NavEntryPositionPreferences, showModal } from "@decky/ui";
 import { call } from "@decky/api";
@@ -189,6 +190,8 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
   // Historique (demande user 15/09) : sections et chats s'empilent dans le bloc
   // de droite ; L1 recule, R1 avance, B recule puis ferme. Changer de page ne
   // coupe rien — appel, Go Live, direct : c'est seulement l'affichage.
+  const [swapSources] = useUiPreference("swap_sources");
+  const sources = sourceOrder(true, swapSources);
   const [nav, setNav] = useState<{ pages: Page[]; index: number }>({ pages: [{ kind: "section", mode: "dms", id: 0, from: null }], index: 0 });
   const navRef = useRef(nav);
   navRef.current = nav;
@@ -318,9 +321,11 @@ export function DiscordExpandedModal({ closeModal, serverContent, callContent, s
         <style>{SIDEBAR_FIT}</style>
         <div className="sc-xv-brand" style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px 17px", fontSize: 18, fontWeight: 800, flexShrink: 0 }}><SteamcordLogo size={32} /> Steamcord</div>
         <div style={{ fontSize: 11, letterSpacing: .8, fontWeight: 700, opacity: .48, padding: "0 10px 7px" }}>{t("xv_navigation")}</div>
-        <SidebarItem active={mode === "dms"} icon={<IcUser />} label={t("xv_dms")} onPick={() => go("dms")} />
-        <SidebarItem active={mode === "friends"} icon={<FaUserFriends />} label={t("friends")} onPick={() => go("friends")} />
-        <SidebarItem active={mode === "servers"} icon={<IcChat />} label={t("tab_servers")} onPick={() => go("servers")} />
+        {[sources[0], "friends" as const, sources[1]].map(section =>
+          <SidebarItem key={section} active={mode === section}
+            icon={section === "dms" ? <IcUser /> : section === "friends" ? <FaUserFriends /> : <IcChat />}
+            label={t(section === "dms" ? "xv_dms" : section === "friends" ? "friends" : "tab_servers")}
+            onPick={() => go(section)} />)}
         <SidebarItem active={mode === "events"} icon={<IcBell />} label={t("events")} badge={eventsBadge} onPick={() => go("events")} />
         <SidebarItem active={mode === "call"} icon={<IcPhone />} label={t("xv_call")} onPick={() => go("call")} />
         <SidebarItem active={mode === "settings"} icon={<IcGear />} label={t("xv_settings")} onPick={() => go("settings")} />

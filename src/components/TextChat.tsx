@@ -145,21 +145,8 @@ export interface Message {
 
 export const Btn = DialogButton as any;
 
-// Ouvre une URL dans le navigateur intégré du gamemode Steam (overlay web).
-// Plusieurs API SteamClient tentées : selon le contexte de rendu (panneau QAM
-// vs vraie modale plein écran — #20, ChatFullscreenModal), `window.SteamClient`
-// n'expose pas forcément les mêmes espaces de noms (vérifié en direct au CDP :
-// `.URL` est absent du contexte QuickAccess mais présent dans SharedJSContext),
-// donc pas de garantie qu'un seul appel marche partout. `window.open` en tout
-// dernier recours : marche dans n'importe quel contexte Chromium/CEF.
-export const openUrl = (url: string) => {
-  try {
-    const sc = (window as any).SteamClient;
-    if (sc?.URL?.ExecuteSteamURL) { sc.URL.ExecuteSteamURL("steam://openurl/" + url); return; }
-    if (sc?.System?.OpenInSystemBrowser) { sc.System.OpenInSystemBrowser(url); return; }
-  } catch {}
-  try { window.open(url, "_blank"); } catch {}
-};
+import { openUrl } from "../openLink";
+export { openUrl } from "../openLink";
 
 // Miniature légère via le CDN média Discord (redimensionne côté serveur → peu de data).
 export const thumbUrl = (img: MsgImage) => {

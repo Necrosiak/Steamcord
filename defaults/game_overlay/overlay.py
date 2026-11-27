@@ -204,6 +204,25 @@ def build_window():
         print("[overlay] screen %dx%d window %dx%d" % (sw, sh, win.get_allocated_width(),
                                                       win.get_allocated_height()), flush=True)
 
+    last_geometry = [None]
+    def report_allocation(_widget, allocation):
+        # map can precede the final compositor allocation. Record subsequent
+        # changes too so #92 can distinguish screen, window and renderer bounds.
+        try:
+            display = Gdk.Display.get_default()
+            monitor = display.get_monitor_at_window(win.get_window())
+            monitor = monitor or display.get_primary_monitor() or display.get_monitor(0)
+            geometry = monitor.get_geometry()
+            x, y = win.get_position()
+            sample = (geometry.x, geometry.y, geometry.width, geometry.height,
+                      x, y, allocation.width, allocation.height)
+            if sample != last_geometry[0]:
+                print("[overlay] geometry monitor=%s,%s %sx%s window=%s,%s %sx%s" % sample, flush=True)
+                last_geometry[0] = sample
+        except Exception as e:
+            print("[overlay] allocation diagnostic unavailable: %s" % type(e).__name__, flush=True)
+
+    win.connect("size-allocate", report_allocation)
     win.connect("map", on_map)
     win.connect("destroy", Gtk.main_quit)
     return win
