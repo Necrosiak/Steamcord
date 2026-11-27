@@ -1556,6 +1556,13 @@ window.Vencord.Plugins.plugins.Steamcord = {
                                 case "$getuser":
                                     result = Vencord.Webpack.Common.UserStore.getUser(data.id);
                                     break;
+                                case "$get_nick": {
+                                    // Server nickname of a voice participant: Discord shows it
+                                    // before the display name in a server's voice channel.
+                                    const GMS = window.__scCompat.store("GuildMemberStore");
+                                    result = (data.guild_id && GMS?.getNick?.(data.guild_id, data.id)) || "";
+                                    break;
+                                }
                                 case "$getchannel":
                                     result = Vencord.Webpack.Common.ChannelStore.getChannel(data.id);
                                     break;
