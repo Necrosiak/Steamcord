@@ -47,6 +47,9 @@ class EventHandler:
         self.api = StoreAccess()
         self.ws = None
         self.vc_channel_id = None
+        # Guild of the current voice channel (None in a DM/group call): server
+        # nicknames of the participants are read in this guild.
+        self.vc_guild_id = None
         self.api._channel_name = None
         self.api._guild_name = None
         self.vc_members = {}
@@ -284,6 +287,7 @@ class EventHandler:
         self.me = User({"id": "", "username": "", "discriminator": None, "avatar": ""})
         # Purger l'état d'appel pour ne pas laisser un faux « en vocal » au QAM.
         self.vc_channel_id = None
+        self.vc_guild_id = None
         self.vc_members = {}
         self.streaming_users = set()
         if getattr(self, "discord_enabled", True):
@@ -304,6 +308,7 @@ class EventHandler:
         self.vc_channel_id = new_id
         if self.vc_channel_id is None:
             self.vc_members = {}
+            self.vc_guild_id = None
             self.api._channel_name = None
             self.api._guild_name = None
             # Pas de son "connect" natif chez Discord (le manifest du soundpack
@@ -318,6 +323,9 @@ class EventHandler:
         if not isinstance(channel, dict):
             channel = {}
         guild_id = channel.get("guild_id")
+        self.vc_guild_id = guild_id or None
+        # Our own entry can be shown from self.me (see _build_vc_dict).
+        self.me.nick = await self.api.get_nick(guild_id, self.me.id) if guild_id and self.me.id else ""
 
         if guild_id:
             # Guild voice channel
@@ -355,7 +363,7 @@ class EventHandler:
                     user.is_muted = vs.get("mute", False)
                     user.is_deafened = vs.get("deaf", False)
                     user.is_video = vs.get("video", False)
-                    await user.populate(self.api)
+                    await user.populate(self.api, self.vc_guild_id)
                     self.vc_members[user_id] = user
         except Exception as e:
             logger.error(f"Failed to load voice states: {e}")
@@ -390,7 +398,7 @@ class EventHandler:
                 existed = user_id in self.vc_members
                 if not existed:
                     user = User({"id": user_id, "username": "", "discriminator": None, "avatar": ""})
-                    await user.populate(self.api)
+                    await user.populate(self.api, self.vc_guild_id)
                     self.vc_members[user_id] = user
                     # Un membre existant déjà présent quand ON rejoint est peuplé par
                     # _voice_channel_select (get_voice_states), PAS ici → ce branch

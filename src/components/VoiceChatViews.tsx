@@ -773,7 +773,7 @@ function OverlayMenuContent() {
   const [open, setOpen] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
   const [povOn, setPovOn] = useState(false);
-  const [voice, setVoice] = useState<any>({ pos: "bottom-left", opacity: 85, scale: 100 });
+  const [voice, setVoice] = useState<any>({ pos: "bottom-left", opacity: 85, scale: 100, names: "nick" });
   const [pov, setPov] = useState<any>({ layout: "right", opacity: 90, scale: 100, source: "auto", show_names: true });
   // Le POV a besoin d'un moteur web (décodage MediaSource) ; sur SteamOS le
   // helper se replie sur un rendu GTK/Cairo qui n'affiche que le vocal (#22).
@@ -857,6 +857,16 @@ function OverlayMenuContent() {
                   { data: "bottom-right", label: t("overlay_pos_br") },
                 ]}
                 onChange={(e: any) => pushVoice({ pos: e.data })}
+              />
+              <DropdownAny
+                strDefaultLabel={t("overlay_names")}
+                selectedOption={voice.names || "nick"}
+                rgOptions={[
+                  { data: "nick", label: t("overlay_names_nick") },
+                  { data: "global", label: t("overlay_names_global") },
+                  { data: "username", label: t("overlay_names_username") },
+                ]}
+                onChange={(e: any) => pushVoice({ names: e.data })}
               />
               <SliderFieldAny
                 label={<>{t("overlay_opacity")} {voice.opacity}%</>}

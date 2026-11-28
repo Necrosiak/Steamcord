@@ -189,8 +189,10 @@ class OverlayTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.p = methods({'_load_overlay_settings', '_save_overlay_settings',
-                          'start_voice_overlay', 'stop_voice_overlay', '_sync_overlay_state', '_write_overlay_state'})
+        self.p = methods({'_load_overlay_settings', '_save_overlay_settings', 'set_voice_overlay_settings',
+                          'start_voice_overlay', 'stop_voice_overlay', '_sync_overlay_state', '_write_overlay_state',
+                          '_overlay_name'})
+        self.p.OV_NAME_MODES = ('nick', 'global', 'username')
         self.p._OVERLAY_CFG = os.path.join(self.tmp.name, 'prefs.json')
         self.p._overlay_settings = None
         self.p._voice_ov_on = False
@@ -239,6 +241,49 @@ class OverlayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload['voice']['users'][0]['is_muted'])
         self.assertTrue(payload['voice']['users'][0]['is_deafened'])
         self.assertTrue(payload['voice']['users'][0]['is_live'])
+
+    async def test_overlay_names_follow_discord_unless_another_name_is_chosen(self):
+        users = [{'id': 'a', 'username': 'login_a', 'global_name': 'Display A', 'nick': 'Server A'},
+                 {'id': 'b', 'username': 'login_b', 'global_name': 'Display B', 'nick': ''},
+                 {'id': 'c', 'username': 'login_c', 'global_name': '', 'nick': ''}]
+        expected = {'nick': ['Server A', 'Display B', 'login_c'],
+                    'global': ['Display A', 'Display B', 'login_c'],
+                    'username': ['login_a', 'login_b', 'login_c']}
+        self.p._voice_ov_on = True
+        self.assertEqual(self.p._load_overlay_settings()['voice']['names'], 'nick')
+        for mode, names in expected.items():
+            self.assertTrue((await self.p.set_voice_overlay_settings({'names': mode}))['ok'])
+            self.p._write_overlay_state({'me': {}, 'vc': {'channel_id': 'a', 'users': users}})
+            payload = json.loads(Path(self.tmp.name, 'voice_state.json').read_text(encoding="utf-8"))
+            self.assertEqual([u['username'] for u in payload['voice']['users']], names, mode)
+        self.assertFalse((await self.p.set_voice_overlay_settings({'names': 'junk'}))['ok'])
+        self.assertEqual(self.p._load_overlay_settings()['voice']['names'], 'username')
+
+    def test_voice_members_get_display_name_and_server_nickname(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('sc_store_access', ROOT / 'defaults/discord_client/store_access.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        api = types.SimpleNamespace(
+            get_user=AsyncMock(return_value={'username': 'login', 'discriminator': '0', 'avatar': None,
+                                             'globalName': 'Display'}),
+            get_nick=AsyncMock(return_value='Server'))
+        member = mod.User({'id': '1', 'username': '', 'discriminator': None, 'avatar': ''})
+        asyncio.run(member.populate(api, 'guild'))
+        api.get_nick.assert_awaited_once_with('guild', '1')
+        self.assertEqual((member.to_dict()['username'], member.global_name, member.to_dict()['nick']),
+                         ('login', 'Display', 'Server'))
+        api.get_nick.reset_mock()
+        dm = mod.User({'id': '2', 'username': '', 'discriminator': None, 'avatar': ''})
+        asyncio.run(dm.populate(api))
+        api.get_nick.assert_not_awaited()
+        self.assertEqual((dm.global_name, dm.nick), ('Display', ''))
+
+        access = mod.StoreAccess()
+        access._store_access_request = AsyncMock(side_effect=Exception('discord_reconnecting'))
+        self.assertEqual(asyncio.run(access.get_nick('guild', '1')), '')
+        access._store_access_request = AsyncMock(return_value=None)
+        self.assertEqual(asyncio.run(access.get_nick('guild', '1')), '')
 
     def test_self_member_uses_current_media_flags_without_losing_camera(self):
         handler = methods({'_build_vc_dict'}, source='defaults/discord_client/event_handler.py', klass='EventHandler')()

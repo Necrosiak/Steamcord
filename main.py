@@ -6289,6 +6289,7 @@ class Plugin:
         voice = cls._overlay_settings.get("voice")
         cls._overlay_settings["voice"] = {
             "pos": "bottom-left", "opacity": 85, "scale": 100, "enabled": False,
+            "names": "nick",
             **(voice if isinstance(voice, dict) else {})}
         pov = cls._overlay_settings.get("pov")
         cls._overlay_settings["pov"] = {
@@ -6339,18 +6340,35 @@ class Plugin:
         cls._ov_events = [e for e in cls._ov_events if now - e["ts"] < cls.OV_EVENT_MS + 1000][-6:]
         return cls._ov_events
 
+    # Name shown for each participant in the voice and POV overlays (setting
+    # `names`). "nick" follows Discord: server nickname, then display name,
+    # then username. "global" skips the server nickname; "username" shows the
+    # account name only.
+    OV_NAME_MODES = ("nick", "global", "username")
+
+    @staticmethod
+    def _overlay_name(user, mode):
+        login = user.get("username") or ""
+        if mode == "username":
+            return login
+        if mode != "global" and user.get("nick"):
+            return user["nick"]
+        return user.get("global_name") or login
+
     @classmethod
     def _write_overlay_state(cls, state=None):
         import json as _json
         try:
             st = state or cls.evt_handler.build_state_dict()
             vc = st.get("vc") or {}
+            s = cls._load_overlay_settings()
+            names = (s.get("voice") or {}).get("names")
             users = []
             for u in vc.get("users") or []:
                 av = u.get("avatar")
                 users.append({
                     "id": u.get("id"),
-                    "username": u.get("username"),
+                    "username": cls._overlay_name(u, names),
                     "avatar_url": (
                         f"https://cdn.discordapp.com/avatars/{u.get('id')}/{av}.webp?size=64"
                         if av else "https://cdn.discordapp.com/embed/avatars/0.png"),
@@ -6360,7 +6378,6 @@ class Plugin:
                     "is_live": bool(u.get("is_live")),
                     "is_watching_me": bool(u.get("is_watching_me")),
                 })
-            s = cls._load_overlay_settings()
             payload = {
                 "voice": {"enabled": cls._voice_ov_on, "settings": s.get("voice"), "users": users,
                           "events": cls._ov_track_members(users, vc.get("channel_id")),
@@ -6477,6 +6494,8 @@ class Plugin:
     @classmethod
     @linux_only({"ok": False})
     async def set_voice_overlay_settings(cls, settings):
+        if "names" in (settings or {}) and settings["names"] not in cls.OV_NAME_MODES:
+            return {"ok": False}
         cur = cls._load_overlay_settings()
         cur["voice"] = {**cur.get("voice", {}), **(settings or {})}
         cls._save_overlay_settings()

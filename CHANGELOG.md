@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- **The voice overlay showed account usernames** instead of the names Discord
+  shows in the call. It now follows Discord: the server nickname first, then
+  the display name, then the username. In DM and group calls, where there is
+  no server nickname, it shows display names. The POV tile names and the
+  join/leave notices use the same name.
+
+### Options
+
+- New **Names** option under *In-game overlays* ▸ voice overlay: server
+  nickname (like Discord, the default), display name, or username.
+
 ## 1.48.4 — 2026-11-27
 
 ### Fixes

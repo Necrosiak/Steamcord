@@ -9,6 +9,9 @@ class User:
         # Nom affiché Discord, distinct de l'identifiant de connexion. L'objet
         # UserStore du client le nomme `globalName`, l'API REST `global_name`.
         self.global_name = data.get("globalName") or data.get("global_name") or ""
+        # Server nickname in the guild of the current voice channel. Discord
+        # shows it before the display name there; empty outside a server.
+        self.nick = data.get("nick") or ""
 
         self.is_muted = False
         self.is_deafened = False
@@ -25,7 +28,7 @@ class User:
         usr.is_speaking = False
         return usr
 
-    async def populate(self, api):
+    async def populate(self, api, guild_id=None):
         if self.name:
             return
 
@@ -33,12 +36,16 @@ class User:
         self.name = r["username"]
         self.discriminator = r["discriminator"]
         self.avatar = r["avatar"]
+        self.global_name = r.get("globalName") or r.get("global_name") or ""
+        if guild_id:
+            self.nick = await api.get_nick(guild_id, self.id)
 
     def to_dict(self):
         return {
             "id": self.id,
             "username": str(self),
             "global_name": self.global_name,
+            "nick": self.nick,
             "avatar": self.avatar,
             "is_muted": self.is_muted,
             "is_deafened": self.is_deafened,
@@ -119,6 +126,15 @@ class StoreAccess:
 
     async def get_user(self, id):
         return await self._store_access_request("$getuser", id)
+
+    async def get_nick(self, guild_id, user_id):
+        """Server nickname, or "" when the member has none. Never raises: a
+        missing nickname must not keep a participant out of the voice list."""
+        try:
+            nick = await self._store_access_request("$get_nick", user_id, guild_id=guild_id)
+        except Exception:
+            return ""
+        return nick if isinstance(nick, str) else ""
 
     async def get_channel(self, id):
         return await self._store_access_request("$getchannel", id)
